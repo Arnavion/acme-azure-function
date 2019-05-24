@@ -1,0 +1,4 @@
+/bin/
+/obj/
+/.env*
+/local.settings.json
