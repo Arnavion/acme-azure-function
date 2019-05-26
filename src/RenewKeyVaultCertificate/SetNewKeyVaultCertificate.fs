@@ -43,15 +43,17 @@ let Run
 
         log.LogInformation "Importing private key..."
 
-        let mutable certificateKeyParameters = new System.Security.Cryptography.RSAParameters ()
-        certificateKeyParameters.D <- request.CertificatePrivateKey.D |> System.Convert.FromBase64String
-        certificateKeyParameters.DP <- request.CertificatePrivateKey.DP |> System.Convert.FromBase64String
-        certificateKeyParameters.DQ <- request.CertificatePrivateKey.DQ |> System.Convert.FromBase64String
-        certificateKeyParameters.Exponent <- request.CertificatePrivateKey.Exponent |> System.Convert.FromBase64String
-        certificateKeyParameters.InverseQ <- request.CertificatePrivateKey.InverseQ |> System.Convert.FromBase64String
-        certificateKeyParameters.Modulus <- request.CertificatePrivateKey.Modulus |> System.Convert.FromBase64String
-        certificateKeyParameters.P <- request.CertificatePrivateKey.P |> System.Convert.FromBase64String
-        certificateKeyParameters.Q <- request.CertificatePrivateKey.Q |> System.Convert.FromBase64String
+        let certificateKeyParameters =
+            new System.Security.Cryptography.RSAParameters (
+                D = (request.CertificatePrivateKey.D |> System.Convert.FromBase64String),
+                DP = (request.CertificatePrivateKey.DP |> System.Convert.FromBase64String),
+                DQ = (request.CertificatePrivateKey.DQ |> System.Convert.FromBase64String),
+                Exponent = (request.CertificatePrivateKey.Exponent |> System.Convert.FromBase64String),
+                InverseQ = (request.CertificatePrivateKey.InverseQ |> System.Convert.FromBase64String),
+                Modulus = (request.CertificatePrivateKey.Modulus |> System.Convert.FromBase64String),
+                P = (request.CertificatePrivateKey.P |> System.Convert.FromBase64String),
+                Q = (request.CertificatePrivateKey.Q |> System.Convert.FromBase64String)
+            )
         let certificateKey = certificateKeyParameters |> System.Security.Cryptography.RSA.Create
 
         log.LogInformation "Imported private key"
@@ -61,22 +63,27 @@ let Run
 
         let expectedSubjectDistinguishedName = (sprintf "CN=%s" request.DomainName)
         let targetCertificateCollection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection ()
-        let mutable foundCertificate = false
-        let enumerator = certificateCollection.GetEnumerator ()
-        while enumerator.MoveNext() do
-            let certificate = enumerator.Current
-            let certificate =
-                if certificate.SubjectName.Name = expectedSubjectDistinguishedName then
-                    if foundCertificate then
-                        failwith "More than one certificate has the expected subject distinguished name"
-                    foundCertificate <- true
-                    System.Security.Cryptography.X509Certificates.RSACertificateExtensions.CopyWithPrivateKey (
-                        certificate,
-                        certificateKey
-                    )
-                else
-                    certificate
-            targetCertificateCollection.Add(certificate) |> ignore
+        let certificates =
+            certificateCollection
+            |> Seq.cast<System.Security.Cryptography.X509Certificates.X509Certificate2>
+        let foundCertificate =
+            (false, certificates)
+            ||> Seq.fold (fun foundCertificate certificate ->
+                let foundCertificate, certificate =
+                    if certificate.SubjectName.Name = expectedSubjectDistinguishedName then
+                        if foundCertificate then
+                            failwith "More than one certificate has the expected subject distinguished name"
+                        let certificate =
+                            System.Security.Cryptography.X509Certificates.RSACertificateExtensions.CopyWithPrivateKey (
+                                certificate,
+                                certificateKey
+                            )
+                        true, certificate
+                    else
+                        foundCertificate, certificate
+                certificate |> targetCertificateCollection.Add |> ignore
+                foundCertificate
+            )
         if not foundCertificate then
             failwith "No certificate has the expected subject distinguished name"
 

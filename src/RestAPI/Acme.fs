@@ -276,11 +276,15 @@ let internal GetAccount
 
         log.LogInformation "Importing account key..."
 
-        let mutable parsedKeyParameters = new System.Security.Cryptography.ECParameters ()
-        parsedKeyParameters.Curve <- Common.NISTP384 ()
-        parsedKeyParameters.D <- keyParameters.D
-        parsedKeyParameters.Q.X <- keyParameters.QX
-        parsedKeyParameters.Q.Y <- keyParameters.QY
+        let parsedKeyParameters =
+            new System.Security.Cryptography.ECParameters (
+                Curve = Common.NISTP384 (),
+                D = keyParameters.D,
+                Q = new System.Security.Cryptography.ECPoint (
+                    X = keyParameters.QX,
+                    Y = keyParameters.QY
+                )
+            )
 
         let key = parsedKeyParameters |> System.Security.Cryptography.ECDsa.Create
 
