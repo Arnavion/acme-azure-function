@@ -21,7 +21,7 @@ let Run
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
     : System.Threading.Tasks.Task<Response> =
-    Common.Function "BeginAcmeOrder" log (fun () -> FSharp.Control.Tasks.Builders.task {
+    Common.Function "CheckKeyVaultCertificate" log (fun () -> FSharp.Control.Tasks.Builders.task {
         let azureAccount =
             new Azure.Account (
                 request.SubscriptionID,
