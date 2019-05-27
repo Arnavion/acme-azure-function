@@ -13,7 +13,7 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Azure.WebJobs.Extensions.DurableTask" Version="1.*" />
-        <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="*" />
+        <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="1.*" />
         <PackageReference Include="Newtonsoft.Json" Version="11.*" />
         <PackageReference Include="Ply" Version="0.1.*" />
     </ItemGroup>
