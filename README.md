@@ -89,14 +89,20 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 
     AZURE_CDN_PROFILE_NAME='...'
     AZURE_CDN_ENDPOINT_NAME='...'
-    AZURE_CDN_CUSTOM_DOMAIN_NAME='...' # If created via the portal, this is the same as DOMAIN_NAME but with `-` instead of `.`
+    # If created via the portal, this is the same as DOMAIN_NAME but with `-` instead of `.`
+    AZURE_CDN_CUSTOM_DOMAIN_NAME='...'
 
     AZURE_KEYVAULT_NAME='...'
     AZURE_KEYVAULT_CERTIFICATE_NAME='...'
 
     AZURE_STORAGE_ACCOUNT_NAME='...'
 
-    FUNCTION_APP_NAME='...'
+    AZURE_FUNCTION_APP_NAME='...'
+
+    # Must be unique for function app in case multiple function apps share the same storage account
+    # Must follow Azure Storage table name restrictions but with a shorter length because Durable Functions Extension appends some suffixes.
+    # Durable Functions recommends [a-zA-Z][a-zA-Z0-9]{,49}
+    AZURE_DURABLE_TASK_HUB_NAME='...'
 
 
     AZURE_ACCOUNT="$(az account show)"
@@ -242,6 +248,11 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
             --arg AZURE_DURABLE_TASK_HUB_NAME "$AZURE_DURABLE_TASK_HUB_NAME" \
             '{
                 "version": "2.0",
+                "extensions": {
+                    "durableTask": {
+                        "hubName": $AZURE_DURABLE_TASK_HUB_NAME
+                    }
+                },
                 "logging": {
                     "applicationInsights": {
                         "samplingSettings": {
@@ -251,7 +262,7 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
                 }
             }' &&
         >./local.settings.json echo '{ "IsEncrypted": false, "Values": { "FUNCTIONS_EXTENSION_VERSION": "~2", "FUNCTIONS_WORKER_RUNTIME": "dotnet" } }' &&
-        func azure functionapp publish "$FUNCTION_APP_NAME")
+        func azure functionapp publish "$AZURE_FUNCTION_APP_NAME")
     ```
 
 
