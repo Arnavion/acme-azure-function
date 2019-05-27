@@ -238,7 +238,19 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 
     ```sh
     (cd ./bin/Release/netcoreapp2.1/publish/ &&
-        echo '{ "IsEncrypted": false, "Values": { "FUNCTIONS_EXTENSION_VERSION": "~2", "FUNCTIONS_WORKER_RUNTIME": "dotnet" } }' > ./local.settings.json &&
+        >./host.json jq --null-input --sort-keys \
+            --arg AZURE_DURABLE_TASK_HUB_NAME "$AZURE_DURABLE_TASK_HUB_NAME" \
+            '{
+                "version": "2.0",
+                "logging": {
+                    "applicationInsights": {
+                        "samplingSettings": {
+                            "isEnabled": false
+                        }
+                    }
+                }
+            }' &&
+        >./local.settings.json echo '{ "IsEncrypted": false, "Values": { "FUNCTIONS_EXTENSION_VERSION": "~2", "FUNCTIONS_WORKER_RUNTIME": "dotnet" } }' &&
         func azure functionapp publish "$FUNCTION_APP_NAME")
     ```
 
