@@ -5,7 +5,7 @@ open Microsoft.Extensions.Logging
 [<Microsoft.Azure.WebJobs.FunctionName("UpdateCdnCertificate")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
-    ([<Microsoft.Azure.WebJobs.TimerTrigger("0 0 0 * * *")>] timerInfo: Microsoft.Azure.WebJobs.TimerInfo)
+    ([<Microsoft.Azure.WebJobs.TimerTrigger("0 0 1 * * *")>] timerInfo: Microsoft.Azure.WebJobs.TimerInfo)
     // ([<Microsoft.Azure.WebJobs.HttpTrigger("Get")>] request: obj)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
