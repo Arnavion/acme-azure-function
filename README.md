@@ -95,14 +95,11 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
     AZURE_KEYVAULT_NAME='...'
     AZURE_KEYVAULT_CERTIFICATE_NAME='...'
 
+    # Must be unique for each function app. Multiple function apps cannot share the same storage account because of
+    # https://github.com/Azure/azure-functions-host/issues/4499
     AZURE_STORAGE_ACCOUNT_NAME='...'
 
     AZURE_FUNCTION_APP_NAME='...'
-
-    # Must be unique for function app in case multiple function apps share the same storage account
-    # Must follow Azure Storage table name restrictions but with a shorter length because Durable Functions Extension appends some suffixes.
-    # Durable Functions recommends [a-zA-Z][a-zA-Z0-9]{,49}
-    AZURE_DURABLE_TASK_HUB_NAME='...'
 
 
     AZURE_ACCOUNT="$(az account show)"
@@ -130,10 +127,6 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
         --certificate-permissions get import --secret-permissions get set
 
     # Storage account
-    az role assignment create \
-        --assignee "$AZURE_SP_NAME" \
-        --role 'Storage Account Contributor' \
-        --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME"
     az role assignment create \
         --assignee "$AZURE_SP_NAME" \
         --role 'Storage Blob Data Owner' \
@@ -245,14 +238,8 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
     ```sh
     (cd ./bin/Release/netcoreapp2.1/publish/ &&
         >./host.json jq --null-input --sort-keys \
-            --arg AZURE_DURABLE_TASK_HUB_NAME "$AZURE_DURABLE_TASK_HUB_NAME" \
             '{
                 "version": "2.0",
-                "extensions": {
-                    "durableTask": {
-                        "hubName": $AZURE_DURABLE_TASK_HUB_NAME
-                    }
-                },
                 "logging": {
                     "applicationInsights": {
                         "samplingSettings": {
