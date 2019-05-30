@@ -41,9 +41,137 @@ There are two "entrypoint" functions, both using timer triggers:
 The reason to have two separate functions is to allow the CDN custom domain to use the latest certificate *regardless* of how the certificate was created.
 
 
-## ARM template
+```sh
+# See `Settings.fs` for an explanation of what each variable means.
 
-TODO
+DOMAIN_NAME='...'
+
+AZURE_SP_NAME='http://...'
+
+AZURE_RESOURCE_GROUP_NAME='...'
+
+AZURE_APP_INSIGHTS_NAME='...'
+
+AZURE_CDN_PROFILE_NAME='...'
+AZURE_CDN_ENDPOINT_NAME='...'
+
+AZURE_KEYVAULT_NAME='...'
+
+# Must be unique for each function app. Multiple function apps cannot share the same storage account because of
+# https://github.com/Azure/azure-functions-host/issues/4499
+AZURE_STORAGE_ACCOUNT_NAME='...'
+
+AZURE_FUNCTION_APP_NAME='...'
+
+
+AZURE_ACCOUNT="$(az account show)"
+AZURE_SUBSCRIPTION_ID="$(echo "$AZURE_ACCOUNT" | jq --raw-output '.id')"
+
+
+# Create function app SP
+#
+# TODO: Remove this when Azure Function's Managed Service Identity when that becomes available for Linux Consumption apps.
+az ad sp create-for-rbac --name "$AZURE_SP_NAME" --skip-assignment
+
+AZURE_CLIENT_SECRET='...' # Save `password` - it will not appear again
+
+
+# Create CNAME record
+echo "Create CNAME record for $DOMAIN_NAME to $AZURE_CDN_ENDPOINT_NAME.azureedge.net"
+
+
+# Create resource group
+az group create --name "$AZURE_RESOURCE_GROUP_NAME" --location 'West US'
+
+
+# Deploy resources
+az group deployment create --resource-group "$AZURE_RESOURCE_GROUP_NAME" --template-file ./deployment-template.json --parameters "$(
+    jq --null-input \
+        --arg AZURE_APP_INSIGHTS_NAME "$AZURE_APP_INSIGHTS_NAME" \
+        --arg AZURE_CDN_PROFILE_NAME "$AZURE_CDN_PROFILE_NAME" \
+        --arg AZURE_CDN_ENDPOINT_NAME "$AZURE_CDN_ENDPOINT_NAME" \
+        --arg AZURE_CDN_CUSTOM_DOMAIN_NAME "${DOMAIN_NAME//./-}" \
+        --arg DOMAIN_NAME "$DOMAIN_NAME" \
+        --arg AZURE_FUNCTION_APP_NAME "$AZURE_FUNCTION_APP_NAME" \
+        --arg AZURE_FUNCTION_APP_SPID "$(az ad sp show --id "$AZURE_SP_NAME" --query objectId --output tsv)" \
+        --arg AZURE_KEYVAULT_NAME "$AZURE_KEYVAULT_NAME" \
+        --arg AZURE_STORAGE_ACCOUNT_NAME "$AZURE_STORAGE_ACCOUNT_NAME" \
+        '{
+            "app_insights_name": { "value": $AZURE_APP_INSIGHTS_NAME },
+            "cdn_profile_name": { "value": $AZURE_CDN_PROFILE_NAME },
+            "cdn_endpoint_name": { "value": $AZURE_CDN_ENDPOINT_NAME },
+            "cdn_custom_domain_name": { "value": $AZURE_CDN_CUSTOM_DOMAIN_NAME },
+            "domain_name": { "value": $DOMAIN_NAME },
+            "function_app_name": { "value": $AZURE_FUNCTION_APP_NAME },
+            "function_app_spid": { "value": $AZURE_FUNCTION_APP_SPID },
+            "keyvault_name": { "value": $AZURE_KEYVAULT_NAME },
+            "storage_account_name": { "value": $AZURE_STORAGE_ACCOUNT_NAME }
+        }'
+)"
+
+
+# Enable self-permissions on KeyVault
+az keyvault set-policy \
+    --name "$AZURE_KEYVAULT_NAME" --object-id "$(az ad signed-in-user show --query objectId --output tsv)" \
+    --certificate-permissions backup create delete deleteissuers get getissuers import list listissuers managecontacts manageissuers purge recover restore setissuers update \
+    --key-permissions backup create decrypt delete encrypt get import list purge recover restore sign unwrapKey update verify wrapKey \
+    --secret-permissions backup delete get list purge recover restore set \
+    --storage-permissions backup delete deletesas get getsas list listsas purge recover regeneratekey restore set setsas update
+
+
+# Enable static website on storage account
+az storage blob service-properties update \
+    --connection-string "$(
+        az storage account show-connection-string \
+            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
+            --query connectionString --output tsv
+    )" --static-website true --index-document index.xhtml --404-document 404.xhtml
+
+az storage container set-permission \
+    --connection-string "$(
+        az storage account show-connection-string \
+            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
+            --query connectionString --output tsv
+    )" --name '$web' --public-access blob
+
+
+# Grant permissions to function app SP
+
+# Storage account
+#
+# TODO: Storage Blob Data Owner scoped to the $web container should be sufficient but isn't.
+#       Azure complains that the operation requires write permission on the storage account itself.
+#       Perhaps container-scoped permissions only apply when using container-scoped SAS rather than AAD?
+az role assignment create \
+    --assignee "$AZURE_SP_NAME" \
+    --role 'Storage Account Contributor' \
+    --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME"
+
+# CDN
+az role assignment create \
+    --assignee "$AZURE_SP_NAME" \
+    --role 'CDN Endpoint Contributor' \
+    --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Cdn/profiles/$AZURE_CDN_PROFILE_NAME/endpoints/$AZURE_CDN_ENDPOINT_NAME"
+
+
+# Update function app configuration
+
+az functionapp config appsettings set \
+    --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_FUNCTION_APP_NAME" \
+    --settings \
+        "APPINSIGHTS_INSTRUMENTATIONKEY=$(
+            az resource show \
+                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --resource-type 'microsoft.insights/components' --name "$AZURE_APP_INSIGHTS_NAME" \
+                --query 'properties.InstrumentationKey' --output tsv
+        )" \
+        "AzureWebJobsStorage=$(
+            az storage account show-connection-string \
+                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
+                --query connectionString --output tsv
+        )" \
+        'FUNCTIONS_EXTENSION_VERSION=~2' \
+        'FUNCTIONS_WORKER_RUNTIME=dotnet'
+```
 
 
 # Dependencies
@@ -89,8 +217,6 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 
     AZURE_CDN_PROFILE_NAME='...'
     AZURE_CDN_ENDPOINT_NAME='...'
-    # If created via the portal, this is the same as DOMAIN_NAME but with `-` instead of `.`
-    AZURE_CDN_CUSTOM_DOMAIN_NAME='...'
 
     AZURE_KEYVAULT_NAME='...'
     AZURE_KEYVAULT_CERTIFICATE_NAME='...'
@@ -104,39 +230,6 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 
     AZURE_ACCOUNT="$(az account show)"
     AZURE_SUBSCRIPTION_ID="$(echo "$AZURE_ACCOUNT" | jq --raw-output '.id')"
-    ```
-
-1. Create SP
-
-    (TODO: Change this to use the Azure Function's Managed Service Identity when that becomes available for Linux Consumption apps.)
-
-    ```sh
-    az ad sp create-for-rbac --name "$AZURE_SP_NAME" --skip-assignment
-
-    AZURE_CLIENT_SECRET='...' # Save `password` - it will not appear again
-    ```
-
-
-1. Grant permissions to SP
-
-    ```sh
-    # KeyVault
-    az keyvault set-policy \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_KEYVAULT_NAME" \
-        --object-id "$(az ad sp show --id "$AZURE_SP_NAME" --query objectId --output tsv)" \
-        --certificate-permissions get import --secret-permissions get set
-
-    # Storage account
-    az role assignment create \
-        --assignee "$AZURE_SP_NAME" \
-        --role 'Storage Blob Data Owner' \
-        --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME/blobServices/default/containers/\$web"
-
-    # CDN
-    az role assignment create \
-        --assignee "$AZURE_SP_NAME" \
-        --role 'CDN Endpoint Contributor' \
-        --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Cdn/profiles/$AZURE_CDN_PROFILE_NAME/endpoints/$AZURE_CDN_ENDPOINT_NAME"
     ```
 
 
@@ -162,7 +255,7 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
                 --arg AZURE_TENANT_ID "$(echo "$AZURE_ACCOUNT" | jq --raw-output '.tenantId')" \
                 --arg AZURE_CDN_PROFILE_NAME "$AZURE_CDN_PROFILE_NAME" \
                 --arg AZURE_CDN_ENDPOINT_NAME "$AZURE_CDN_ENDPOINT_NAME" \
-                --arg AZURE_CDN_CUSTOM_DOMAIN_NAME "$AZURE_CDN_CUSTOM_DOMAIN_NAME" \
+                --arg AZURE_CDN_CUSTOM_DOMAIN_NAME "${DOMAIN_NAME//./-}" \
                 --arg AZURE_KEYVAULT_NAME "$AZURE_KEYVAULT_NAME" \
                 --arg AZURE_KEYVAULT_CERTIFICATE_NAME "$AZURE_KEYVAULT_CERTIFICATE_NAME" \
                 --arg AZURE_STORAGE_ACCOUNT_NAME "$AZURE_STORAGE_ACCOUNT_NAME" \
@@ -212,6 +305,13 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 
 1. Set function app's `SECRET_SETTINGS` configuration to the same value as the string in `local.settings.json` (with appropriate modifications for production as necessary).
 
+    ```sh
+    az functionapp config appsettings set \
+        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_FUNCTION_APP_NAME" \
+        --settings \
+            'SECRET_SETTINGS=...'
+    ```
+
 1. Change HTTP triggers to timer triggers
 
     ```diff
@@ -236,7 +336,7 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 1. Publish to Azure
 
     ```sh
-    (cd ./bin/Release/netcoreapp2.1/publish/ &&
+    cd ./bin/Release/netcoreapp2.1/publish/ &&
         >./host.json jq --null-input --sort-keys \
             '{
                 "version": "2.0",
@@ -249,7 +349,7 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
                 }
             }' &&
         >./local.settings.json echo '{ "IsEncrypted": false, "Values": { "FUNCTIONS_EXTENSION_VERSION": "~2", "FUNCTIONS_WORKER_RUNTIME": "dotnet" } }' &&
-        func azure functionapp publish "$AZURE_FUNCTION_APP_NAME")
+        func azure functionapp publish "$AZURE_FUNCTION_APP_NAME"
     ```
 
 
