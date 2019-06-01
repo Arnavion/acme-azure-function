@@ -96,6 +96,7 @@ az group deployment create --resource-group "$AZURE_RESOURCE_GROUP_NAME" --templ
         --arg AZURE_FUNCTION_APP_SPID "$(az ad sp show --id "$AZURE_SP_NAME" --query objectId --output tsv)" \
         --arg AZURE_KEYVAULT_NAME "$AZURE_KEYVAULT_NAME" \
         --arg AZURE_STORAGE_ACCOUNT_NAME "$AZURE_STORAGE_ACCOUNT_NAME" \
+        --arg SELF_OBJECT_ID "$(az ad signed-in-user show --query objectId --output tsv)" \
         '{
             "app_insights_name": { "value": $AZURE_APP_INSIGHTS_NAME },
             "cdn_profile_name": { "value": $AZURE_CDN_PROFILE_NAME },
@@ -105,7 +106,8 @@ az group deployment create --resource-group "$AZURE_RESOURCE_GROUP_NAME" --templ
             "function_app_name": { "value": $AZURE_FUNCTION_APP_NAME },
             "function_app_spid": { "value": $AZURE_FUNCTION_APP_SPID },
             "keyvault_name": { "value": $AZURE_KEYVAULT_NAME },
-            "storage_account_name": { "value": $AZURE_STORAGE_ACCOUNT_NAME }
+            "storage_account_name": { "value": $AZURE_STORAGE_ACCOUNT_NAME },
+            "self_object_id": { "value": $SELF_OBJECT_ID }
         }'
 )"
 
@@ -116,15 +118,6 @@ AZURE_STORAGE_ACCOUNT_CONNECTION_STRING="$(
         --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
         --query connectionString --output tsv
 )"
-
-
-# Enable self-permissions on KeyVault
-az keyvault set-policy \
-    --name "$AZURE_KEYVAULT_NAME" --object-id "$(az ad signed-in-user show --query objectId --output tsv)" \
-    --certificate-permissions backup create delete deleteissuers get getissuers import list listissuers managecontacts manageissuers purge recover restore setissuers update \
-    --key-permissions backup create decrypt delete encrypt get import list purge recover restore sign unwrapKey update verify wrapKey \
-    --secret-permissions backup delete get list purge recover restore set \
-    --storage-permissions backup delete deletesas get getsas list listsas purge recover regeneratekey restore set setsas update
 
 
 # Enable static website on storage account
