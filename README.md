@@ -110,6 +110,14 @@ az group deployment create --resource-group "$AZURE_RESOURCE_GROUP_NAME" --templ
 )"
 
 
+# Get storage account connection string
+AZURE_STORAGE_ACCOUNT_CONNECTION_STRING="$(
+    az storage account show-connection-string \
+        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
+        --query connectionString --output tsv
+)"
+
+
 # Enable self-permissions on KeyVault
 az keyvault set-policy \
     --name "$AZURE_KEYVAULT_NAME" --object-id "$(az ad signed-in-user show --query objectId --output tsv)" \
@@ -121,18 +129,10 @@ az keyvault set-policy \
 
 # Enable static website on storage account
 az storage blob service-properties update \
-    --connection-string "$(
-        az storage account show-connection-string \
-            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
-            --query connectionString --output tsv
-    )" --static-website true --index-document index.xhtml --404-document 404.xhtml
+    --connection-string "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" --static-website true --index-document index.xhtml --404-document 404.xhtml
 
 az storage container set-permission \
-    --connection-string "$(
-        az storage account show-connection-string \
-            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
-            --query connectionString --output tsv
-    )" --name '$web' --public-access blob
+    --connection-string "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" --name '$web' --public-access blob
 
 
 # Grant permissions to function app SP
@@ -164,11 +164,7 @@ az functionapp config appsettings set \
                 --resource-group "$AZURE_RESOURCE_GROUP_NAME" --resource-type 'microsoft.insights/components' --name "$AZURE_APP_INSIGHTS_NAME" \
                 --query 'properties.InstrumentationKey' --output tsv
         )" \
-        "AzureWebJobsStorage=$(
-            az storage account show-connection-string \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
-                --query connectionString --output tsv
-        )" \
+        "AzureWebJobsStorage=$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" \
         'FUNCTIONS_EXTENSION_VERSION=~2' \
         'FUNCTIONS_WORKER_RUNTIME=dotnet'
 ```
@@ -237,11 +233,7 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
 
     ```sh
     >./local.settings.json jq --null-input --sort-keys \
-        --arg AZURE_STORAGE_ACCOUNT_CONNECTION_STRING "$(
-            az storage account show-connection-string \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_STORAGE_ACCOUNT_NAME" \
-                --query connectionString --output tsv
-        )" \
+        --arg AZURE_STORAGE_ACCOUNT_CONNECTION_STRING "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" \
         --arg SECRET_SETTINGS "$(
             jq --null-input --sort-keys --compact-output \
                 --arg DOMAIN_NAME "$DOMAIN_NAME" \
