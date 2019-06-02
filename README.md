@@ -122,7 +122,7 @@ AZURE_STORAGE_ACCOUNT_CONNECTION_STRING="$(
 
 # Enable static website on storage account
 az storage blob service-properties update \
-    --connection-string "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" --static-website true --index-document index.xhtml --404-document 404.xhtml
+    --connection-string "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" --static-website true --index-document index.html --404-document 404.html
 
 az storage container set-permission \
     --connection-string "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" --name '$web' --public-access blob
