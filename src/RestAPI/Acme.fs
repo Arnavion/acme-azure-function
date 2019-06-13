@@ -31,13 +31,13 @@ and [<Struct; System.Runtime.Serialization.DataContract>] private Protected = {
     URL: string
 }
 and [<Struct; System.Runtime.Serialization.DataContract>] internal ECWebKey = {
-    [<field:System.Runtime.Serialization.DataMember(Name = "crv")>]
+    [<field:System.Runtime.Serialization.DataMember(Name = "crv", Order = 1)>]
     Curve: string
-    [<field:System.Runtime.Serialization.DataMember(Name = "kty")>]
+    [<field:System.Runtime.Serialization.DataMember(Name = "kty", Order = 2)>]
     KeyType: string
-    [<field:System.Runtime.Serialization.DataMember(Name = "x")>]
+    [<field:System.Runtime.Serialization.DataMember(Name = "x", Order = 3)>]
     X: string
-    [<field:System.Runtime.Serialization.DataMember(Name = "y")>]
+    [<field:System.Runtime.Serialization.DataMember(Name = "y", Order = 4)>]
     Y: string
 }
 and [<Struct; System.Runtime.Serialization.DataContract>] private DirectoryResponse = {
