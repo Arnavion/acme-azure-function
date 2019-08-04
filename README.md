@@ -131,14 +131,15 @@ az storage container set-permission \
 # Grant permissions to function app SP
 
 # Storage account
-#
-# TODO: Storage Blob Data Owner scoped to the $web container should be sufficient but isn't.
-#       Azure complains that the operation requires write permission on the storage account itself.
-#       Perhaps container-scoped permissions only apply when using container-scoped SAS rather than AAD?
 az role assignment create \
     --assignee "$AZURE_SP_NAME" \
     --role 'Storage Account Contributor' \
     --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME"
+
+az role assignment create \
+    --assignee "$AZURE_SP_NAME" \
+    --role 'Storage Blob Data Contributor' \
+    --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME/blobServices/default/containers/\$web"
 
 # CDN
 az role assignment create \
