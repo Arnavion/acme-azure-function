@@ -47,7 +47,7 @@ module RenewKeyVaultCertificateOrchestratorInstance =
                 let needNewCertificate =
                     match checkCertificateResponse.CertificateExpiry with
                     | Some certificateExpiry ->
-                        certificateExpiry < (context.CurrentUtcDateTime + (System.TimeSpan.FromDays 5.0))
+                        certificateExpiry < (context.CurrentUtcDateTime + (System.TimeSpan.FromDays 30.0))
                     | None ->
                         true
 
