@@ -20,9 +20,6 @@
 		"function_app_name": {
 			"type": "string"
 		},
-		"function_app_spid": {
-			"type": "string"
-		},
 		"keyvault_name": {
 			"type": "string"
 		},
@@ -235,19 +232,6 @@
 				"tenantId": "[subscription().tenantId]"
 			}, {
 				"objectId": "[reference(concat('Microsoft.Web/sites/', parameters('function_app_name')), '2016-08-01', 'Full').identity.principalId]",
-				"permissions": {
-					"secrets": [
-						"get",
-						"set"
-					],
-					"certificates": [
-						"get",
-						"import"
-					]
-				},
-				"tenantId": "[subscription().tenantId]"
-			}, {
-				"objectId": "[parameters('function_app_spid')]",
 				"permissions": {
 					"secrets": [
 						"get",

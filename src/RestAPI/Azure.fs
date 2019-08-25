@@ -2,9 +2,10 @@ module acme_azure_function.Azure
 
 open Microsoft.Extensions.Logging
 
-type Auth =
-| ServicePrincipal of ClientID: string * ClientSecret: string * TenantID: string
-| ManagedIdentity of Endpoint: string * Secret: string
+type Auth = {
+    Endpoint: string
+    Secret: string
+}
 
 [<Struct; System.Runtime.Serialization.DataContract>]
 type private TokenResponse = {
@@ -25,32 +26,11 @@ let private GetAuthorization
     : System.Threading.Tasks.Task<System.Net.Http.Headers.AuthenticationHeaderValue> =
     FSharp.Control.Tasks.Builders.task {
         let request =
-            match auth with
-            | ServicePrincipal (clientID, clientSecret, tenantID) ->
-                let request =
-                    new System.Net.Http.HttpRequestMessage (
-                        System.Net.Http.HttpMethod.Post,
-                        (sprintf "https://login.microsoftonline.com/%s/oauth2/token" tenantID)
-                    )
-                request.Content <-
-                    new System.Net.Http.FormUrlEncodedContent (
-                        dict [
-                            ("grant_type", "client_credentials");
-                            ("client_id", clientID);
-                            ("client_secret", clientSecret);
-                            ("resource", resource);
-                        ]
-                    )
-                request
-
-            | ManagedIdentity (endpoint, secret) ->
-                let request =
-                    new System.Net.Http.HttpRequestMessage (
-                        System.Net.Http.HttpMethod.Get,
-                        (sprintf "%s?resource=%s&api-version=2017-09-01" endpoint resource)
-                    )
-                request.Headers.Add ("Secret", secret)
-                request
+            new System.Net.Http.HttpRequestMessage (
+                System.Net.Http.HttpMethod.Get,
+                (sprintf "%s?resource=%s&api-version=2017-09-01" auth.Endpoint resource)
+            )
+        request.Headers.Add ("Secret", auth.Secret)
 
         let! response =
             Common.SendRequest

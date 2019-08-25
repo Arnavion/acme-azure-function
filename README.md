@@ -23,8 +23,6 @@ It is used for <https://www.arnavion.dev>, with Let's Encrypt as the ACME server
 
 - An Azure Function app.
 
-- An Azure Service Principal used by the functions to access to the above-mentioned Azure resources. See below for the precise permissions this SP needs.
-
 
 There are two "entrypoint" functions, both using timer triggers:
 
@@ -46,8 +44,6 @@ The reason to have two separate functions is to allow the CDN custom domain to u
 
 DOMAIN_NAME='...'
 
-AZURE_SP_NAME='http://...'
-
 AZURE_RESOURCE_GROUP_NAME='...'
 
 AZURE_APP_INSIGHTS_NAME='...'
@@ -68,14 +64,6 @@ AZURE_ACCOUNT="$(az account show)"
 AZURE_SUBSCRIPTION_ID="$(echo "$AZURE_ACCOUNT" | jq --raw-output '.id')"
 
 
-# Create function app SP
-#
-# TODO: Remove this when Azure Function's Managed Service Identity when that becomes available for Linux Consumption apps.
-az ad sp create-for-rbac --name "$AZURE_SP_NAME" --skip-assignment
-
-AZURE_CLIENT_SECRET='...' # Save `password` - it will not appear again
-
-
 # Create CNAME record
 echo "Create CNAME record for $DOMAIN_NAME to $AZURE_CDN_ENDPOINT_NAME.azureedge.net"
 
@@ -93,7 +81,6 @@ az group deployment create --resource-group "$AZURE_RESOURCE_GROUP_NAME" --templ
         --arg AZURE_CDN_CUSTOM_DOMAIN_NAME "${DOMAIN_NAME//./-}" \
         --arg DOMAIN_NAME "$DOMAIN_NAME" \
         --arg AZURE_FUNCTION_APP_NAME "$AZURE_FUNCTION_APP_NAME" \
-        --arg AZURE_FUNCTION_APP_SPID "$(az ad sp show --id "$AZURE_SP_NAME" --query objectId --output tsv)" \
         --arg AZURE_KEYVAULT_NAME "$AZURE_KEYVAULT_NAME" \
         --arg AZURE_STORAGE_ACCOUNT_NAME "$AZURE_STORAGE_ACCOUNT_NAME" \
         --arg SELF_OBJECT_ID "$(az ad signed-in-user show --query objectId --output tsv)" \
@@ -104,7 +91,6 @@ az group deployment create --resource-group "$AZURE_RESOURCE_GROUP_NAME" --templ
             "cdn_custom_domain_name": { "value": $AZURE_CDN_CUSTOM_DOMAIN_NAME },
             "domain_name": { "value": $DOMAIN_NAME },
             "function_app_name": { "value": $AZURE_FUNCTION_APP_NAME },
-            "function_app_spid": { "value": $AZURE_FUNCTION_APP_SPID },
             "keyvault_name": { "value": $AZURE_KEYVAULT_NAME },
             "storage_account_name": { "value": $AZURE_STORAGE_ACCOUNT_NAME },
             "self_object_id": { "value": $SELF_OBJECT_ID }
@@ -128,22 +114,30 @@ az storage container set-permission \
     --connection-string "$AZURE_STORAGE_ACCOUNT_CONNECTION_STRING" --name '$web' --public-access blob
 
 
-# Grant permissions to function app SP
+# Get function app identity
+AZURE_FUNCTION_APP_IDENTITY="$(
+    az functionapp show \
+        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_FUNCTION_APP_NAME" \
+        --query 'identity.principalId' --output tsv
+)"
+
+
+# Grant permissions to function app identity
 
 # Storage account
 az role assignment create \
-    --assignee "$AZURE_SP_NAME" \
+    --assignee "$AZURE_FUNCTION_APP_IDENTITY" \
     --role 'Storage Account Contributor' \
     --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME"
 
 az role assignment create \
-    --assignee "$AZURE_SP_NAME" \
+    --assignee "$AZURE_FUNCTION_APP_IDENTITY" \
     --role 'Storage Blob Data Contributor' \
     --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Storage/storageAccounts/$AZURE_STORAGE_ACCOUNT_NAME/blobServices/default/containers/\$web"
 
 # CDN
 az role assignment create \
-    --assignee "$AZURE_SP_NAME" \
+    --assignee "$AZURE_FUNCTION_APP_IDENTITY" \
     --role 'CDN Endpoint Contributor' \
     --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/$AZURE_RESOURCE_GROUP_NAME/providers/Microsoft.Cdn/profiles/$AZURE_CDN_PROFILE_NAME/endpoints/$AZURE_CDN_ENDPOINT_NAME"
 
@@ -201,8 +195,6 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
     ACME_ACCOUNT_KEY_SECRET_NAME='...'
     ACME_CONTACT_URL='mailto:admin@example.com'
 
-    AZURE_SP_NAME='http://...'
-
     AZURE_RESOURCE_GROUP_NAME='...'
 
     AZURE_CDN_PROFILE_NAME='...'
@@ -236,9 +228,6 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
                 --arg ACME_CONTACT_URL "$ACME_CONTACT_URL" \
                 --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
                 --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_RESOURCE_GROUP_NAME" \
-                --arg AZURE_CLIENT_ID "$(az ad sp show --id "$AZURE_SP_NAME" --query appId --output tsv)" \
-                --arg AZURE_CLIENT_SECRET "$AZURE_CLIENT_SECRET" \
-                --arg AZURE_TENANT_ID "$(echo "$AZURE_ACCOUNT" | jq --raw-output '.tenantId')" \
                 --arg AZURE_CDN_PROFILE_NAME "$AZURE_CDN_PROFILE_NAME" \
                 --arg AZURE_CDN_ENDPOINT_NAME "$AZURE_CDN_ENDPOINT_NAME" \
                 --arg AZURE_CDN_CUSTOM_DOMAIN_NAME "${DOMAIN_NAME//./-}" \
@@ -252,9 +241,6 @@ The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation
                     "AcmeContactURL": $ACME_CONTACT_URL,
                     "AzureSubscriptionId": $AZURE_SUBSCRIPTION_ID,
                     "AzureResourceGroupName": $AZURE_RESOURCE_GROUP_NAME,
-                    "AzureClientID": $AZURE_CLIENT_ID,
-                    "AzureClientSecret": $AZURE_CLIENT_SECRET,
-                    "AzureTenantID": $AZURE_TENANT_ID,
                     "AzureCdnProfileName": $AZURE_CDN_PROFILE_NAME,
                     "AzureCdnEndpointName": $AZURE_CDN_ENDPOINT_NAME,
                     "AzureCdnCustomDomainName": $AZURE_CDN_CUSTOM_DOMAIN_NAME,

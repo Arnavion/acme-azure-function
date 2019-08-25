@@ -27,18 +27,6 @@ type RawSettings = {
     [<field: System.Runtime.Serialization.DataMember(Name = "azureResourceGroupName")>]
     AzureResourceGroupName: string
 
-    // The application ID of the service principal that this function should use to access Azure resources
-    [<field: System.Runtime.Serialization.DataMember(Name = "azureClientID")>]
-    AzureClientID: string
-
-    // The password of the service principal that this function should use to access Azure resources
-    [<field: System.Runtime.Serialization.DataMember(Name = "azureClientSecret")>]
-    AzureClientSecret: string
-
-    // The tenant ID of the service principal that this function should use to access Azure resources
-    [<field: System.Runtime.Serialization.DataMember(Name = "azureTenantID")>]
-    AzureTenantID: string
-
     // The name of the Azure CDN profile
     [<field: System.Runtime.Serialization.DataMember(Name = "azureCdnProfileName")>]
     AzureCdnProfileName: string
@@ -73,30 +61,17 @@ let Instance =
         | Some rawSettings -> Newtonsoft.Json.JsonConvert.DeserializeObject<RawSettings> (rawSettings)
         | None -> failwith "SECRET_SETTINGS env var is not set"
 
-    // TODO: MSI auth does not actually work yet, because Linux functions on Consumption plan don't support MSI yet.
-    // The MSI_SECRET env var is set but not the MSI_ENDPOINT env var.
-    //
-    // Ref: https://github.com/Azure/Azure-Functions/issues/1066
-    //
-    // When it becomes available, remove the AzureClientID, AzureClientSecret and AzureTenantID fields from
-    // the deployment SECRET_SETTINGS value.
-    let azureAuth =
-        (
-            "MSI_ENDPOINT" |> System.Environment.GetEnvironmentVariable |> Option.ofObj,
-            "MSI_SECRET" |> System.Environment.GetEnvironmentVariable |> Option.ofObj
-        )
-        ||> Option.map2 (fun msiEndpoint msiSecret -> Azure.Auth.ManagedIdentity (msiEndpoint, msiSecret))
-        |> Option.orElseWith (fun () ->
-            (
-                rawSettings.AzureClientID |> Option.ofObj,
-                rawSettings.AzureClientSecret |> Option.ofObj,
-                rawSettings.AzureTenantID |> Option.ofObj
-            ) |||> Option.map3 (fun clientID clientSecret tenantID -> Azure.Auth.ServicePrincipal (clientID, clientSecret, tenantID))
-        )
-    let azureAuth =
-        match azureAuth with
-        | Some azureAuth -> azureAuth
-        | None -> failwith "Found neither MSI_ENDPOINT+MSI_SECRET nor AzureClientID+AzureClientSecret+AzureTenantID"
+    let msiEndpoint = "MSI_ENDPOINT" |> System.Environment.GetEnvironmentVariable |> Option.ofObj
+    let msiEndpoint =
+        match msiEndpoint with
+        | Some msiEndpoint -> msiEndpoint
+        | None -> failwith "MSI_ENDPOINT env var is not set"
+
+    let msiSecret = "MSI_SECRET" |> System.Environment.GetEnvironmentVariable |> Option.ofObj
+    let msiSecret =
+        match msiSecret with
+        | Some msiSecret -> msiSecret
+        | None -> failwith "MSI_SECRET env var is not set"
 
     {|
         DomainName = rawSettings.DomainName
@@ -109,7 +84,10 @@ let Instance =
         AzureSubscriptionID = rawSettings.AzureSubscriptionID
         AzureResourceGroupName = rawSettings.AzureResourceGroupName
 
-        AzureAuth = azureAuth
+        AzureAuth = {
+            Azure.Auth.Endpoint = msiEndpoint
+            Azure.Auth.Secret = msiSecret
+        }
 
         AzureCdnProfileName = rawSettings.AzureCdnProfileName
         AzureCdnEndpointName = rawSettings.AzureCdnEndpointName
