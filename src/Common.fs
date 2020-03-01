@@ -77,23 +77,35 @@ let Deserialize
         let! contentStream = response.Content.ReadAsStreamAsync ()
         use memoryStream = new System.IO.MemoryStream ()
         let! () = contentStream.CopyToAsync (memoryStream, cancellationToken)
-        memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
-
-        let contentString =
-            using (new System.IO.StreamReader (memoryStream, UTF8Encoding, false, 1024, true)) (fun streamReader ->
-                streamReader.ReadToEnd ()
-            )
-        log.LogInformation ("HTTP response: {statusCode} {content}", response.StatusCode, contentString)
-        memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
 
         let responseType =
             match expectedResponses |> Seq.tryFind (fun (statusCode, _) -> response.StatusCode = statusCode) with
             | Some (_, responseType) -> responseType
-            | None -> failwith (sprintf "%O: %s" response.StatusCode contentString)
+            | None ->
+                memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
+                let contentString =
+                    using (new System.IO.StreamReader (memoryStream, UTF8Encoding, false, 1024, true)) (fun streamReader ->
+                        streamReader.ReadToEnd ()
+                    )
+                failwith (sprintf "%O: %s" response.StatusCode contentString)
 
         if responseType = typedefof<Empty> then
+            log.LogInformation ("HTTP response: {statusCode}", response.StatusCode)
             return (response.StatusCode, (new Empty ()) :> _)
+
+        elif responseType = typedefof<byte array> then
+            log.LogInformation ("HTTP response: {statusCode}", response.StatusCode)
+            return (response.StatusCode, (memoryStream.ToArray()) :> _)
+
         else
+            memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
+            let contentString =
+                using (new System.IO.StreamReader (memoryStream, UTF8Encoding, false, 1024, true)) (fun streamReader ->
+                    streamReader.ReadToEnd ()
+                )
+            log.LogInformation ("HTTP response: {statusCode} {content}", response.StatusCode, contentString)
+            memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
+
             use streamReader = new System.IO.StreamReader (memoryStream)
             return (response.StatusCode, serializer.Deserialize (streamReader, responseType))
     }

@@ -743,17 +743,13 @@ type Account with
                             | Some certificateURL -> certificateURL
                             | None -> failwith "Order does not have certificate URL"
 
-                        let request = new System.Net.Http.HttpRequestMessage (System.Net.Http.HttpMethod.Get, certificateURL)
-
-                        let! response =
-                            Common.SendRequest
-                                this.Client
-                                request
+                        let! certificate, _ =
+                            AccountRequest<byte array>
+                                this
+                                System.Net.Http.HttpMethod.Post
+                                certificateURL
+                                None
                                 [| System.Net.HttpStatusCode.OK |]
-                                this.Log
-                                this.CancellationToken
-
-                        let! certificate = response.Content.ReadAsByteArrayAsync ()
 
                         return certificate
 
