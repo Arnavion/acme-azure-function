@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netcoreapp3.1</TargetFramework>
+        <AzureFunctionsVersion>v3</AzureFunctionsVersion>
+        <RootNamespace>ArnavionDev.AzureFunctions.AcmeFunction</RootNamespace>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <DefineConstants Condition="'$(LOCAL)' == 'true'">$(DefineConstants);LOCAL</DefineConstants>
+        <OtherFlags>$(OtherFlags) --warnon:1182</OtherFlags>
+        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Azure.WebJobs.Extensions.DurableTask" Version="2.*" />
+        <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="3.0.3" />
+        <PackageReference Include="Newtonsoft.Json" Version="11.*" />
+        <PackageReference Include="Ply" Version="0.1.*" />
+        <ProjectReference Include="../Common/ArnavionDev.AzureFunctions.Common.fsproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Include="src/Settings.fs" />
+
+        <Compile Include="src/BeginAcmeOrder.fs" />
+        <Compile Include="src/CheckKeyVaultCertificate.fs" />
+        <Compile Include="src/GetAcmeAccountKey.fs" />
+        <Compile Include="src/CreateCsr.fs" />
+        <Compile Include="src/EndAcmeOrder.fs" />
+        <Compile Include="src/SetDnsTxtRecord.fs" />
+        <Compile Include="src/SetNewKeyVaultCertificate.fs" />
+
+        <Compile Include="src/Orchestrator.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="host.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <Content Include="local.settings.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+        </Content>
+    </ItemGroup>
+
+</Project>

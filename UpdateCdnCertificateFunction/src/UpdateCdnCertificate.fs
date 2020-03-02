@@ -1,21 +1,27 @@
-module acme_azure_function.UpdateCdnCertificate
+module ArnavionDev.AzureFunctions.UpdateCdnCertificateFunction.UpdateCdnCertificate
 
 open Microsoft.Extensions.Logging
 
 [<Microsoft.Azure.WebJobs.FunctionName("UpdateCdnCertificate")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
+#if LOCAL
+    ([<Microsoft.Azure.WebJobs.HttpTrigger("Get")>] request: obj)
+#else
     ([<Microsoft.Azure.WebJobs.TimerTrigger("0 0 1 * * *")>] timerInfo: Microsoft.Azure.WebJobs.TimerInfo)
-    // ([<Microsoft.Azure.WebJobs.HttpTrigger("Get")>] request: obj)
+#endif
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
     : System.Threading.Tasks.Task =
-    Common.Function "UpdateCdnCertificate" log (fun () -> FSharp.Control.Tasks.Builders.task {
+    ArnavionDev.AzureFunctions.Common.Function "UpdateCdnCertificate" log (fun () -> FSharp.Control.Tasks.Builders.task {
+#if LOCAL
+        let _ = request
+#else
         let _ = timerInfo
-        // let _ = request
+#endif
 
         let azureAccount =
-            new Azure.Account (
+            new ArnavionDev.AzureFunctions.RestAPI.Azure.Account (
                 Settings.Instance.AzureSubscriptionID,
                 Settings.Instance.AzureResourceGroupName,
                 Settings.Instance.AzureAuth,

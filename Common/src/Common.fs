@@ -1,4 +1,4 @@
-module internal acme_azure_function.Common
+module ArnavionDev.AzureFunctions.Common
 
 open Microsoft.Extensions.Logging
 
@@ -110,12 +110,12 @@ let Deserialize
             return (response.StatusCode, serializer.Deserialize (streamReader, responseType))
     }
 
-let internal NISTP384 (): System.Security.Cryptography.ECCurve =
+let NISTP384 (): System.Security.Cryptography.ECCurve =
     // CreateFromFriendlyName ("nistP384") works on Windows but not on Linux, so use the OID instead.
     new System.Security.Cryptography.Oid ("1.3.132.0.34")
     |> System.Security.Cryptography.ECCurve.CreateFromOid
 
-let internal Function
+let Function
     (name: string)
     (log: Microsoft.Extensions.Logging.ILogger)
     (body: unit -> System.Threading.Tasks.Task<'a>)

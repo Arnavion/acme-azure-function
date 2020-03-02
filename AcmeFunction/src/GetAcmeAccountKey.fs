@@ -1,11 +1,11 @@
-module acme_azure_function.GetAcmeAccountKey
+module ArnavionDev.AzureFunctions.AcmeFunction.GetAcmeAccountKey
 
 open Microsoft.Extensions.Logging
 
 type Request = {
     SubscriptionID: string
     ResourceGroupName: string
-    AzureAuth: Azure.Auth
+    AzureAuth: ArnavionDev.AzureFunctions.RestAPI.Azure.Auth
     KeyVaultName: string
     AccountKeySecretName: string
 }
@@ -15,15 +15,15 @@ type Response = BeginAcmeOrder.AccountKeyParameters
 [<Microsoft.Azure.WebJobs.FunctionName("GetAcmeAccountKey")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
-    ([<Microsoft.Azure.WebJobs.ActivityTrigger>] request: Request)
+    ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.ActivityTrigger>] request: Request)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
     : System.Threading.Tasks.Task<Response> =
-    Common.Function "GetAcmeAccountKey" log (fun () -> FSharp.Control.Tasks.Builders.task {
+    ArnavionDev.AzureFunctions.Common.Function "GetAcmeAccountKey" log (fun () -> FSharp.Control.Tasks.Builders.task {
         log.LogInformation "Getting Azure account..."
 
         let azureAccount =
-            new Azure.Account (
+            new ArnavionDev.AzureFunctions.RestAPI.Azure.Account (
                 request.SubscriptionID,
                 request.ResourceGroupName,
                 request.AzureAuth,
@@ -53,7 +53,11 @@ let Run
                     request.KeyVaultName,
                     request.AccountKeySecretName
                 )
-                return accountKey |> Common.UTF8Encoding.GetString |> Newtonsoft.Json.JsonConvert.DeserializeObject<BeginAcmeOrder.AccountKeyParameters>
+                return (
+                    accountKey |>
+                    ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetString |>
+                    Newtonsoft.Json.JsonConvert.DeserializeObject<BeginAcmeOrder.AccountKeyParameters>
+                )
 
             | None ->
                 log.LogInformation (
@@ -62,7 +66,7 @@ let Run
                     request.AccountKeySecretName
                 )
 
-                let key = Common.NISTP384 () |> System.Security.Cryptography.ECDsa.Create
+                let key = ArnavionDev.AzureFunctions.Common.NISTP384 () |> System.Security.Cryptography.ECDsa.Create
                 let keyParameters = key.ExportParameters true
                 let accountKey = {
                     BeginAcmeOrder.AccountKeyParameters.D = keyParameters.D |> System.Convert.ToBase64String
@@ -83,7 +87,7 @@ let Run
                     azureAccount.SetKeyVaultSecret
                         request.KeyVaultName
                         request.AccountKeySecretName
-                        (accountKey |> Newtonsoft.Json.JsonConvert.SerializeObject |> Common.UTF8Encoding.GetBytes)
+                        (accountKey |> Newtonsoft.Json.JsonConvert.SerializeObject |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes)
 
                 log.LogInformation (
                     "Uploaded new ACME account key to secret {keyVauleName}/{keyVaultSecretName}",

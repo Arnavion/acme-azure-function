@@ -1,4 +1,4 @@
-module acme_azure_function.EndAcmeOrder
+module ArnavionDev.AzureFunctions.AcmeFunction.EndAcmeOrder
 
 open Microsoft.Extensions.Logging
 
@@ -7,7 +7,7 @@ type Request = {
     AccountURL: string
     DirectoryURL: string
     OrderURL: string
-    PendingChallenge: Acme.EndOrderChallengeParameters option
+    PendingChallenge: ArnavionDev.AzureFunctions.RestAPI.Acme.EndOrderChallengeParameters option
     Csr: string
 }
 
@@ -18,22 +18,22 @@ type Response = {
 [<Microsoft.Azure.WebJobs.FunctionName("EndAcmeOrder")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
-    ([<Microsoft.Azure.WebJobs.ActivityTrigger>] request: Request)
+    ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.ActivityTrigger>] request: Request)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
     : System.Threading.Tasks.Task<Response> =
-    Common.Function "EndAcmeOrder" log (fun () -> FSharp.Control.Tasks.Builders.task {
+    ArnavionDev.AzureFunctions.Common.Function "EndAcmeOrder" log (fun () -> FSharp.Control.Tasks.Builders.task {
         log.LogInformation "Getting ACME account..."
 
         let! acmeAccount =
-            Acme.GetAccount
+            ArnavionDev.AzureFunctions.RestAPI.Acme.GetAccount
                 request.DirectoryURL
                 ({
                     D = request.AccountKey.D |> System.Convert.FromBase64String
                     QX = request.AccountKey.QX |> System.Convert.FromBase64String
                     QY = request.AccountKey.QY |> System.Convert.FromBase64String
                 })
-                (Acme.AccountCreateOptions.Existing request.AccountURL)
+                (ArnavionDev.AzureFunctions.RestAPI.Acme.AccountCreateOptions.Existing request.AccountURL)
                 log
                 cancellationToken
 

@@ -1,35 +1,41 @@
-namespace acme_azure_function
+namespace ArnavionDev.AzureFunctions.AcmeFunction
 
 open Microsoft.Extensions.Logging
 
-module RenewKeyVaultCertificateOrchestratorManager =
-    [<Microsoft.Azure.WebJobs.FunctionName("RenewKeyVaultCertificateOrchestratorManager")>]
+module OrchestratorManager =
+    [<Microsoft.Azure.WebJobs.FunctionName("OrchestratorManager")>]
     [<Microsoft.Azure.WebJobs.Singleton>]
     let Run
+#if LOCAL
+            ([<Microsoft.Azure.WebJobs.HttpTrigger("Get")>] request: obj)
+#else
             ([<Microsoft.Azure.WebJobs.TimerTrigger("0 0 0 * * *")>] timerInfo: Microsoft.Azure.WebJobs.TimerInfo)
-            // ([<Microsoft.Azure.WebJobs.HttpTrigger("Get")>] request: obj)
-            ([<Microsoft.Azure.WebJobs.OrchestrationClient>] client: Microsoft.Azure.WebJobs.DurableOrchestrationClient)
+#endif
+            ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.DurableClient>] client: Microsoft.Azure.WebJobs.Extensions.DurableTask.IDurableOrchestrationClient)
             (log: Microsoft.Extensions.Logging.ILogger)
         : System.Threading.Tasks.Task =
-        Common.Function "RenewKeyVaultCertificateOrchestratorManager" log (fun () -> FSharp.Control.Tasks.Builders.task {
+        ArnavionDev.AzureFunctions.Common.Function "OrchestratorManager" log (fun () -> FSharp.Control.Tasks.Builders.task {
+#if LOCAL
+            let _ = request
+#else
             let _ = timerInfo
-            // let _ = request
+#endif
 
             log.LogInformation "Starting instance..."
-            let! instanceID = client.StartNewAsync ("RenewKeyVaultCertificateOrchestratorInstance", None |> Option.toObj)
+            let! instanceID = client.StartNewAsync ("OrchestratorInstance", "", None |> Option.toObj)
             log.LogInformation ("Started instance {instanceID}", instanceID)
             return ()
         }) :> _
 
-module RenewKeyVaultCertificateOrchestratorInstance =
-    [<Microsoft.Azure.WebJobs.FunctionName("RenewKeyVaultCertificateOrchestratorInstance")>]
+module OrchestratorInstance =
+    [<Microsoft.Azure.WebJobs.FunctionName("OrchestratorInstance")>]
     [<Microsoft.Azure.WebJobs.Singleton>]
     let Run
-        ([<Microsoft.Azure.WebJobs.OrchestrationTrigger>] context: Microsoft.Azure.WebJobs.DurableOrchestrationContext)
+        ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.OrchestrationTrigger>] context: Microsoft.Azure.WebJobs.Extensions.DurableTask.IDurableOrchestrationContext)
         (log: Microsoft.Extensions.Logging.ILogger)
         : System.Threading.Tasks.Task =
-        Common.Function
-            (sprintf "RenewKeyVaultCertificateOrchestratorInstance %s:%s" context.InstanceId (context.CurrentUtcDateTime.ToString "o"))
+        ArnavionDev.AzureFunctions.Common.Function
+            (sprintf "OrchestratorInstance %s:%s" context.InstanceId (context.CurrentUtcDateTime.ToString "o"))
             log
             (fun () -> FSharp.Control.Tasks.Builders.task {
                 let! checkCertificateResponse =
@@ -74,7 +80,7 @@ module RenewKeyVaultCertificateOrchestratorInstance =
                                     BeginAcmeOrder.Request.AccountKey = getAcmeAccountKeyResponse
                                     BeginAcmeOrder.Request.DirectoryURL = Settings.Instance.AcmeDirectoryURL
                                     BeginAcmeOrder.Request.ContactURL = Settings.Instance.AcmeContactURL
-                                    BeginAcmeOrder.Request.DomainName = Settings.Instance.DomainName
+                                    BeginAcmeOrder.Request.TopLevelDomainName = Settings.Instance.TopLevelDomainName
                                 }
                             )
                     }
@@ -84,26 +90,26 @@ module RenewKeyVaultCertificateOrchestratorInstance =
                         context.CallActivityAsync<CreateCsr.Response> (
                             "CreateCsr",
                             {
-                                CreateCsr.Request.DomainName = Settings.Instance.DomainName
+                                CreateCsr.Request.TopLevelDomainName = Settings.Instance.TopLevelDomainName
                             }
                         )
 
 
-                    let! newCertificate, deleteChallengeBlobFromStorageAccountResponse = FSharp.Control.Tasks.Builders.task {
+                    let! newCertificate, deleteDnsTxtRecordResponse = FSharp.Control.Tasks.Builders.task {
                         match! beginAcmeOrderResponse with
                         | BeginAcmeOrder.Response.Pending pending ->
                             let! () =
-                                context.CallActivityAsync<SetChallengeBlobInStorageAccount.Response> (
-                                    "SetChallengeBlobInStorageAccount",
+                                context.CallActivityAsync<SetDnsTxtRecord.Response> (
+                                    "SetDnsTxtRecord",
                                     {
-                                        SetChallengeBlobInStorageAccount.Request.SubscriptionID = Settings.Instance.AzureSubscriptionID
-                                        SetChallengeBlobInStorageAccount.Request.ResourceGroupName = Settings.Instance.AzureResourceGroupName
-                                        SetChallengeBlobInStorageAccount.Request.AzureAuth = Settings.Instance.AzureAuth
-                                        SetChallengeBlobInStorageAccount.Request.StorageAccountName = Settings.Instance.AzureStorageAccountName
-                                        SetChallengeBlobInStorageAccount.Request.Action =
-                                            SetChallengeBlobInStorageAccount.Action.Create (
-                                                pending.ChallengeBlobPath,
-                                                pending.ChallengeBlobContent
+                                        SetDnsTxtRecord.Request.SubscriptionID = Settings.Instance.AzureSubscriptionID
+                                        SetDnsTxtRecord.Request.ResourceGroupName = Settings.Instance.AzureResourceGroupName
+                                        SetDnsTxtRecord.Request.AzureAuth = Settings.Instance.AzureAuth
+                                        SetDnsTxtRecord.Request.TopLevelDomainName = Settings.Instance.TopLevelDomainName
+                                        SetDnsTxtRecord.Request.Action =
+                                            ArnavionDev.AzureFunctions.RestAPI.Azure.SetDnsTxtRecordAction.Create (
+                                                "_acme-challenge",
+                                                pending.DnsTxtRecordContent
                                             )
                                     }
                                 )
@@ -133,19 +139,19 @@ module RenewKeyVaultCertificateOrchestratorInstance =
                                     return Error ex
                             }
 
-                            let deleteChallengeBlobFromStorageAccountResponse =
-                                context.CallActivityAsync<SetChallengeBlobInStorageAccount.Response> (
-                                    "SetChallengeBlobInStorageAccount",
+                            let deleteDnsTxtRecordResponse =
+                                context.CallActivityAsync<SetDnsTxtRecord.Response> (
+                                    "SetDnsTxtRecord",
                                     {
-                                        SetChallengeBlobInStorageAccount.Request.SubscriptionID = Settings.Instance.AzureSubscriptionID
-                                        SetChallengeBlobInStorageAccount.Request.ResourceGroupName = Settings.Instance.AzureResourceGroupName
-                                        SetChallengeBlobInStorageAccount.Request.AzureAuth = Settings.Instance.AzureAuth
-                                        SetChallengeBlobInStorageAccount.Request.StorageAccountName = Settings.Instance.AzureStorageAccountName
-                                        SetChallengeBlobInStorageAccount.Request.Action = SetChallengeBlobInStorageAccount.Action.Delete pending.ChallengeBlobPath
+                                        SetDnsTxtRecord.Request.SubscriptionID = Settings.Instance.AzureSubscriptionID
+                                        SetDnsTxtRecord.Request.ResourceGroupName = Settings.Instance.AzureResourceGroupName
+                                        SetDnsTxtRecord.Request.AzureAuth = Settings.Instance.AzureAuth
+                                        SetDnsTxtRecord.Request.TopLevelDomainName = Settings.Instance.TopLevelDomainName
+                                        SetDnsTxtRecord.Request.Action = ArnavionDev.AzureFunctions.RestAPI.Azure.SetDnsTxtRecordAction.Delete "_acme-challenge"
                                     }
                                 )
 
-                            return endAcmeOrderResponse, Some deleteChallengeBlobFromStorageAccountResponse
+                            return endAcmeOrderResponse, Some deleteDnsTxtRecordResponse
 
                         | BeginAcmeOrder.Response.Ready ready ->
                             let! getAcmeAccountKeyResponse = getAcmeAccountKeyResponse
@@ -186,7 +192,7 @@ module RenewKeyVaultCertificateOrchestratorInstance =
                                         SetNewKeyVaultCertificate.Request.AzureAuth = Settings.Instance.AzureAuth
                                         SetNewKeyVaultCertificate.Request.Certificate = newCertificate
                                         SetNewKeyVaultCertificate.Request.CertificatePrivateKey = createCsrResponse.PrivateKey
-                                        SetNewKeyVaultCertificate.Request.DomainName = Settings.Instance.DomainName
+                                        SetNewKeyVaultCertificate.Request.TopLevelDomainName = Settings.Instance.TopLevelDomainName
                                         SetNewKeyVaultCertificate.Request.KeyVaultName = Settings.Instance.AzureKeyVaultName
                                         SetNewKeyVaultCertificate.Request.KeyVaultCertificateName = Settings.Instance.AzureKeyVaultCertificateName
                                     }
@@ -200,9 +206,9 @@ module RenewKeyVaultCertificateOrchestratorInstance =
                         ()
                     | Error _ -> ()
 
-                    match deleteChallengeBlobFromStorageAccountResponse with
-                    | Some deleteChallengeBlobFromStorageAccountResponse ->
-                        let! () = deleteChallengeBlobFromStorageAccountResponse
+                    match deleteDnsTxtRecordResponse with
+                    | Some deleteDnsTxtRecordResponse ->
+                        let! () = deleteDnsTxtRecordResponse
                         ()
                     | None -> ()
 

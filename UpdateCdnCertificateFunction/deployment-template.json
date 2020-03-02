@@ -23,17 +23,10 @@
 		"keyvault_name": {
 			"type": "string"
 		},
-		"self_object_id": {
-			"type": "string"
-		},
 		"storage_account_name": {
 			"type": "string"
 		},
 
-		"cdn_spid": {
-			"defaultValue": "684d1a83-7c8b-4632-9b6a-81da9ca6fb01",
-			"type": "string"
-		},
 		"server_farms_linux_consumption_plan_name": {
 			"defaultValue": "WestUSLinuxDynamicPlan",
 			"type": "string"
@@ -41,27 +34,6 @@
 	},
 	"variables": {},
 	"resources": [{
-		"type": "Microsoft.Storage/storageAccounts",
-		"apiVersion": "2019-04-01",
-		"name": "[parameters('storage_account_name')]",
-		"location": "[resourceGroup().location]",
-		"kind": "StorageV2",
-		"sku": {
-			"name": "Standard_LRS",
-			"tier": "Standard"
-		},
-		"properties": {
-			"encryption": {
-				"keySource": "Microsoft.Storage",
-				"services": {
-					"blob": {
-						"enabled": true
-					}
-				}
-			},
-			"supportsHttpsTrafficOnly": true
-		}
-	}, {
 		"type": "Microsoft.Cdn/profiles",
 		"apiVersion": "2016-04-02",
 		"name": "[parameters('cdn_profile_name')]",
@@ -123,6 +95,18 @@
 			"queryStringCachingBehavior": "IgnoreQueryString"
 		}
 	}, {
+		"type": "Microsoft.Cdn/profiles/endpoints/providers/roleAssignments",
+		"apiVersion": "2018-01-01-preview",
+		"name": "[concat(parameters('cdn_profile_name'), '/', parameters('cdn_endpoint_name'), '/Microsoft.Authorization/', guid(parameters('cdn_profile_name'), parameters('cdn_endpoint_name'), parameters('function_app_name')))]",
+		"dependsOn": [
+			"[resourceId('Microsoft.Cdn/profiles/endpoints', parameters('cdn_profile_name'), parameters('cdn_endpoint_name'))]",
+			"[resourceId('Microsoft.Web/sites', parameters('function_app_name'))]"
+		],
+		"properties": {
+			"roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '426e0c7f-0c7e-4658-b36f-ff54d6c29b45')]",
+			"principalId": "[reference(concat('Microsoft.Web/sites/', parameters('function_app_name')), '2016-08-01', 'Full').identity.principalId]"
+		}
+	}, {
 		"type": "Microsoft.Cdn/profiles/endpoints/customdomains",
 		"apiVersion": "2016-04-02",
 		"name": "[concat(parameters('cdn_profile_name'), '/', parameters('cdn_endpoint_name'), '/', parameters('cdn_custom_domain_name'))]",
@@ -133,13 +117,40 @@
 			"hostName": "[parameters('domain_name')]"
 		}
 	}, {
-		"type": "microsoft.insights/components",
+		"type": "Microsoft.Insights/components",
 		"apiVersion": "2015-05-01",
 		"name": "[parameters('app_insights_name')]",
 		"location": "[resourceGroup().location]",
 		"kind": "web",
 		"properties": {
 			"Application_Type": "web"
+		}
+	}, {
+		"type": "Microsoft.KeyVault/vaults/accessPolicies",
+		"apiVersion": "2016-10-01",
+		"name": "[concat(parameters('keyvault_name'), '/add')]",
+		"location": "[resourceGroup().location]",
+		"dependsOn": [
+			"[resourceId('Microsoft.Web/sites', parameters('function_app_name'))]"
+		],
+		"properties": {
+			"accessPolicies": [{
+				"objectId": "684d1a83-7c8b-4632-9b6a-81da9ca6fb01",
+				"permissions": {
+					"secrets": [
+						"get"
+					]
+				},
+				"tenantId": "[subscription().tenantId]"
+			}, {
+				"objectId": "[reference(concat('Microsoft.Web/sites/', parameters('function_app_name')), '2016-08-01', 'Full').identity.principalId]",
+				"permissions": {
+					"certificates": [
+						"get"
+					]
+				},
+				"tenantId": "[subscription().tenantId]"
+			}]
 		}
 	}, {
 		"type": "Microsoft.Web/serverfarms",
@@ -157,6 +168,27 @@
 		"properties": {
 			"name": "[parameters('server_farms_linux_consumption_plan_name')]",
 			"reserved": true
+		}
+	}, {
+		"type": "Microsoft.Storage/storageAccounts",
+		"apiVersion": "2019-04-01",
+		"name": "[parameters('storage_account_name')]",
+		"location": "[resourceGroup().location]",
+		"kind": "StorageV2",
+		"sku": {
+			"name": "Standard_LRS",
+			"tier": "Standard"
+		},
+		"properties": {
+			"encryption": {
+				"keySource": "Microsoft.Storage",
+				"services": {
+					"blob": {
+						"enabled": true
+					}
+				}
+			},
+			"supportsHttpsTrafficOnly": true
 		}
 	}, {
 		"type": "Microsoft.Web/sites",
@@ -213,109 +245,5 @@
 			"hostNameType": "Verified"
 		}
 
-	}, {
-		"type": "Microsoft.KeyVault/vaults",
-		"apiVersion": "2016-10-01",
-		"name": "[parameters('keyvault_name')]",
-		"location": "[resourceGroup().location]",
-		"dependsOn": [
-			"[resourceId('Microsoft.Web/sites', parameters('function_app_name'))]"
-		],
-		"properties": {
-			"accessPolicies": [{
-				"objectId": "[parameters('cdn_spid')]",
-				"permissions": {
-					"secrets": [
-						"get"
-					]
-				},
-				"tenantId": "[subscription().tenantId]"
-			}, {
-				"objectId": "[reference(concat('Microsoft.Web/sites/', parameters('function_app_name')), '2016-08-01', 'Full').identity.principalId]",
-				"permissions": {
-					"secrets": [
-						"get",
-						"set"
-					],
-					"certificates": [
-						"get",
-						"import"
-					]
-				},
-				"tenantId": "[subscription().tenantId]"
-			}, {
-				"objectId": "[parameters('self_object_id')]",
-				"permissions": {
-					"certificates": [
-						"backup",
-						"create",
-						"delete",
-						"deleteissuers",
-						"get",
-						"getissuers",
-						"import",
-						"list",
-						"listissuers",
-						"managecontacts",
-						"manageissuers",
-						"purge",
-						"recover",
-						"restore",
-						"setissuers",
-						"update"
-					],
-					"keys": [
-						"backup",
-						"create",
-						"decrypt",
-						"delete",
-						"encrypt",
-						"get",
-						"import",
-						"list",
-						"purge",
-						"recover",
-						"restore",
-						"sign",
-						"unwrapKey",
-						"update",
-						"verify",
-						"wrapKey"
-					],
-					"secrets": [
-						"backup",
-						"delete",
-						"get",
-						"list",
-						"purge",
-						"recover",
-						"restore",
-						"set"
-					],
-					"storage": [
-						"backup",
-						"delete",
-						"deletesas",
-						"get",
-						"getsas",
-						"list",
-						"listsas",
-						"purge",
-						"recover",
-						"regeneratekey",
-						"restore",
-						"set",
-						"setsas",
-						"update"
-					]
-				},
-				"tenantId": "[subscription().tenantId]"
-			}],
-			"sku": {
-				"family": "A",
-				"name": "standard"
-			},
-			"tenantId": "[subscription().tenantId]"
-		}
 	}]
 }

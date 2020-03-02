@@ -1,4 +1,4 @@
-module acme_azure_function.Acme
+module ArnavionDev.AzureFunctions.RestAPI.Acme
 
 open Microsoft.Extensions.Logging
 
@@ -7,7 +7,7 @@ let private ConvertBytesToBase64UrlString (bytes: byte array) : string =
     s.Replace('+', '-').Replace('/', '_').TrimEnd('=');
 
 let private ConvertStringToBase64UrlString (str: string) : string =
-    str |> Common.UTF8Encoding.GetBytes |> ConvertBytesToBase64UrlString
+    str |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes |> ConvertBytesToBase64UrlString
 
 [<Struct; System.Runtime.Serialization.DataContract>]
 type private AcmeRequest = {
@@ -156,7 +156,7 @@ let inline private Request< ^a>
             System.Buffer.BlockCopy ((payloadEncoded |> System.Text.Encoding.ASCII.GetBytes), 0, signatureInput, protectedEncoded.Length + 1, payloadEncoded.Length)
             let signature = (key.SignData (signatureInput, System.Security.Cryptography.HashAlgorithmName.SHA384)) |> ConvertBytesToBase64UrlString
 
-            Common.Serialize
+            ArnavionDev.AzureFunctions.Common.Serialize
                 request
                 serializer
                 {
@@ -164,11 +164,11 @@ let inline private Request< ^a>
                     AcmeRequest.Protected = protectedEncoded
                     AcmeRequest.Signature = signature
                 }
-                Common.ApplicationJoseJsonContentType
+                ArnavionDev.AzureFunctions.Common.ApplicationJoseJsonContentType
         )
 
         let! response =
-            Common.SendRequest
+            ArnavionDev.AzureFunctions.Common.SendRequest
                 client
                 request
                 expectedStatusCodes
@@ -185,7 +185,7 @@ let inline private Request< ^a>
         let location = response.Headers.Location |> Option.ofObj |> Option.map (fun location -> location.ToString())
 
         let! response =
-            Common.Deserialize
+            ArnavionDev.AzureFunctions.Common.Deserialize
                 serializer
                 response
                 (expectedStatusCodes |> Seq.map (fun statusCode -> (statusCode, typedefof< ^a>)))
@@ -200,7 +200,7 @@ let inline private Request< ^a>
         return {| Location = location; Nonce = newNonce; Response = response; StatusCode = statusCode |}
     }
 
-type internal Account internal
+type Account
     (
         client: System.Net.Http.HttpClient,
         serializer: Newtonsoft.Json.JsonSerializer,
@@ -231,17 +231,17 @@ type internal Account internal
     member private __.KeyJwkThumbprint = keyJwkThumbprint
     member private __.NewOrderURL = newOrderURL
 
-type internal AccountKeyParameters = {
+type AccountKeyParameters = {
     D: byte array
     QX: byte array
     QY: byte array
 }
 
-type internal AccountCreateOptions =
+type AccountCreateOptions =
 | Existing of AccountURL: string
 | New of ContactURL: string
 
-let internal GetAccount
+let GetAccount
     (directoryURL: string)
     (keyParameters: AccountKeyParameters)
     (createOptions: AccountCreateOptions)
@@ -278,7 +278,7 @@ let internal GetAccount
 
         let parsedKeyParameters =
             new System.Security.Cryptography.ECParameters (
-                Curve = Common.NISTP384 (),
+                Curve = ArnavionDev.AzureFunctions.Common.NISTP384 (),
                 D = keyParameters.D,
                 Q = new System.Security.Cryptography.ECPoint (
                     X = keyParameters.QX,
@@ -300,9 +300,9 @@ let internal GetAccount
 
         log.LogInformation "Creating account key thumbprint..."
 
-        let sha256Hash = System.Security.Cryptography.SHA256.Create ()
+        use hasher = System.Security.Cryptography.SHA256.Create ()
         let keyJwkJSON = Newtonsoft.Json.JsonConvert.SerializeObject (keyJwk, Newtonsoft.Json.Formatting.None)
-        let keyJwkThumbprint = keyJwkJSON |> Common.UTF8Encoding.GetBytes |> sha256Hash.ComputeHash |> ConvertBytesToBase64UrlString
+        let keyJwkThumbprint = keyJwkJSON |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes |> hasher.ComputeHash |> ConvertBytesToBase64UrlString
 
         log.LogInformation "Created account key thumbprint"
 
@@ -315,7 +315,7 @@ let internal GetAccount
             | None ->
                 log.LogInformation "Getting initial nonce..."
                 let! response =
-                    Request<Common.Empty>
+                    Request<ArnavionDev.AzureFunctions.Common.Empty>
                         client
                         log
                         System.Net.Http.HttpMethod.Head
@@ -443,8 +443,7 @@ type Order =
         OrderURL: string
         AuthorizationURL: string
         ChallengeURL: string
-        ChallengeBlobPath: string
-        ChallengeBlobContent: byte array
+        DnsTxtRecordContent: string
     |}
 | Ready of
     {|
@@ -459,7 +458,7 @@ type EndOrderChallengeParameters = {
 }
 
 type Account with
-    member internal this.BeginOrder
+    member this.BeginOrder
         (domainName: string)
         : System.Threading.Tasks.Task<Order> =
         FSharp.Control.Tasks.Builders.task {
@@ -523,14 +522,14 @@ type Account with
                         if authorization.Status <> "pending" then
                             failwith (sprintf "Authorization has %s status" authorization.Status)
 
-                        let http01Challenge =
+                        let dns01Challenge =
                             authorization.Challenges
-                            |> Seq.filter (fun challenge -> challenge.Type = "http-01" && challenge.Status = "pending")
+                            |> Seq.filter (fun challenge -> challenge.Type = "dns-01" && challenge.Status = "pending")
                             |> Seq.tryHead
-                        let http01Challenge =
-                            match http01Challenge with
-                            | Some http01Challenge -> http01Challenge
-                            | None -> failwith "Did not find any http-01 challenges"
+                        let dns01Challenge =
+                            match dns01Challenge with
+                            | Some dns01Challenge -> dns01Challenge
+                            | None -> failwith "Did not find any dns-01 challenges"
 
                         return
                             Pending
@@ -538,9 +537,15 @@ type Account with
                                     AccountURL = this.AccountURL
                                     OrderURL = orderURL
                                     AuthorizationURL = authorizationURL
-                                    ChallengeURL = http01Challenge.URL
-                                    ChallengeBlobPath = (sprintf "/.well-known/acme-challenge/%s" http01Challenge.Token)
-                                    ChallengeBlobContent = (sprintf "%s.%s" http01Challenge.Token this.KeyJwkThumbprint) |> Common.UTF8Encoding.GetBytes
+                                    ChallengeURL = dns01Challenge.URL
+                                    DnsTxtRecordContent =
+                                        (sprintf "%s.%s" dns01Challenge.Token this.KeyJwkThumbprint)
+                                        |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes
+                                        |> (fun content ->
+                                            use hasher = System.Security.Cryptography.SHA256.Create ()
+                                            content |> hasher.ComputeHash
+                                         )
+                                        |> ConvertBytesToBase64UrlString
                                 |}
 
                     | "processing" ->
@@ -573,7 +578,7 @@ type Account with
                         let request = new System.Net.Http.HttpRequestMessage (System.Net.Http.HttpMethod.Get, certificateURL)
 
                         let! response =
-                            Common.SendRequest
+                            ArnavionDev.AzureFunctions.Common.SendRequest
                                 this.Client
                                 request
                                 [| System.Net.HttpStatusCode.OK |]
@@ -592,7 +597,7 @@ type Account with
             return! DriveOrder order
         }
 
-    member internal this.EndOrder
+    member this.EndOrder
         (orderURL: string)
         (pendingChallenge: EndOrderChallengeParameters option)
         (csr: byte array)

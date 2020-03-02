@@ -1,9 +1,9 @@
-module acme_azure_function.CreateCsr
+module ArnavionDev.AzureFunctions.AcmeFunction.CreateCsr
 
 open Microsoft.Extensions.Logging
 
 type Request = {
-    DomainName: string
+    TopLevelDomainName: string
 }
 
 type Response = {
@@ -24,17 +24,19 @@ and KeyParameters = {
 [<Microsoft.Azure.WebJobs.FunctionName("CreateCsr")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
-    ([<Microsoft.Azure.WebJobs.ActivityTrigger>] request: Request)
+    ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.ActivityTrigger>] request: Request)
     (log: Microsoft.Extensions.Logging.ILogger)
     : System.Threading.Tasks.Task<Response> =
-    Common.Function "CreateCsr" log (fun () -> FSharp.Control.Tasks.Builders.task {
-        log.LogInformation ("Creating CSR for {domainName} ...", request.DomainName)
+    ArnavionDev.AzureFunctions.Common.Function "CreateCsr" log (fun () -> FSharp.Control.Tasks.Builders.task {
+        let domainName = sprintf "*.%s" request.TopLevelDomainName
+
+        log.LogInformation ("Creating CSR for {domainName} ...", domainName)
 
         let key = System.Security.Cryptography.RSA.Create 4096
 
         let csr =
             new System.Security.Cryptography.X509Certificates.CertificateRequest (
-                new System.Security.Cryptography.X509Certificates.X500DistinguishedName (sprintf "CN=%s" request.DomainName),
+                new System.Security.Cryptography.X509Certificates.X500DistinguishedName (sprintf "CN=%s" domainName),
                 key,
                 System.Security.Cryptography.HashAlgorithmName.SHA256,
                 System.Security.Cryptography.RSASignaturePadding.Pkcs1
@@ -53,7 +55,7 @@ let Run
             Q = keyParameters.Q |> System.Convert.ToBase64String
         }
 
-        log.LogInformation ("Created CSR for {domainName}", request.DomainName)
+        log.LogInformation ("Created CSR for {domainName}", domainName)
 
         return {
             Csr = csr

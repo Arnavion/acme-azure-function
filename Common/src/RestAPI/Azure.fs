@@ -1,11 +1,29 @@
-module acme_azure_function.Azure
+module ArnavionDev.AzureFunctions.RestAPI.Azure
 
 open Microsoft.Extensions.Logging
 
-type Auth = {
-    Endpoint: string
-    Secret: string
-}
+type Auth =
+| ManagedIdentity of Endpoint: string * Secret: string
+| ServicePrincipal of ClientID: string * ClientSecret: string * TenantID: string
+
+let GetAuth
+    (clientID: string option)
+    (clientSecret: string option)
+    (tenantID: string option)
+    : Auth =
+    let azureAuth =
+        (
+            "MSI_ENDPOINT" |> System.Environment.GetEnvironmentVariable |> Option.ofObj,
+            "MSI_SECRET" |> System.Environment.GetEnvironmentVariable |> Option.ofObj
+        )
+        ||> Option.map2 (fun msiEndpoint msiSecret -> Auth.ManagedIdentity (msiEndpoint, msiSecret))
+        |> Option.orElseWith (fun () ->
+            (clientID, clientSecret, tenantID)
+            |||> Option.map3 (fun clientID clientSecret tenantID -> Auth.ServicePrincipal (clientID, clientSecret, tenantID))
+        )
+    match azureAuth with
+    | Some azureAuth -> azureAuth
+    | None -> failwith "Found neither MSI_ENDPOINT+MSI_SECRET nor AzureClientID+AzureClientSecret+AzureTenantID"
 
 [<Struct; System.Runtime.Serialization.DataContract>]
 type private TokenResponse = {
@@ -26,14 +44,34 @@ let private GetAuthorization
     : System.Threading.Tasks.Task<System.Net.Http.Headers.AuthenticationHeaderValue> =
     FSharp.Control.Tasks.Builders.task {
         let request =
-            new System.Net.Http.HttpRequestMessage (
-                System.Net.Http.HttpMethod.Get,
-                (sprintf "%s?resource=%s&api-version=2017-09-01" auth.Endpoint resource)
-            )
-        request.Headers.Add ("Secret", auth.Secret)
+            match auth with
+            | ManagedIdentity (endpoint, secret) ->
+                let request =
+                    new System.Net.Http.HttpRequestMessage (
+                        System.Net.Http.HttpMethod.Get,
+                        (sprintf "%s?resource=%s&api-version=2017-09-01" endpoint resource)
+                    )
+                request.Headers.Add ("Secret", secret)
+                request
+            | ServicePrincipal (clientID, clientSecret, tenantID) ->
+                let request =
+                    new System.Net.Http.HttpRequestMessage (
+                        System.Net.Http.HttpMethod.Post,
+                        (sprintf "https://login.microsoftonline.com/%s/oauth2/token" tenantID)
+                    )
+                request.Content <-
+                    new System.Net.Http.FormUrlEncodedContent (
+                        dict [
+                            ("grant_type", "client_credentials");
+                            ("client_id", clientID);
+                            ("client_secret", clientSecret);
+                            ("resource", resource);
+                        ]
+                    )
+                request
 
         let! response =
-            Common.SendRequest
+            ArnavionDev.AzureFunctions.Common.SendRequest
                 client
                 request
                 [| System.Net.HttpStatusCode.OK |]
@@ -41,7 +79,7 @@ let private GetAuthorization
                 cancellationToken
 
         let! tokenResponse =
-            Common.Deserialize
+            ArnavionDev.AzureFunctions.Common.Deserialize
                 serializer
                 response
                 [| (System.Net.HttpStatusCode.OK, typedefof<TokenResponse>) |]
@@ -55,7 +93,7 @@ let private GetAuthorization
     }
 
 
-type internal Account internal
+type Account
     (
         subscriptionID: string,
         resourceGroupName: string,
@@ -96,21 +134,7 @@ type internal Account internal
         return keyVaultAuthorization
     }
 
-    let storageAccountAuthorization = lazy FSharp.Control.Tasks.Builders.task {
-        log.LogInformation "Getting Storage Account API authorization..."
-        let! storageAccountAuthorization =
-            GetAuthorization
-                auth
-                "https://storage.azure.com"
-                client
-                serializer
-                log
-                cancellationToken
-        log.LogInformation "Got Storage Account API authorization"
-        return storageAccountAuthorization
-    }
-
-    member internal this.GetCdnCustomDomainCertificate
+    member this.GetCdnCustomDomainCertificate
         (cdnProfileName: string)
         (cdnEndpointName: string)
         (cdnCustomDomainName: string)
@@ -138,7 +162,7 @@ type internal Account internal
                     failwith "unreachable"
         }
 
-    member internal this.SetCdnCustomDomainCertificate
+    member this.SetCdnCustomDomainCertificate
         (cdnProfileName: string)
         (cdnEndpointName: string)
         (cdnCustomDomainName: string)
@@ -171,12 +195,12 @@ type internal Account internal
                         }
                         CdnCustomDomain_Properties_CustomHttpsParameters.ProtocolType = "ServerNameIndication"
                      } :> obj))
-                    [| (System.Net.HttpStatusCode.OK, typedefof<Common.Empty>) |]
+                    [| (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
 
             return ()
         }
 
-    member internal this.GetKeyVaultCertificate
+    member this.GetKeyVaultCertificate
         (keyVaultName: string)
         (certificateName: string)
         : System.Threading.Tasks.Task<KeyVaultCertificate option> =
@@ -187,7 +211,7 @@ type internal Account internal
                     (this.KeyVaultRequestParameters keyVaultName (sprintf "/certificates/%s?api-version=2016-10-01" certificateName))
                     None
                     [|
-                        (System.Net.HttpStatusCode.NotFound, typedefof<Common.Empty>)
+                        (System.Net.HttpStatusCode.NotFound, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
                         (System.Net.HttpStatusCode.OK, typedefof<GetKeyVaultCertificateResponse>)
                     |]
 
@@ -209,7 +233,7 @@ type internal Account internal
                     failwith "unreachable"
         }
 
-    member internal this.SetKeyVaultCertificate
+    member this.SetKeyVaultCertificate
         (keyVaultName: string)
         (certificateName: string)
         (certificateBytes: byte array)
@@ -222,12 +246,12 @@ type internal Account internal
                     (Some ({
                         SetKeyVaultCertificateRequest.Value = (certificateBytes |> System.Convert.ToBase64String)
                      } :> obj))
-                    [| (System.Net.HttpStatusCode.OK, typedefof<Common.Empty>) |]
+                    [| (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
 
             return ()
         }
 
-    member internal this.GetKeyVaultSecret
+    member this.GetKeyVaultSecret
         (keyVaultName: string)
         (secretName: string)
         : System.Threading.Tasks.Task<byte array option> =
@@ -238,7 +262,7 @@ type internal Account internal
                     (this.KeyVaultRequestParameters keyVaultName (sprintf "/secrets/%s?api-version=2016-10-01" secretName))
                     None
                     [|
-                        (System.Net.HttpStatusCode.NotFound, typedefof<Common.Empty>)
+                        (System.Net.HttpStatusCode.NotFound, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
                         (System.Net.HttpStatusCode.OK, typedefof<GetSetKeyVaultSecret>)
                     |]
 
@@ -254,7 +278,7 @@ type internal Account internal
                     failwith "unreachable"
         }
 
-    member internal this.SetKeyVaultSecret
+    member this.SetKeyVaultSecret
         (keyVaultName: string)
         (secretName: string)
         (secretValue: byte array)
@@ -273,67 +297,47 @@ type internal Account internal
             return ()
         }
 
-    member internal this.SetStorageAccountEnableHttpAccess
-        (storageAccountName: string)
-        (enableHttp: bool)
+    member this.SetDnsTxtRecord
+        (dnsZoneName: string)
+        (action: SetDnsTxtRecordAction)
         : System.Threading.Tasks.Task =
         FSharp.Control.Tasks.Builders.unitTask {
+            let method, name, body, expectedResponses =
+                match action with
+                | Create (name, content) ->
+                    System.Net.Http.HttpMethod.Put,
+                    name,
+                    (Some ({
+                        CreateDnsRecordSet.Properties = {
+                            CreateDnsRecordSet_Properties.TTL = 1
+                            CreateDnsRecordSet_Properties.TXTRecords = [|
+                                {
+                                    CreateDnsRecordSet_Properties_TXTRecord.Value = [| content |]
+                                }
+                            |]
+                        }
+                    } :> obj)),
+                    [| (System.Net.HttpStatusCode.Created, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
+                | Delete name ->
+                    System.Net.Http.HttpMethod.Delete,
+                    name,
+                    None,
+                    [|
+                        (System.Net.HttpStatusCode.Accepted, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
+                        (System.Net.HttpStatusCode.NotFound, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
+                        (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
+                    |]
+
             let! _ =
                 this.Request
-                    System.Net.Http.HttpMethod.Patch
-                    (this.ManagementRequestParameters (sprintf "/providers/Microsoft.Storage/storageAccounts/%s/?api-version=2018-11-01" storageAccountName))
-                    (Some ({
-                        SetEnableHttpAccessOnStorageAccountRequest.Properties = {
-                            SetEnableHttpAccessOnStorageAccountRequest_Properties.SupportsHttpsTrafficOnly = not enableHttp
-                        }
-                    } :> obj))
-                    [| (System.Net.HttpStatusCode.OK, typedefof<Common.Empty>) |]
-
-            return ()
-        }
-
-    member internal __.SetStorageAccountBlob
-        (storageAccountName: string)
-        (action: StorageAccountBlobAction)
-        : System.Threading.Tasks.Task =
-        FSharp.Control.Tasks.Builders.unitTask {
-            let! storageAccountAuthorization = storageAccountAuthorization.Value
-
-            let method, path, blobTypeHeader, body, expectedStatusCodes =
-                match action with
-                | Create (path, content) ->
-                    System.Net.Http.HttpMethod.Put,
-                    path,
-                    Some ("x-ms-blob-type", "BlockBlob"),
-                    Some content,
-                    [| System.Net.HttpStatusCode.Created |]
-                | Delete path ->
-                    System.Net.Http.HttpMethod.Delete,
-                    path,
-                    None,
-                    None,
-                    [| System.Net.HttpStatusCode.Accepted; System.Net.HttpStatusCode.NotFound; System.Net.HttpStatusCode.OK |]
-
-            let url = sprintf "https://%s.blob.core.windows.net%s" storageAccountName path
-            let request = new System.Net.Http.HttpRequestMessage (method, url)
-            request.Headers.Authorization <- storageAccountAuthorization
-            request.Headers.Date <- System.Nullable (new System.DateTimeOffset (System.DateTime.UtcNow))
-            request.Headers.Add ("x-ms-version", "2018-03-28")
-            blobTypeHeader |> Option.iter request.Headers.Add
-
-            body |> Option.iter (fun body ->
-                request.Content <- new System.Net.Http.ByteArrayContent (body)
-                request.Content.Headers.ContentType <-
-                    new System.Net.Http.Headers.MediaTypeHeaderValue (System.Net.Mime.MediaTypeNames.Application.Octet)
-            )
-
-            let! _ =
-                Common.SendRequest
-                    client
-                    request
-                    expectedStatusCodes
-                    log
-                    cancellationToken
+                    method
+                    (this.ManagementRequestParameters (sprintf
+                        "/providers/Microsoft.Network/dnsZones/%s/TXT/%s?api-version=2018-05-01"
+                        dnsZoneName
+                        name
+                    ))
+                    body
+                    expectedResponses
 
             return ()
         }
@@ -367,10 +371,11 @@ type internal Account internal
             let! authorization = authorization.Value
             request.Headers.Authorization <- authorization
 
-            body |> Option.iter (fun body -> Common.Serialize request serializer body Common.ApplicationJsonContentType)
+            body |> Option.iter (fun body ->
+                ArnavionDev.AzureFunctions.Common.Serialize request serializer body ArnavionDev.AzureFunctions.Common.ApplicationJsonContentType)
 
             let! response =
-                Common.SendRequest
+                ArnavionDev.AzureFunctions.Common.SendRequest
                     client
                     request
                     (expectedResponses |> Seq.map (fun (statusCode, _) -> statusCode))
@@ -378,7 +383,7 @@ type internal Account internal
                     cancellationToken
 
             return!
-                Common.Deserialize
+                ArnavionDev.AzureFunctions.Common.Deserialize
                     serializer
                     response
                     expectedResponses
@@ -387,14 +392,14 @@ type internal Account internal
         }
 
 
-and internal KeyVaultCertificate = {
+and KeyVaultCertificate = {
     Expiry: System.DateTime
     Version: string
 }
 
-and internal StorageAccountBlobAction =
-| Create of Path: string * Content: byte array
-| Delete of Path: string
+and SetDnsTxtRecordAction =
+| Create of Name: string * Content: string
+| Delete of Name: string
 
 and [<Struct; System.Runtime.Serialization.DataContract>] private CdnCustomDomainResponse = {
     [<field:System.Runtime.Serialization.DataMember(Name = "properties")>]
@@ -450,11 +455,17 @@ and [<Struct; System.Runtime.Serialization.DataContract>] private GetSetKeyVault
     [<field:System.Runtime.Serialization.DataMember(Name = "value")>]
     Value: string
 }
-and [<Struct; System.Runtime.Serialization.DataContract>] private SetEnableHttpAccessOnStorageAccountRequest = {
+and [<Struct; System.Runtime.Serialization.DataContract>] private CreateDnsRecordSet = {
     [<field:System.Runtime.Serialization.DataMember(Name = "properties")>]
-    Properties: SetEnableHttpAccessOnStorageAccountRequest_Properties
+    Properties: CreateDnsRecordSet_Properties
 }
-and [<Struct; System.Runtime.Serialization.DataContract>] private SetEnableHttpAccessOnStorageAccountRequest_Properties = {
-    [<field:System.Runtime.Serialization.DataMember(Name = "supportsHttpsTrafficOnly")>]
-    SupportsHttpsTrafficOnly: bool
+and [<Struct; System.Runtime.Serialization.DataContract>] private CreateDnsRecordSet_Properties = {
+    [<field:System.Runtime.Serialization.DataMember(Name = "TTL")>]
+    TTL: int
+    [<field:System.Runtime.Serialization.DataMember(Name = "TXTRecords")>]
+    TXTRecords: CreateDnsRecordSet_Properties_TXTRecord array
+}
+and [<Struct; System.Runtime.Serialization.DataContract>] private CreateDnsRecordSet_Properties_TXTRecord = {
+    [<field:System.Runtime.Serialization.DataMember(Name = "value")>]
+    Value: string array
 }

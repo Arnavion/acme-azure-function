@@ -1,4 +1,4 @@
-module acme_azure_function.BeginAcmeOrder
+module ArnavionDev.AzureFunctions.AcmeFunction.BeginAcmeOrder
 
 open Microsoft.Extensions.Logging
 
@@ -6,7 +6,7 @@ type Request = {
     AccountKey: AccountKeyParameters
     DirectoryURL: string
     ContactURL: string
-    DomainName: string
+    TopLevelDomainName: string
 }
 and AccountKeyParameters = {
     D: string
@@ -21,8 +21,7 @@ type Response =
         OrderURL: string
         AuthorizationURL: string
         ChallengeURL: string
-        ChallengeBlobPath: string
-        ChallengeBlobContent: string
+        DnsTxtRecordContent: string
     |}
 | Ready of
     {|
@@ -34,55 +33,56 @@ type Response =
 [<Microsoft.Azure.WebJobs.FunctionName("BeginAcmeOrder")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
-    ([<Microsoft.Azure.WebJobs.ActivityTrigger>] request: Request)
+    ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.ActivityTrigger>] request: Request)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
     : System.Threading.Tasks.Task<Response> =
-    Common.Function "BeginAcmeOrder" log (fun () -> FSharp.Control.Tasks.Builders.task {
+    ArnavionDev.AzureFunctions.Common.Function "BeginAcmeOrder" log (fun () -> FSharp.Control.Tasks.Builders.task {
         log.LogInformation "Getting ACME account..."
 
         let! acmeAccount =
-            Acme.GetAccount
+            ArnavionDev.AzureFunctions.RestAPI.Acme.GetAccount
                 request.DirectoryURL
                 ({
                     D = request.AccountKey.D |> System.Convert.FromBase64String
                     QX = request.AccountKey.QX |> System.Convert.FromBase64String
                     QY = request.AccountKey.QY |> System.Convert.FromBase64String
                 })
-                (Acme.AccountCreateOptions.New request.ContactURL)
+                (ArnavionDev.AzureFunctions.RestAPI.Acme.AccountCreateOptions.New request.ContactURL)
                 log
                 cancellationToken
 
         log.LogInformation "Got ACME account"
 
 
-        log.LogInformation ("Creating order for {domainName} ...", request.DomainName)
+        let domainName = sprintf "*.%s" request.TopLevelDomainName
 
-        let! order = acmeAccount.BeginOrder request.DomainName
+        log.LogInformation ("Creating order for {domainName} ...", domainName)
 
-        log.LogInformation ("Created order for {domainName} : {order}", request.DomainName, (sprintf "%O" order))
+        let! order = acmeAccount.BeginOrder domainName
+
+        log.LogInformation ("Created order for {domainName} : {order}", domainName, (sprintf "%O" order))
 
 
         return
             match order with
-            | Acme.Order.Pending pending ->
+            | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Pending pending ->
                 Response.Pending
                     {|
                         AccountURL = pending.AccountURL
                         OrderURL = pending.OrderURL
                         AuthorizationURL = pending.AuthorizationURL
                         ChallengeURL = pending.ChallengeURL
-                        ChallengeBlobPath = pending.ChallengeBlobPath
-                        ChallengeBlobContent = pending.ChallengeBlobContent |> System.Convert.ToBase64String
+                        DnsTxtRecordContent = pending.DnsTxtRecordContent
                     |}
 
-            | Acme.Order.Ready ready ->
+            | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Ready ready ->
                 Response.Ready
                     {|
                         AccountURL = ready.AccountURL
                         OrderURL = ready.OrderURL
                     |}
 
-            | Acme.Order.Valid certificate ->
+            | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Valid certificate ->
                 Response.Valid (certificate |> System.Convert.ToBase64String)
     })

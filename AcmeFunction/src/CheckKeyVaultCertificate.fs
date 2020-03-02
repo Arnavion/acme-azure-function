@@ -1,11 +1,11 @@
-module acme_azure_function.CheckKeyVaultCertificate
+module ArnavionDev.AzureFunctions.AcmeFunction.CheckKeyVaultCertificate
 
 open Microsoft.Extensions.Logging
 
 type Request = {
     SubscriptionID: string
     ResourceGroupName: string
-    AzureAuth: Azure.Auth
+    AzureAuth: ArnavionDev.AzureFunctions.RestAPI.Azure.Auth
     KeyVaultName: string
     KeyVaultCertificateName: string
 }
@@ -17,13 +17,13 @@ type Response = {
 [<Microsoft.Azure.WebJobs.FunctionName("CheckKeyVaultCertificate")>]
 [<Microsoft.Azure.WebJobs.Singleton>]
 let Run
-    ([<Microsoft.Azure.WebJobs.ActivityTrigger>] request: Request)
+    ([<Microsoft.Azure.WebJobs.Extensions.DurableTask.ActivityTrigger>] request: Request)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
     : System.Threading.Tasks.Task<Response> =
-    Common.Function "CheckKeyVaultCertificate" log (fun () -> FSharp.Control.Tasks.Builders.task {
+    ArnavionDev.AzureFunctions.Common.Function "CheckKeyVaultCertificate" log (fun () -> FSharp.Control.Tasks.Builders.task {
         let azureAccount =
-            new Azure.Account (
+            new ArnavionDev.AzureFunctions.RestAPI.Azure.Account (
                 request.SubscriptionID,
                 request.ResourceGroupName,
                 request.AzureAuth,

@@ -1,4 +1,8 @@
-/bin/
-/obj/
-/.env*
-/local.settings.json
+/AcmeFunction/bin/
+/AcmeFunction/obj/
+/AcmeFunction/local.settings.json
+/Common/bin/
+/Common/obj/
+/UpdateCdnCertificateFunction/bin/
+/UpdateCdnCertificateFunction/obj/
+/UpdateCdnCertificateFunction/local.settings.json
