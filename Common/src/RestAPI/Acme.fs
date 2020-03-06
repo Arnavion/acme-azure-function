@@ -601,7 +601,7 @@ type Account with
         (orderURL: string)
         (pendingChallenge: EndOrderChallengeParameters option)
         (csr: byte array)
-        : System.Threading.Tasks.Task<byte array> =
+        : System.Threading.Tasks.Task<string> =
         FSharp.Control.Tasks.Builders.task {
             match pendingChallenge with
             | Some pendingChallenge ->
@@ -701,7 +701,7 @@ type Account with
 
             let rec DriveOrder
                 (order: OrderResponse)
-                : System.Threading.Tasks.Task<byte array> =
+                : System.Threading.Tasks.Task<string> =
                 FSharp.Control.Tasks.Builders.task {
                     this.Log.LogInformation (
                         "{acmeObject} {acmeObjectURL} has {acmeObjectStatus} status",
@@ -749,7 +749,7 @@ type Account with
                             | None -> failwith "Order does not have certificate URL"
 
                         let! certificate, _ =
-                            AccountRequest<byte array>
+                            AccountRequest<string>
                                 this
                                 System.Net.Http.HttpMethod.Post
                                 certificateURL

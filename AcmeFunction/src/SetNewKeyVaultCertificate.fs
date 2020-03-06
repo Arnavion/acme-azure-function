@@ -36,7 +36,16 @@ let Run
         log.LogInformation "Importing certificates into certificate collection..."
 
         let certificateCollection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection ()
-        request.Certificate |> System.Convert.FromBase64String |> certificateCollection.Import
+        let certs, _ =
+            request.Certificate.Split [| '\n' |]
+            |> Seq.fold (fun (certs, currentCert) line ->
+                if line.Contains("END CERTIFICATE") then
+                    ((currentCert + line + "\n") :: certs, "")
+                else
+                    (certs, currentCert + line + "\n")
+            ) ([], "")
+        for cert in certs do
+            cert |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes |> certificateCollection.Import
 
         log.LogInformation ("Imported {numCertificates} certificates into certificate collection", certificateCollection.Count)
 

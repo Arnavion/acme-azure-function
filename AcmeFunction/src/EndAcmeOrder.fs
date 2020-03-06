@@ -52,6 +52,6 @@ let Run
 
 
         return {
-            Certificate = certificate |> System.Convert.ToBase64String
+            Certificate = certificate
         }
     })

@@ -93,9 +93,14 @@ let Deserialize
             log.LogInformation ("HTTP response: {statusCode}", response.StatusCode)
             return (response.StatusCode, (new Empty ()) :> _)
 
-        elif responseType = typedefof<byte array> then
-            log.LogInformation ("HTTP response: {statusCode}", response.StatusCode)
-            return (response.StatusCode, (memoryStream.ToArray()) :> _)
+        elif responseType = typedefof<string> then
+            memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
+            let contentString =
+                using (new System.IO.StreamReader (memoryStream, UTF8Encoding, false, 1024, true)) (fun streamReader ->
+                    streamReader.ReadToEnd ()
+                )
+            log.LogInformation ("HTTP response: {statusCode} {content}", response.StatusCode, contentString)
+            return (response.StatusCode, contentString :> _)
 
         else
             memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore
