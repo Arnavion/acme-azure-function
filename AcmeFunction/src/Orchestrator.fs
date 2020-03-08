@@ -50,14 +50,7 @@ module OrchestratorInstance =
                         }
                     )
 
-                let needNewCertificate =
-                    match checkCertificateResponse.CertificateExpiry with
-                    | Some certificateExpiry ->
-                        certificateExpiry < (context.CurrentUtcDateTime + (System.TimeSpan.FromDays 30.0))
-                    | None ->
-                        true
-
-                if needNewCertificate then
+                if not checkCertificateResponse.Valid then
                     let getAcmeAccountKeyResponse =
                         context.CallActivityAsync<GetAcmeAccountKey.Response> (
                             "GetAcmeAccountKey",

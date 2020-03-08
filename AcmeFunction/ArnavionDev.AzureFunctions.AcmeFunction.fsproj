@@ -22,6 +22,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Compile Include="src/Asn1.fs" />
+        <Compile Include="src/X509.fs" />
+        <Compile Include="src/Ocsp.fs" />
+
         <Compile Include="src/Settings.fs" />
 
         <Compile Include="src/BeginAcmeOrder.fs" />

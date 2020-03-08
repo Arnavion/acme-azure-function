@@ -11,7 +11,7 @@ type Request = {
 }
 
 type Response = {
-    CertificateExpiry: System.DateTime option
+    Valid: bool
 }
 
 [<Microsoft.Azure.WebJobs.FunctionName("CheckKeyVaultCertificate")>]
@@ -33,35 +33,73 @@ let Run
 
 
         log.LogInformation (
-            "Getting expiry of certificate {keyVaultName}/{keyVaultCertificateName} ...",
+            "Getting secret {keyVaultName}/{keyVaultCertificateName} ...",
             request.KeyVaultName,
             request.KeyVaultCertificateName
         )
 
-        let! certificate =
-            azureAccount.GetKeyVaultCertificate
+        // Get secret instead of certificate, because it has the full cert chain
+        let! secret =
+            azureAccount.GetKeyVaultSecret
                 request.KeyVaultName
                 request.KeyVaultCertificateName
+        let! valid = FSharp.Control.Tasks.Builders.task {
+            match secret with
+            | Some secret ->
+                let certificateCollection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection ()
+                secret |> certificateCollection.Import
 
-        let certificateExpiry =
-            match certificate with
-            | Some certificate ->
+                let certificateExpiry = certificateCollection.[0].NotAfter.ToUniversalTime()
                 log.LogInformation (
-                    "Certificate {keyVaultName}/{keyVaultCertificateName} expires at {expiry}",
+                    "Certificate {keyVaultName}/{keyVaultCertificateName} expires at {certificateExpiry}",
                     request.KeyVaultName,
                     request.KeyVaultCertificateName,
-                    certificate.Expiry.ToString "o"
+                    certificateExpiry.ToString "o"
                 )
-                Some certificate.Expiry
+
+                if certificateExpiry < (System.DateTime.UtcNow + (System.TimeSpan.FromDays 30.0)) then
+                    return false
+
+                else
+                    let certificates =
+                        certificateCollection
+                        |> Seq.cast<System.Security.Cryptography.X509Certificates.X509Certificate2>
+                        |> List.ofSeq
+
+                    let client = new System.Net.Http.HttpClient ()
+                    let rng = System.Security.Cryptography.RandomNumberGenerator.Create ()
+
+                    let mutable chainIsValid = true
+                    let certificatesToVerify = (certificates |> Seq.pairwise).GetEnumerator ()
+                    while chainIsValid && certificatesToVerify.MoveNext () do
+                        let (issuer, certificate) = certificatesToVerify.Current
+                        let! isValid = Ocsp.Verify client rng certificate issuer log cancellationToken
+                        if isValid then
+                            log.LogInformation (
+                                "Certificate {certificateSubjectName} issued by {certificateIssuerName} is valid",
+                                certificate.SubjectName.Name,
+                                certificate.IssuerName.Name
+                            )
+                        else
+                            log.LogInformation (
+                                "Certificate {certificateSubjectName} issued by {certificateIssuerName} is not valid",
+                                certificate.SubjectName.Name,
+                                certificate.IssuerName.Name
+                            )
+                            chainIsValid <- false
+
+                    return chainIsValid
+
             | None ->
                 log.LogInformation (
                     "Certificate {keyVaultName}/{keyVaultCertificateName} does not exist",
                     request.KeyVaultName,
                     request.KeyVaultCertificateName
                 )
-                None
+                return false
+        }
 
         return {
-            CertificateExpiry = certificateExpiry
+            Valid = valid
         }
     })

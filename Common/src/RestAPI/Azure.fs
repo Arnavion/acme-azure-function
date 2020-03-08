@@ -101,8 +101,6 @@ type Account
         log: Microsoft.Extensions.Logging.ILogger,
         cancellationToken: System.Threading.CancellationToken
     ) =
-    static let UnixEpoch = new System.DateTime (1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)
-
     let client = new System.Net.Http.HttpClient ()
     let serializer = new Newtonsoft.Json.JsonSerializer ()
 
@@ -221,11 +219,11 @@ type Account
                     None
 
                 | System.Net.HttpStatusCode.OK, (:? GetKeyVaultCertificateResponse as getKeyVaultCertificateResponse) ->
-                    let expiry = UnixEpoch + (System.TimeSpan.FromSeconds (getKeyVaultCertificateResponse.Attributes.Expiry |> float))
+                    let bytes = getKeyVaultCertificateResponse.Bytes |> System.Convert.FromBase64String
                     let version = (getKeyVaultCertificateResponse.ID.Split '/') |> Seq.last
 
                     Some {
-                        Expiry = expiry
+                        Bytes = bytes
                         Version = version
                     }
 
@@ -393,7 +391,7 @@ type Account
 
 
 and KeyVaultCertificate = {
-    Expiry: System.DateTime
+    Bytes: byte array
     Version: string
 }
 
@@ -435,15 +433,11 @@ and [<Struct; System.Runtime.Serialization.DataContract>] private CdnCustomDomai
     [<field:System.Runtime.Serialization.DataMember(Name = "updateRule")>]
     UpdateRule: string
 }
-and [<Struct; System.Runtime.Serialization.DataContract>] private GetKeyVaultCertificateResponse_Attributes = {
-    [<field:System.Runtime.Serialization.DataMember(Name = "exp")>]
-    Expiry: uint64
-}
 and [<Struct; System.Runtime.Serialization.DataContract>] private GetKeyVaultCertificateResponse = {
-    [<field:System.Runtime.Serialization.DataMember(Name = "attributes")>]
-    Attributes: GetKeyVaultCertificateResponse_Attributes
     [<field:System.Runtime.Serialization.DataMember(Name = "id")>]
     ID: string
+    [<field:System.Runtime.Serialization.DataMember(Name = "cer")>]
+    Bytes: string
 }
 and [<Struct; System.Runtime.Serialization.DataContract>] private SetKeyVaultCertificateRequest = {
     [<field:System.Runtime.Serialization.DataMember(Name = "value")>]
