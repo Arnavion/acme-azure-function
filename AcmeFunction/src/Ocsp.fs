@@ -10,10 +10,13 @@ let private OcspRequestContentType: System.Net.Http.Headers.MediaTypeHeaderValue
 let private OcspResponseContentType: System.Net.Http.Headers.MediaTypeHeaderValue =
     new System.Net.Http.Headers.MediaTypeHeaderValue ("application/ocsp-response")
 
+[<Literal>]
 let private OcspNonceOid: Asn1.ObjectIdentifier = "1.3.6.1.5.5.7.48.1.2"
 
+[<Literal>]
 let private OcspBasicOid: Asn1.ObjectIdentifier = "1.3.6.1.5.5.7.48.1.1"
 
+[<Literal>]
 let private SHA1Oid: Asn1.ObjectIdentifier = "1.3.14.3.2.26"
 
 type private OcspRequest = {
@@ -31,17 +34,17 @@ and private Request = {
 
 and private CertID = {
     HashAlgorithm: X509.AlgorithmIdentifier
-    IssuerNameHash: byte array
-    IssuerKeyHash: byte array
+    IssuerNameHash: Asn1.OctetString
+    IssuerKeyHash: Asn1.OctetString
     SerialNumber: X509.CertificateSerialNumber
 }
 
-and internal OcspResponse = {
+and private OcspResponse = {
     ResponseStatus: OcspResponseStatus
-    ResponseBytes: ResponseBytes
+    ResponseBytes: ResponseBytes option
 }
 
-and internal OcspResponseStatus =
+and private OcspResponseStatus =
 | Successful
 | MalformedRequest
 | InternalError
@@ -49,32 +52,118 @@ and internal OcspResponseStatus =
 | SigRequired
 | Unauthorized
 
-and internal ResponseBytes = {
+and private ResponseBytes = {
     ResponseType: Asn1.ObjectIdentifier
-    Response: byte array
+    Response: Asn1.OctetString
 }
 
-// and internal BasicOcspResponse = {
-//     TbsResponseData: ResponseData
-// }
+and private BasicOcspResponse = {
+    TbsResponseData: ResponseData
+    SignatureAlgorithm: X509.AlgorithmIdentifier
+    Signature: Asn1.BitString
+}
 
-// and internal ResponseData = {
-//     ResponderID: ResponderID
-//     ProducedAt: Asn1.GeneralizedTime
-//     Responses: SingleResponse array
-// }
+and private ResponseData = {
+    ResponderID: ResponderID
+    ProducedAt: Asn1.GeneralizedTime
+    Responses: SingleResponse list
+}
 
-// and internal SingleResponse = {
-//     CertID: CertID
-//     CertStatis: CertStatus
-// }
+and private ResponderID =
+| ByName of X509.Name
 
-// and internal CertStatus =
-// | Good
-// | Revoked
-// | Unknown
+and private SingleResponse = {
+    CertID: CertID
+    CertStatus: CertStatus
+    ThisUpdate: Asn1.GeneralizedTime
+}
 
-and private Encodable =
+and private CertStatus =
+| Good
+| Revoked
+| Unknown
+
+let internal DecodeResponse (bytes: System.ReadOnlyMemory<byte>): unit =
+    let rec (|AsBasicOcspResponse|_|) (value: Asn1.Type): BasicOcspResponse option =
+        match value with
+        | Asn1.Type.Sequence ((AsResponseData tbsResponseData) :: (AsAlgorithmIdentifier signatureAlgorithm) :: (Asn1.Type.BitString signature) :: _) ->
+            Some {
+                TbsResponseData = tbsResponseData
+                SignatureAlgorithm = signatureAlgorithm
+                Signature = signature
+            }
+        | _ -> None
+
+    and (|AsOcspResponse|_|) (value: Asn1.Type): OcspResponse option =
+        match value with
+        | Asn1.Type.Sequence ((AsOcspResponseStatus responseStatus) :: rest) ->
+            let responseBytes =
+                match rest with
+                | [] -> None
+                | Asn1.Type.ContextSpecific (0x00uy, true, AsResponseBytes responseBytes) -> Some responseBytes
+                | _ -> failwith (sprintf "could not parse OcspResponse from %O" value)
+            Some {
+                ResponseStatus = responseStatus
+                ResponseBytes = responseBytes
+            }
+        | _ -> None
+
+    and (|AsOcspResponseStatus|_|) (value: Asn1.Type): OcspResponseStatus option =
+        match value with
+        | Asn1.Type.Enumerated value ->
+            let value = value |> int
+            match value with
+            | 0 -> Some (OcspResponseStatus.Successful, rest)
+            | 1 -> Some (OcspResponseStatus.MalformedRequest, rest)
+            | 2 -> Some (OcspResponseStatus.InternalError, rest)
+            | 3 -> Some (OcspResponseStatus.TryLater, rest)
+            | 5 -> Some (OcspResponseStatus.SigRequired, rest)
+            | 6 -> Some (OcspResponseStatus.Unauthorized, rest)
+            | _ -> failwith (sprintf "could not parse OcspResponseStatus from %O" value)
+        | _ -> None
+
+    and (|AsResponderID|_|) (value: Asn1.Type): ResponderID option =
+        match value with
+        | Asn1.Type.ContextSpecific (0x01uy, true, X509.AsName name) -> Some (ResponderID.ByName name)
+        | _ -> None
+
+    and (|AsResponseBytes|_|) (value: Asn1.Type): ResponseBytes option =
+        match value with
+        | Asn1.Type.Sequence (Asn1.Type.ObjectIdentifier responseType :: Asn1.Type.OctetString responseBytes :: []) ->
+            Some ({
+                ResponseType = responseType
+                Response = responseBytes
+            }, rest)
+        | _ -> None
+
+    and (|AsResponseData|_|) (value: Asn1.Type): ResponseData option =
+        match value with
+        | Asn1.Type.Sequence elements ->
+            let elements =
+                match elements with
+                | (Asn1.Type.ContextSpecific (Asn1.Type.Integer System.Numerics.BigInteger.Zero) :: elements) -> elements
+                | elements -> elements
+            match elements with
+            | (AsResponseID responderID) :: (Asn1.Type.GeneralizedTime producedAt) :: (Asn1.Type.Sequence (AsSingleResponse singleResponse)) :: _ ->
+                Some ({
+                    ResponderID = responderID
+                    ProducedAt = producedAt
+                    Responses = [ response ]
+                }, rest)
+            | _ -> None
+        | _ -> None
+
+    and (|AsSingleResponse|_|) (value: Asn1.Type): (SingleResponse * byte list) option =
+        match bytes with
+        | _ -> None
+
+    let value = bytes |> Asn1.Decode
+    match value with
+    | AsOcspResponse response -> response
+    | _ -> failwith (sprintf "could not parse OCSP response from %A" (bytes.ToArray ()))
+
+
+type private Encodable =
 | OcspRequest of OcspRequest
 | TbsRequest of TbsRequest
 | Request of Request
@@ -115,7 +204,17 @@ let rec private Encode (value: Encodable): Asn1.Encodable =
             value.SerialNumber |> X509.Encodable.CertificateSerialNumber |> X509.Encode;
         ]
 
-let rec internal (|AsOcspResponse|_|) (bytes: byte list): OcspResponse option =
+let rec private (|AsBasicOcspResponse|_|) (bytes: byte list): BasicOcspResponse option =
+    match bytes with
+    | Asn1.AsSequence (AsResponseData (tbsResponseData, X509.AsAlgorithmIdentifier (signatureAlgorithm, Asn1.AsBitString (signature, []))), []) ->
+        Some {
+            TbsResponseData = tbsResponseData
+            SignatureAlgorithm = signatureAlgorithm
+            Signature = signature
+        }
+    | _ -> None
+
+and private (|AsOcspResponse|_|) (bytes: byte list): OcspResponse option =
     match bytes with
     | Asn1.AsSequence (AsOcspResponseStatus (responseStatus, Asn1.AsContextSpecific (0x00uy, true, AsResponseBytes (responseBytes, []), [])), []) ->
         Some {
@@ -141,6 +240,12 @@ and private (|AsOcspResponseStatus|_|) (bytes: byte list): (OcspResponseStatus *
         | :? System.OverflowException -> None
     | _ -> None
 
+and private (|AsResponderID|_|) (bytes: byte list): (ResponderID * byte list) option =
+    match bytes with
+    | Asn1.AsContextSpecific (0x01uy, true, X509.AsName name, rest) ->
+        Some (ResponderID.ByName name, rest)
+    | _ -> None
+
 and private (|AsResponseBytes|_|) (bytes: byte list): (ResponseBytes * byte list) option =
     match bytes with
     | Asn1.AsSequence (Asn1.AsObjectIdentifier (responseType, Asn1.AsOctetString (responseBytes, [])), rest) ->
@@ -148,6 +253,20 @@ and private (|AsResponseBytes|_|) (bytes: byte list): (ResponseBytes * byte list
             ResponseType = responseType
             Response = responseBytes
         }, rest)
+    | _ -> None
+
+and private (|AsResponseData|_|) (bytes: byte list): (ResponseData * byte list) option =
+    match bytes with
+    | Asn1.AsSequence (AsResponderID (responderID, Asn1.AsGeneralizedTime (producedAt, Asn1.AsSequence (AsSingleResponse (response, []), []))), rest) ->
+        Some ({
+            ResponderID = responderID
+            ProducedAt = producedAt
+            Responses = [ response ]
+        }, rest)
+    | _ -> None
+
+and private (|AsSingleResponse|_|) (bytes: byte list): (SingleResponse * byte list) option =
+    match bytes with
     | _ -> None
 
 let private SendRequest
@@ -158,7 +277,7 @@ let private SendRequest
     (uri: string)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
-    : System.Threading.Tasks.Task<OcspResponse> = FSharp.Control.Tasks.Builders.task {
+    : System.Threading.Tasks.Task<BasicOcspResponse> = FSharp.Control.Tasks.Builders.task {
         let request =
             let serialNumberString = certificate.SerialNumber
             let serialNumber = Array.zeroCreate (serialNumberString.Length / 2)
@@ -222,10 +341,21 @@ let private SendRequest
             | AsOcspResponse response -> response
             | _ -> failwith (sprintf "malformed OCSP response %A" responseBytes)
 
-        if response.StatusCode <> System.Net.HttpStatusCode.OK then
-            failwith (sprintf "OCSP response returned %O %O" response.StatusCode responseTyped)
+        let response =
+            match responseTyped.ResponseStatus, responseTyped.ResponseBytes.ResponseType, responseBytes with
+            | Successful, OcspBasicOid, AsBasicOcspResponse response ->
+                response
 
-        return responseTyped
+            | Successful, OcspBasicOid, _ ->
+                failwith (sprintf "malformed OCSP response %A" responseBytes)
+
+            | Successful, _, _ ->
+                failwith (sprintf "OCSP response contains unrecognized response type OID %O" responseTyped.ResponseBytes.ResponseType)
+
+            | _ ->
+                failwith (sprintf "OCSP response has status %O" responseTyped.ResponseStatus)
+
+        return response
     }
 
 let internal Verify

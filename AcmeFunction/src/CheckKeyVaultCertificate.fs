@@ -69,12 +69,12 @@ let Run
                     let client = new System.Net.Http.HttpClient ()
                     let rng = System.Security.Cryptography.RandomNumberGenerator.Create ()
 
-                    let mutable chainIsValid = true
+                    let mutable valid = true
                     let certificatesToVerify = (certificates |> Seq.pairwise).GetEnumerator ()
-                    while chainIsValid && certificatesToVerify.MoveNext () do
+                    while valid && certificatesToVerify.MoveNext () do
                         let (issuer, certificate) = certificatesToVerify.Current
-                        let! isValid = Ocsp.Verify client rng certificate issuer log cancellationToken
-                        if isValid then
+                        let! certIsValid = Ocsp.Verify client rng certificate issuer log cancellationToken
+                        if certIsValid then
                             log.LogInformation (
                                 "Certificate {certificateSubjectName} issued by {certificateIssuerName} is valid",
                                 certificate.SubjectName.Name,
@@ -86,9 +86,9 @@ let Run
                                 certificate.SubjectName.Name,
                                 certificate.IssuerName.Name
                             )
-                            chainIsValid <- false
+                            valid <- false
 
-                    return chainIsValid
+                    return valid
 
             | None ->
                 log.LogInformation (
