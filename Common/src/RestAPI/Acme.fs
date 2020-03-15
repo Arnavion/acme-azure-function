@@ -231,19 +231,13 @@ type Account
     member private __.KeyJwkThumbprint = keyJwkThumbprint
     member private __.NewOrderURL = newOrderURL
 
-type AccountKeyParameters = {
-    D: byte array
-    QX: byte array
-    QY: byte array
-}
-
 type AccountCreateOptions =
 | Existing of AccountURL: string
 | New of ContactURL: string
 
 let GetAccount
     (directoryURL: string)
-    (keyParameters: AccountKeyParameters)
+    (key: System.Security.Cryptography.ECDsa)
     (createOptions: AccountCreateOptions)
     (log: Microsoft.Extensions.Logging.ILogger)
     (cancellationToken: System.Threading.CancellationToken)
@@ -274,28 +268,13 @@ let GetAccount
         log.LogInformation ("Got directory {directoryURL}", directoryURL)
 
 
-        log.LogInformation "Importing account key..."
-
-        let parsedKeyParameters =
-            new System.Security.Cryptography.ECParameters (
-                Curve = ArnavionDev.AzureFunctions.Common.NISTP384 (),
-                D = keyParameters.D,
-                Q = new System.Security.Cryptography.ECPoint (
-                    X = keyParameters.QX,
-                    Y = keyParameters.QY
-                )
-            )
-
-        let key = parsedKeyParameters |> System.Security.Cryptography.ECDsa.Create
-
+        let keyParameters = key.ExportParameters true
         let keyJwk = {
             ECWebKey.Curve = "P-384"
             ECWebKey.KeyType = "EC"
-            ECWebKey.X = parsedKeyParameters.Q.X |> ConvertBytesToBase64UrlString
-            ECWebKey.Y = parsedKeyParameters.Q.Y |> ConvertBytesToBase64UrlString
+            ECWebKey.X = keyParameters.Q.X |> ConvertBytesToBase64UrlString
+            ECWebKey.Y = keyParameters.Q.Y |> ConvertBytesToBase64UrlString
         }
-
-        log.LogInformation "Imported account key"
 
 
         log.LogInformation "Creating account key thumbprint..."
@@ -439,26 +418,15 @@ let inline private AccountRequest< ^a>
 type Order =
 | Pending of
     {|
-        AccountURL: string
         OrderURL: string
         AuthorizationURL: string
         ChallengeURL: string
         DnsTxtRecordContent: string
     |}
-| Ready of
-    {|
-        AccountURL: string
-        OrderURL: string
-    |}
-| Valid of Certificate: byte array
-
-type EndOrderChallengeParameters = {
-    AuthorizationURL: string
-    ChallengeURL: string
-}
+| Ready of OrderURL: string
 
 type Account with
-    member this.BeginOrder
+    member this.PlaceOrder
         (domainName: string)
         : System.Threading.Tasks.Task<Order> =
         FSharp.Control.Tasks.Builders.task {
@@ -534,7 +502,6 @@ type Account with
                         return
                             Pending
                                 {|
-                                    AccountURL = this.AccountURL
                                     OrderURL = orderURL
                                     AuthorizationURL = authorizationURL
                                     ChallengeURL = dns01Challenge.URL
@@ -563,31 +530,7 @@ type Account with
 
                     | "ready" ->
                         return
-                            Ready
-                                {|
-                                    AccountURL = this.AccountURL
-                                    OrderURL = orderURL
-                                |}
-
-                    | "valid" ->
-                        let certificateURL =
-                            match order.CertificateURL |> Option.ofObj with
-                            | Some certificateURL -> certificateURL
-                            | None -> failwith "Order does not have certificate URL"
-
-                        let request = new System.Net.Http.HttpRequestMessage (System.Net.Http.HttpMethod.Get, certificateURL)
-
-                        let! response =
-                            ArnavionDev.AzureFunctions.Common.SendRequest
-                                this.Client
-                                request
-                                [| System.Net.HttpStatusCode.OK |]
-                                this.Log
-                                this.CancellationToken
-
-                        let! certificate = response.Content.ReadAsByteArrayAsync ()
-
-                        return Valid certificate
+                            Ready orderURL
 
                     | _ ->
                         failwith "Order has unexpected status"
@@ -597,99 +540,99 @@ type Account with
             return! DriveOrder order
         }
 
-    member this.EndOrder
-        (orderURL: string)
-        (pendingChallenge: EndOrderChallengeParameters option)
-        (csr: byte array)
-        : System.Threading.Tasks.Task<string> =
-        FSharp.Control.Tasks.Builders.task {
-            match pendingChallenge with
-            | Some pendingChallenge ->
-                this.Log.LogInformation ("Completing challenge {challengeURL} ...", pendingChallenge.ChallengeURL)
+    member this.CompleteAuthorization
+        (authorizationURL: string)
+        (challengeURL: string)
+        : System.Threading.Tasks.Task =
+        FSharp.Control.Tasks.Builders.unitTask {
+            this.Log.LogInformation ("Completing challenge {challengeURL} ...", challengeURL)
 
-                let! challenge, _ =
-                    AccountRequest<ChallengeResponse>
-                        this
-                        System.Net.Http.HttpMethod.Post
-                        pendingChallenge.ChallengeURL
-                        (Some (new ChallengeCompleteRequest () :> obj))
-                        [| System.Net.HttpStatusCode.OK |]
+            let! challenge, _ =
+                AccountRequest<ChallengeResponse>
+                    this
+                    System.Net.Http.HttpMethod.Post
+                    challengeURL
+                    (Some (new ChallengeCompleteRequest () :> obj))
+                    [| System.Net.HttpStatusCode.OK |]
 
-                let rec DriveChallenge
-                    (challenge: ChallengeResponse)
-                    : System.Threading.Tasks.Task = FSharp.Control.Tasks.Builders.unitTask {
-                        this.Log.LogInformation (
-                            "{acmeObject} {acmeObjectURL} has {acmeObjectStatus} status",
-                            "Challenge",
-                            pendingChallenge.ChallengeURL,
-                            challenge.Status
-                        )
+            let rec DriveChallenge
+                (challenge: ChallengeResponse)
+                : System.Threading.Tasks.Task = FSharp.Control.Tasks.Builders.unitTask {
+                    this.Log.LogInformation (
+                        "{acmeObject} {acmeObjectURL} has {acmeObjectStatus} status",
+                        "Challenge",
+                        challengeURL,
+                        challenge.Status
+                    )
 
-                        match challenge.Status with
-                        | "pending"
-                        | "processing" ->
-                            let! () = 1.0 |> System.TimeSpan.FromSeconds |> System.Threading.Tasks.Task.Delay
+                    match challenge.Status with
+                    | "pending"
+                    | "processing" ->
+                        let! () = 1.0 |> System.TimeSpan.FromSeconds |> System.Threading.Tasks.Task.Delay
 
-                            let! challenge, _ =
-                                AccountRequest<ChallengeResponse>
-                                    this
-                                    System.Net.Http.HttpMethod.Post
-                                    pendingChallenge.ChallengeURL
-                                    None
-                                    [| System.Net.HttpStatusCode.OK |]
-
-                            return! DriveChallenge challenge
-
-                        | "valid" ->
-                            ()
-
-                        | _ ->
-                            failwith "Challenge has unexpected status"
-                    }
-
-                let! () = DriveChallenge challenge
-
-                this.Log.LogInformation ("Waiting for authorization {authorizationURL} ...", pendingChallenge.AuthorizationURL)
-
-                let rec DriveAuthorization
-                    ()
-                    : System.Threading.Tasks.Task = FSharp.Control.Tasks.Builders.unitTask {
-                        let! authorization, _ =
-                            AccountRequest<AuthorizationResponse>
+                        let! challenge, _ =
+                            AccountRequest<ChallengeResponse>
                                 this
                                 System.Net.Http.HttpMethod.Post
-                                pendingChallenge.AuthorizationURL
+                                challengeURL
                                 None
                                 [| System.Net.HttpStatusCode.OK |]
 
-                        this.Log.LogInformation (
-                            "{acmeObject} {acmeObjectURL} has {acmeObjectStatus} status",
-                            "Authorization",
-                            pendingChallenge.AuthorizationURL,
-                            authorization.Status
-                        )
+                        return! DriveChallenge challenge
 
-                        match authorization.Status with
-                        | "pending" ->
-                            let! () = 1.0 |> System.TimeSpan.FromSeconds |> System.Threading.Tasks.Task.Delay
+                    | "valid" ->
+                        ()
 
-                            return! DriveAuthorization ()
+                    | _ ->
+                        failwith "Challenge has unexpected status"
+                }
 
-                        | "valid" ->
-                            ()
+            let! () = DriveChallenge challenge
 
-                        | _ ->
-                            failwith "Authorization has unexpected status"
-                    }
+            this.Log.LogInformation ("Waiting for authorization {authorizationURL} ...", authorizationURL)
 
-                let! () = DriveAuthorization ()
-
+            let rec DriveAuthorization
                 ()
+                : System.Threading.Tasks.Task = FSharp.Control.Tasks.Builders.unitTask {
+                    let! authorization, _ =
+                        AccountRequest<AuthorizationResponse>
+                            this
+                            System.Net.Http.HttpMethod.Post
+                            authorizationURL
+                            None
+                            [| System.Net.HttpStatusCode.OK |]
 
-            | None ->
-                ()
+                    this.Log.LogInformation (
+                        "{acmeObject} {acmeObjectURL} has {acmeObjectStatus} status",
+                        "Authorization",
+                        authorizationURL,
+                        authorization.Status
+                    )
 
-            this.Log.LogInformation ("Waiting for order {orderURL} ...", orderURL)
+                    match authorization.Status with
+                    | "pending" ->
+                        let! () = 1.0 |> System.TimeSpan.FromSeconds |> System.Threading.Tasks.Task.Delay
+
+                        return! DriveAuthorization ()
+
+                    | "valid" ->
+                        ()
+
+                    | _ ->
+                        failwith "Authorization has unexpected status"
+                }
+
+            let! () = DriveAuthorization ()
+
+            return ()
+        }
+
+    member this.FinalizeOrder
+        (orderURL: string)
+        (csr: byte array)
+        : System.Threading.Tasks.Task<System.Security.Cryptography.X509Certificates.X509Certificate2Collection> =
+        FSharp.Control.Tasks.Builders.task {
+            this.Log.LogInformation ("Finalizing order {orderURL} ...", orderURL)
 
             let! order, _ =
                 AccountRequest<OrderResponse>
@@ -701,7 +644,7 @@ type Account with
 
             let rec DriveOrder
                 (order: OrderResponse)
-                : System.Threading.Tasks.Task<string> =
+                : System.Threading.Tasks.Task<System.Security.Cryptography.X509Certificates.X509Certificate2Collection> =
                 FSharp.Control.Tasks.Builders.task {
                     this.Log.LogInformation (
                         "{acmeObject} {acmeObjectURL} has {acmeObjectStatus} status",
@@ -748,7 +691,7 @@ type Account with
                             | Some certificateURL -> certificateURL
                             | None -> failwith "Order does not have certificate URL"
 
-                        let! certificate, _ =
+                        let! certificateCollectionPEM, _ =
                             AccountRequest<string>
                                 this
                                 System.Net.Http.HttpMethod.Post
@@ -756,7 +699,27 @@ type Account with
                                 None
                                 [| System.Net.HttpStatusCode.OK |]
 
-                        return certificate
+                        this.Log.LogInformation "Importing certificates into certificate collection..."
+
+                        let certificateCollection = new System.Security.Cryptography.X509Certificates.X509Certificate2Collection ()
+                        let certificateCollection, _ =
+                            ((certificateCollection, ""), certificateCollectionPEM.Split [| '\n' |])
+                            ||> Seq.fold (fun (certificateCollection, currentCert) line ->
+                                let currentCert = currentCert + line + "\n"
+                                if line.Contains("END CERTIFICATE") then
+                                    let currentCert =
+                                        new System.Security.Cryptography.X509Certificates.X509Certificate2 (
+                                            currentCert |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes
+                                        )
+                                    currentCert |> certificateCollection.Add |> ignore
+                                    (certificateCollection, "")
+                                else
+                                    (certificateCollection, currentCert)
+                            )
+
+                        this.Log.LogInformation ("Imported {numCertificates} certificates into certificate collection", certificateCollection.Count)
+
+                        return certificateCollection
 
                     | _ ->
                         failwith "Order has unexpected status"

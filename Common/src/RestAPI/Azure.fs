@@ -101,8 +101,6 @@ type Account
         log: Microsoft.Extensions.Logging.ILogger,
         cancellationToken: System.Threading.CancellationToken
     ) =
-    static let UnixEpoch = new System.DateTime (1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)
-
     let client = new System.Net.Http.HttpClient ()
     let serializer = new Newtonsoft.Json.JsonSerializer ()
 
@@ -205,6 +203,12 @@ type Account
         (certificateName: string)
         : System.Threading.Tasks.Task<KeyVaultCertificate option> =
         FSharp.Control.Tasks.Builders.task {
+            log.LogInformation (
+                "Getting certificate {keyVaultName}/{keyVaultCertificateName} ...",
+                keyVaultName,
+                certificateName
+            )
+
             let! getKeyVaultCertificateResponse =
                 this.Request
                     System.Net.Http.HttpMethod.Get
@@ -218,16 +222,35 @@ type Account
             return
                 match getKeyVaultCertificateResponse with
                 | System.Net.HttpStatusCode.NotFound, _ ->
+                    log.LogInformation (
+                        "Certificate {keyVaultName}/{keyVaultCertificateName} does not exist",
+                        keyVaultName,
+                        certificateName
+                    )
+
                     None
 
                 | System.Net.HttpStatusCode.OK, (:? GetKeyVaultCertificateResponse as getKeyVaultCertificateResponse) ->
-                    let expiry = UnixEpoch + (System.TimeSpan.FromSeconds (getKeyVaultCertificateResponse.Attributes.Expiry |> float))
+                    let certificate =
+                        new System.Security.Cryptography.X509Certificates.X509Certificate2 (
+                            getKeyVaultCertificateResponse.Bytes |> System.Convert.FromBase64String
+                        )
+
                     let version = (getKeyVaultCertificateResponse.ID.Split '/') |> Seq.last
 
-                    Some {
-                        Expiry = expiry
+                    let certificate = {
+                        Certificate = certificate
                         Version = version
                     }
+
+                    log.LogInformation (
+                        "Got certificate {keyVaultName}/{keyVaultCertificateName}: {keyVaultCertificate}",
+                        keyVaultName,
+                        certificateName,
+                        (sprintf "%O" certificate)
+                    )
+
+                    Some certificate
 
                 | _ ->
                     failwith "unreachable"
@@ -236,17 +259,31 @@ type Account
     member this.SetKeyVaultCertificate
         (keyVaultName: string)
         (certificateName: string)
-        (certificateBytes: byte array)
+        (certificateCollection: System.Security.Cryptography.X509Certificates.X509Certificate2Collection)
         : System.Threading.Tasks.Task =
         FSharp.Control.Tasks.Builders.unitTask {
+            log.LogInformation (
+                "Uploading certificate to {keyVaultName}/{keyVaultCertificateName} ...",
+                keyVaultName,
+                certificateName
+            )
+
+            let certificateCollectionBytes = certificateCollection.Export System.Security.Cryptography.X509Certificates.X509ContentType.Pkcs12
+
             let! _ =
                 this.Request
                     System.Net.Http.HttpMethod.Post
                     (this.KeyVaultRequestParameters keyVaultName (sprintf "/certificates/%s/import?api-version=2016-10-01" certificateName))
                     (Some ({
-                        SetKeyVaultCertificateRequest.Value = (certificateBytes |> System.Convert.ToBase64String)
+                        SetKeyVaultCertificateRequest.Value = (certificateCollectionBytes |> System.Convert.ToBase64String)
                      } :> obj))
                     [| (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
+
+            log.LogInformation (
+                "Uploaded certificate to {keyVaultName}/{keyVaultCertificateName}",
+                keyVaultName,
+                certificateName
+            )
 
             return ()
         }
@@ -256,6 +293,12 @@ type Account
         (secretName: string)
         : System.Threading.Tasks.Task<byte array option> =
         FSharp.Control.Tasks.Builders.task {
+            log.LogInformation (
+                "Getting secret {keyValueName}/{keyVaultSecretName} ...",
+                keyVaultName,
+                secretName
+            )
+
             let! getKeyVaultSecretResponse =
                 this.Request
                     System.Net.Http.HttpMethod.Get
@@ -269,10 +312,22 @@ type Account
             return
                 match getKeyVaultSecretResponse with
                 | System.Net.HttpStatusCode.NotFound, _ ->
+                    log.LogInformation (
+                        "Secret {keyValueName}/{keyVaultSecretName} does not exist",
+                        keyVaultName,
+                        secretName
+                    )
+
                     None
 
-                | System.Net.HttpStatusCode.OK, (:? GetSetKeyVaultSecret as getKeyVaultCertificateResponse) ->
-                    getKeyVaultCertificateResponse.Value |> System.Convert.FromBase64String |> Some
+                | System.Net.HttpStatusCode.OK, (:? GetSetKeyVaultSecret as getKeyVaultSecretResponse) ->
+                    log.LogInformation (
+                        "Got secret {keyValueName}/{keyVaultSecretName}",
+                        keyVaultName,
+                        secretName
+                    )
+
+                    getKeyVaultSecretResponse.Value |> System.Convert.FromBase64String |> Some
 
                 | _ ->
                     failwith "unreachable"
@@ -284,6 +339,12 @@ type Account
         (secretValue: byte array)
         : System.Threading.Tasks.Task =
         FSharp.Control.Tasks.Builders.unitTask {
+            log.LogInformation (
+                "Uploading secret to {keyValueName}/{keyVaultSecretName} ...",
+                keyVaultName,
+                secretName
+            )
+
             let! _ =
                 this.Request
                     System.Net.Http.HttpMethod.Put
@@ -294,6 +355,12 @@ type Account
                     } :> obj))
                     [| (System.Net.HttpStatusCode.OK, typedefof<GetSetKeyVaultSecret>) |]
 
+            log.LogInformation (
+                "Uploaded secret to {keyValueName}/{keyVaultSecretName}",
+                keyVaultName,
+                secretName
+            )
+
             return ()
         }
 
@@ -302,6 +369,12 @@ type Account
         (action: SetDnsTxtRecordAction)
         : System.Threading.Tasks.Task =
         FSharp.Control.Tasks.Builders.unitTask {
+            log.LogInformation (
+                "Setting DNS TXT record in DNS zone {dnsZoneName} to {action} ...",
+                dnsZoneName,
+                (sprintf "%O" action)
+            )
+
             let method, name, body, expectedResponses =
                 match action with
                 | Create (name, content) ->
@@ -338,6 +411,12 @@ type Account
                     ))
                     body
                     expectedResponses
+
+            log.LogInformation (
+                "Set DNS TXT record in DNS zone {dnsZoneName} to {action} ...",
+                dnsZoneName,
+                (sprintf "%O" action)
+            )
 
             return ()
         }
@@ -393,7 +472,7 @@ type Account
 
 
 and KeyVaultCertificate = {
-    Expiry: System.DateTime
+    Certificate: System.Security.Cryptography.X509Certificates.X509Certificate2
     Version: string
 }
 
@@ -435,13 +514,9 @@ and [<Struct; System.Runtime.Serialization.DataContract>] private CdnCustomDomai
     [<field:System.Runtime.Serialization.DataMember(Name = "updateRule")>]
     UpdateRule: string
 }
-and [<Struct; System.Runtime.Serialization.DataContract>] private GetKeyVaultCertificateResponse_Attributes = {
-    [<field:System.Runtime.Serialization.DataMember(Name = "exp")>]
-    Expiry: uint64
-}
 and [<Struct; System.Runtime.Serialization.DataContract>] private GetKeyVaultCertificateResponse = {
-    [<field:System.Runtime.Serialization.DataMember(Name = "attributes")>]
-    Attributes: GetKeyVaultCertificateResponse_Attributes
+    [<field:System.Runtime.Serialization.DataMember(Name = "cer")>]
+    Bytes: string
     [<field:System.Runtime.Serialization.DataMember(Name = "id")>]
     ID: string
 }

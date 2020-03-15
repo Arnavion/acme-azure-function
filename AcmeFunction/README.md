@@ -1,8 +1,4 @@
-This function provisions a wildcard TLS certificate for a domain and stores it in an Azure KeyVault. The certificate is provisioned using [the ACME v2 protocol.](https://ietf-wg-acme.github.io/acme/draft-ietf-acme-acme.html)
-
-The entrypoint of the function is the `OrchestratorManager` function. This is a Durable Function orchestrator manager. It spawns an instance of `OrchestratorInstance` that is a Durable Function orchestrator.
-
-The orchestrator uses multiple sub-functions to achieve the task of renewing the certificate in the KeyVault. It checks the expiry of the certificate in the KeyVault. If the certificate needs to be renewed, it then uses the ACME v2 protocol to get a new certificate, and uploads this new certificate to the KeyVault.
+This function provisions a wildcard TLS certificate for a domain and stores it in an Azure KeyVault. The certificate is provisioned using [the ACME v2 protocol.](https://ietf-wg-acme.github.io/acme/draft-ietf-acme-acme.html) The account key used for the ACME v2 protocol is also stored in the same Azure KeyVault.
 
 
 # Dependencies
@@ -16,9 +12,8 @@ Build-time tools:
 Third-party libraries:
 
 - `Microsoft.NET.Sdk.Functions` - Functions SDK, required for the function parameter attribute types
-- `Microsoft.Azure.WebJobs.Extensions.DurableTask` - Durable Functions SDK
 - `Newtonsoft.Json` - JSON serialization and deserialization
-- `Ply` - F# computation expression builder that creates `System.Threading.Tasks.Task` expressions, similar to F#'s native `Async` expressions. Needed for Durable Functions since those cannot use `Async`, and it's difficult to write non-trivial asynchronous code using `Task.ContinueWith` chains.
+- `Ply` - F# computation expression builder that creates `System.Threading.Tasks.Task` expressions, similar to F#'s native `Async` expressions.
 
 The code does *not* depend on the Azure .Net SDK or any ACME .Net implementation. The former in particular tends to pull in tens of megabytes of libraries and creates version conflicts with `Newtonsoft.Json`, which is not something I want to deal with. Instead, the code implements the minimum set of Azure and ACME protocol features that it needs, directly in terms of their respective web APIs.
 

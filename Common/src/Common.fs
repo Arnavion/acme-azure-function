@@ -115,11 +115,6 @@ let Deserialize
             return (response.StatusCode, serializer.Deserialize (streamReader, responseType))
     }
 
-let NISTP384 (): System.Security.Cryptography.ECCurve =
-    // CreateFromFriendlyName ("nistP384") works on Windows but not on Linux, so use the OID instead.
-    new System.Security.Cryptography.Oid ("1.3.132.0.34")
-    |> System.Security.Cryptography.ECCurve.CreateFromOid
-
 let Function
     (name: string)
     (log: Microsoft.Extensions.Logging.ILogger)

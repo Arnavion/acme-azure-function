@@ -31,33 +31,11 @@ let Run
 
 
         let latestCertificateVersion = FSharp.Control.Tasks.Builders.task {
-            log.LogInformation (
-                "Getting latest version of certificate {keyVaultName}/{keyVaultCertificateName} ...",
-                Settings.Instance.AzureKeyVaultName,
-                Settings.Instance.AzureKeyVaultCertificateName
-            )
-
             let! latestCertificate =
                 azureAccount.GetKeyVaultCertificate
                     Settings.Instance.AzureKeyVaultName
                     Settings.Instance.AzureKeyVaultCertificateName
             let latestCertificateVersion = latestCertificate |> Option.map (fun latestCertificate -> latestCertificate.Version)
-
-            match latestCertificateVersion with
-            | Some latestCertificateVersion ->
-                log.LogInformation (
-                    "Latest version of certificate {keyVaultName}/{keyVaultCertificateName} is {certificateVersion}",
-                    Settings.Instance.AzureKeyVaultName,
-                    Settings.Instance.AzureKeyVaultCertificateName,
-                    latestCertificateVersion
-                )
-            | None ->
-                log.LogInformation (
-                    "Certificate {keyVaultName}/{keyVaultCertificateName} does not exist",
-                    Settings.Instance.AzureKeyVaultName,
-                    Settings.Instance.AzureKeyVaultCertificateName
-                )
-
             return latestCertificateVersion
         }
 

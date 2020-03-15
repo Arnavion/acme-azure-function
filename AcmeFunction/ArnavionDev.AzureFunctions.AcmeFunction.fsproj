@@ -14,7 +14,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.Azure.WebJobs.Extensions.DurableTask" Version="2.*" />
         <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="3.0.3" />
         <PackageReference Include="Newtonsoft.Json" Version="11.*" />
         <PackageReference Include="Ply" Version="0.1.*" />
@@ -24,15 +23,7 @@
     <ItemGroup>
         <Compile Include="src/Settings.fs" />
 
-        <Compile Include="src/BeginAcmeOrder.fs" />
-        <Compile Include="src/CheckKeyVaultCertificate.fs" />
-        <Compile Include="src/GetAcmeAccountKey.fs" />
-        <Compile Include="src/CreateCsr.fs" />
-        <Compile Include="src/EndAcmeOrder.fs" />
-        <Compile Include="src/SetDnsTxtRecord.fs" />
-        <Compile Include="src/SetNewKeyVaultCertificate.fs" />
-
-        <Compile Include="src/Orchestrator.fs" />
+        <Compile Include="src/Acme.fs" />
     </ItemGroup>
 
     <ItemGroup>
