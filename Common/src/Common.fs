@@ -2,9 +2,6 @@ module ArnavionDev.AzureFunctions.Common
 
 open Microsoft.Extensions.Logging
 
-type internal Empty () =
-    class end
-
 let ApplicationJsonContentType: System.Net.Http.Headers.MediaTypeHeaderValue =
     new System.Net.Http.Headers.MediaTypeHeaderValue (System.Net.Mime.MediaTypeNames.Application.Json)
 
@@ -89,9 +86,9 @@ let Deserialize
                     )
                 failwith (sprintf "%O: %s" response.StatusCode contentString)
 
-        if responseType = typedefof<Empty> then
+        if responseType = typedefof<unit> then
             log.LogInformation ("HTTP response: {statusCode}", response.StatusCode)
-            return (response.StatusCode, (new Empty ()) :> _)
+            return (response.StatusCode, () :> _)
 
         elif responseType = typedefof<string> then
             memoryStream.Seek (0L, System.IO.SeekOrigin.Begin) |> ignore

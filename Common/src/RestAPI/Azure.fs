@@ -193,7 +193,7 @@ type Account
                         }
                         CdnCustomDomain_Properties_CustomHttpsParameters.ProtocolType = "ServerNameIndication"
                      } :> obj))
-                    [| (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
+                    [| (System.Net.HttpStatusCode.OK, typedefof<unit>) |]
 
             return ()
         }
@@ -215,7 +215,7 @@ type Account
                     (this.KeyVaultRequestParameters keyVaultName (sprintf "/certificates/%s?api-version=2016-10-01" certificateName))
                     None
                     [|
-                        (System.Net.HttpStatusCode.NotFound, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
+                        (System.Net.HttpStatusCode.NotFound, typedefof<unit>)
                         (System.Net.HttpStatusCode.OK, typedefof<GetKeyVaultCertificateResponse>)
                     |]
 
@@ -277,7 +277,7 @@ type Account
                     (Some ({
                         SetKeyVaultCertificateRequest.Value = (certificateCollectionBytes |> System.Convert.ToBase64String)
                      } :> obj))
-                    [| (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
+                    [| (System.Net.HttpStatusCode.OK, typedefof<unit>) |]
 
             log.LogInformation (
                 "Uploaded certificate to {keyVaultName}/{keyVaultCertificateName}",
@@ -305,7 +305,7 @@ type Account
                     (this.KeyVaultRequestParameters keyVaultName (sprintf "/secrets/%s?api-version=2016-10-01" secretName))
                     None
                     [|
-                        (System.Net.HttpStatusCode.NotFound, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
+                        (System.Net.HttpStatusCode.NotFound, typedefof<unit>)
                         (System.Net.HttpStatusCode.OK, typedefof<GetSetKeyVaultSecret>)
                     |]
 
@@ -390,15 +390,15 @@ type Account
                             |]
                         }
                     } :> obj)),
-                    [| (System.Net.HttpStatusCode.Created, typedefof<ArnavionDev.AzureFunctions.Common.Empty>) |]
+                    [| (System.Net.HttpStatusCode.Created, typedefof<unit>) |]
                 | Delete name ->
                     System.Net.Http.HttpMethod.Delete,
                     name,
                     None,
                     [|
-                        (System.Net.HttpStatusCode.Accepted, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
-                        (System.Net.HttpStatusCode.NotFound, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
-                        (System.Net.HttpStatusCode.OK, typedefof<ArnavionDev.AzureFunctions.Common.Empty>)
+                        (System.Net.HttpStatusCode.Accepted, typedefof<unit>)
+                        (System.Net.HttpStatusCode.NotFound, typedefof<unit>)
+                        (System.Net.HttpStatusCode.OK, typedefof<unit>)
                     |]
 
             let! _ =

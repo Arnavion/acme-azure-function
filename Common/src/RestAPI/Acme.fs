@@ -294,7 +294,7 @@ let GetAccount
             | None ->
                 log.LogInformation "Getting initial nonce..."
                 let! response =
-                    Request<ArnavionDev.AzureFunctions.Common.Empty>
+                    Request<unit>
                         client
                         log
                         System.Net.Http.HttpMethod.Head
