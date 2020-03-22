@@ -1,7 +1,7 @@
 module internal ArnavionDev.AzureFunctions.UpdateCdnCertificateFunction.Settings
 
 [<Struct; System.Runtime.CompilerServices.IsReadOnly; System.Runtime.Serialization.DataContract>]
-type RawSettings = {
+type private RawSettings = {
     // The Azure subscription ID
     [<field: System.Runtime.Serialization.DataMember(Name = "AzureSubscriptionID")>]
     AzureSubscriptionID: string

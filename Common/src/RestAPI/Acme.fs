@@ -30,7 +30,7 @@ and [<Struct; System.Runtime.Serialization.DataContract>] private Protected = {
     [<field:System.Runtime.Serialization.DataMember(Name = "url")>]
     URL: string
 }
-and [<Struct; System.Runtime.Serialization.DataContract>] internal ECWebKey = {
+and [<Struct; System.Runtime.Serialization.DataContract>] private ECWebKey = {
     [<field:System.Runtime.Serialization.DataMember(Name = "crv", Order = 1)>]
     Curve: string
     [<field:System.Runtime.Serialization.DataMember(Name = "kty", Order = 2)>]

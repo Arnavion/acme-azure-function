@@ -1,7 +1,7 @@
 module internal ArnavionDev.AzureFunctions.AcmeFunction.Settings
 
 [<Struct; System.Runtime.CompilerServices.IsReadOnly; System.Runtime.Serialization.DataContract>]
-type RawSettings = {
+type private RawSettings = {
     // The directory URL of the ACME server
     [<field: System.Runtime.Serialization.DataMember(Name = "AcmeDirectoryURL")>]
     AcmeDirectoryURL: string
