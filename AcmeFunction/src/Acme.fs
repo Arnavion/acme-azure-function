@@ -57,24 +57,6 @@ let rec Run
         if needNewCertificate then
             let domainName = sprintf "*.%s" Settings.Instance.TopLevelDomainName
 
-            let certificatePrivateKey = System.Security.Cryptography.RSA.Create 4096
-
-            let csr =
-                log.LogInformation ("Creating CSR for {domainName} ...", domainName)
-
-                let csr =
-                    new System.Security.Cryptography.X509Certificates.CertificateRequest (
-                        new System.Security.Cryptography.X509Certificates.X500DistinguishedName (sprintf "CN=%s" domainName),
-                        certificatePrivateKey,
-                        System.Security.Cryptography.HashAlgorithmName.SHA256,
-                        System.Security.Cryptography.RSASignaturePadding.Pkcs1
-                    )
-                let csr = csr.CreateSigningRequest ()
-
-                log.LogInformation ("Created CSR for {domainName}", domainName)
-
-                csr
-
             let! accountKey =
                 GetAcmeAccountKey
                     azureAccount
@@ -128,6 +110,24 @@ let rec Run
                 | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Ready orderURL ->
                     return orderURL
             }
+
+            let certificatePrivateKey = System.Security.Cryptography.RSA.Create 4096
+
+            let csr =
+                log.LogInformation ("Creating CSR for {domainName} ...", domainName)
+
+                let csr =
+                    new System.Security.Cryptography.X509Certificates.CertificateRequest (
+                        new System.Security.Cryptography.X509Certificates.X500DistinguishedName (sprintf "CN=%s" domainName),
+                        certificatePrivateKey,
+                        System.Security.Cryptography.HashAlgorithmName.SHA256,
+                        System.Security.Cryptography.RSASignaturePadding.Pkcs1
+                    )
+                let csr = csr.CreateSigningRequest ()
+
+                log.LogInformation ("Created CSR for {domainName}", domainName)
+
+                csr
 
             let! certificateCollection = acmeAccount.FinalizeOrder orderURL csr
 
