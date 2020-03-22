@@ -49,11 +49,12 @@ let rec Run
                 Settings.Instance.AzureKeyVaultCertificateName
 
         let needNewCertificate =
-            match certificate with
-            | Some certificate ->
+            certificate
+            |> Option.map (fun certificate ->
                 let certificateExpiry = certificate.Certificate.NotAfter.ToUniversalTime ()
                 certificateExpiry < (System.DateTime.UtcNow + (System.TimeSpan.FromDays 30.0))
-            | None -> true
+            )
+            |> defaultArg <| true
         if needNewCertificate then
             let domainName = sprintf "*.%s" Settings.Instance.TopLevelDomainName
 

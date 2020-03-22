@@ -123,38 +123,27 @@ let inline private Request< ^a>
     FSharp.Control.Tasks.Builders.task {
         let request = new System.Net.Http.HttpRequestMessage (method, url)
 
-        let payloadParameters =
-            payload |> Option.map (fun payload ->
-                (
-                    payload.Auth,
-                    payload.Key,
-                    payload.Nonce,
-                    match payload.Body with
-                    | Some body -> body |> Newtonsoft.Json.JsonConvert.SerializeObject |> ConvertStringToBase64UrlString
-                    | None -> ""
-                )
-            )
-
-        payloadParameters |> Option.iter (fun (auth, key, nonce, payloadEncoded) ->
+        payload |> Option.iter (fun payload ->
             let keyID, webKey =
-                match auth with
+                match payload.Auth with
                 | AccountURL accountURL -> Some accountURL, None
                 | WebKey webKey -> None, Some webKey
             let ``protected`` = {
                 Protected.Algorithm = "ES384"
                 Protected.KeyID = keyID |> Option.toObj
-                Protected.Nonce = nonce
+                Protected.Nonce = payload.Nonce
                 Protected.URL = url
                 Protected.WebKey = webKey |> Option.toNullable
             }
-
             let protectedEncoded = ``protected`` |> Newtonsoft.Json.JsonConvert.SerializeObject |> ConvertStringToBase64UrlString
+
+            let payloadEncoded = payload.Body |> Option.map (Newtonsoft.Json.JsonConvert.SerializeObject >> ConvertStringToBase64UrlString) |> defaultArg <| ""
 
             let signatureInput = Array.zeroCreate (protectedEncoded.Length + 1 + payloadEncoded.Length)
             System.Buffer.BlockCopy ((protectedEncoded |> System.Text.Encoding.ASCII.GetBytes), 0, signatureInput, 0, protectedEncoded.Length)
             signatureInput.[protectedEncoded.Length] <- byte '.'
             System.Buffer.BlockCopy ((payloadEncoded |> System.Text.Encoding.ASCII.GetBytes), 0, signatureInput, protectedEncoded.Length + 1, payloadEncoded.Length)
-            let signature = (key.SignData (signatureInput, System.Security.Cryptography.HashAlgorithmName.SHA384)) |> ConvertBytesToBase64UrlString
+            let signature = (payload.Key.SignData (signatureInput, System.Security.Cryptography.HashAlgorithmName.SHA384)) |> ConvertBytesToBase64UrlString
 
             ArnavionDev.AzureFunctions.Common.Serialize
                 request
