@@ -314,10 +314,10 @@ let GetAccount
 
         let! accountURL, nonce = FSharp.Control.Tasks.Builders.task {
             match createOptions with
-            | Existing accountURL ->
+            | Existing (AccountURL = accountURL) ->
                 return accountURL, nonce
 
-            | New contactURL ->
+            | New (ContactURL = contactURL) ->
                 log.LogInformation "Creating / getting account corresponding to account key..."
 
                 let! newAccountResponse =
@@ -396,14 +396,14 @@ let inline private AccountRequest< ^a>
                 account.Log
                 method
                 url
-                (Some (
+                (Some
                     {|
                         Auth = AccountURL account.AccountURL
                         Body = body
                         Key = account.Key
                         Nonce = account.Nonce
                     |}
-                ))
+                )
                 expectedStatusCodes
                 account.Serializer
                 account.CancellationToken
@@ -417,12 +417,10 @@ let inline private AccountRequest< ^a>
 
 type Order =
 | Pending of
-    {|
-        OrderURL: string
-        AuthorizationURL: string
-        ChallengeURL: string
-        DnsTxtRecordContent: string
-    |}
+    OrderURL: string *
+    AuthorizationURL: string *
+    ChallengeURL: string *
+    DnsTxtRecordContent: string
 | Ready of OrderURL: string
 
 type Account with
@@ -500,20 +498,20 @@ type Account with
                             | None -> failwith "Did not find any dns-01 challenges"
 
                         return
-                            Pending
-                                {|
-                                    OrderURL = orderURL
-                                    AuthorizationURL = authorizationURL
-                                    ChallengeURL = dns01Challenge.URL
-                                    DnsTxtRecordContent =
-                                        (sprintf "%s.%s" dns01Challenge.Token this.KeyJwkThumbprint)
-                                        |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes
-                                        |> (fun content ->
-                                            use hasher = System.Security.Cryptography.SHA256.Create ()
-                                            content |> hasher.ComputeHash
-                                         )
-                                        |> ConvertBytesToBase64UrlString
-                                |}
+                            Pending (
+                                OrderURL = orderURL,
+                                AuthorizationURL = authorizationURL,
+                                ChallengeURL = dns01Challenge.URL,
+                                DnsTxtRecordContent = (
+                                    (sprintf "%s.%s" dns01Challenge.Token this.KeyJwkThumbprint)
+                                    |> ArnavionDev.AzureFunctions.Common.UTF8Encoding.GetBytes
+                                    |> (fun content ->
+                                        use hasher = System.Security.Cryptography.SHA256.Create ()
+                                        content |> hasher.ComputeHash
+                                        )
+                                    |> ConvertBytesToBase64UrlString
+                                )
+                            )
 
                     | "processing" ->
                         let! () = 1.0 |> System.TimeSpan.FromSeconds |> System.Threading.Tasks.Task.Delay

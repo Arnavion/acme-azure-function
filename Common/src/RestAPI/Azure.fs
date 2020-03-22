@@ -16,10 +16,10 @@ let GetAuth
             "MSI_ENDPOINT" |> System.Environment.GetEnvironmentVariable |> Option.ofObj,
             "MSI_SECRET" |> System.Environment.GetEnvironmentVariable |> Option.ofObj
         )
-        ||> Option.map2 (fun msiEndpoint msiSecret -> Auth.ManagedIdentity (msiEndpoint, msiSecret))
+        ||> Option.map2 (fun msiEndpoint msiSecret -> Auth.ManagedIdentity (Endpoint = msiEndpoint, Secret = msiSecret))
         |> Option.orElseWith (fun () ->
             (clientID, clientSecret, tenantID)
-            |||> Option.map3 (fun clientID clientSecret tenantID -> Auth.ServicePrincipal (clientID, clientSecret, tenantID))
+            |||> Option.map3 (fun clientID clientSecret tenantID -> Auth.ServicePrincipal (ClientID = clientID, ClientSecret = clientSecret, TenantID = tenantID))
         )
     match azureAuth with
     | Some azureAuth -> azureAuth
@@ -36,7 +36,6 @@ type private TokenResponse = {
 let private GetAuthorization
     (auth: Auth)
     (resource: string)
-
     (client: System.Net.Http.HttpClient)
     (serializer: Newtonsoft.Json.JsonSerializer)
     (log: Microsoft.Extensions.Logging.ILogger)
@@ -45,7 +44,7 @@ let private GetAuthorization
     FSharp.Control.Tasks.Builders.task {
         let request =
             match auth with
-            | ManagedIdentity (endpoint, secret) ->
+            | ManagedIdentity (Endpoint = endpoint; Secret = secret) ->
                 let request =
                     new System.Net.Http.HttpRequestMessage (
                         System.Net.Http.HttpMethod.Get,
@@ -53,7 +52,7 @@ let private GetAuthorization
                     )
                 request.Headers.Add ("Secret", secret)
                 request
-            | ServicePrincipal (clientID, clientSecret, tenantID) ->
+            | ServicePrincipal (ClientID = clientID; ClientSecret = clientSecret; TenantID = tenantID) ->
                 let request =
                     new System.Net.Http.HttpRequestMessage (
                         System.Net.Http.HttpMethod.Post,
@@ -377,7 +376,7 @@ type Account
 
             let method, name, body, expectedResponses =
                 match action with
-                | Create (name, content) ->
+                | Create (Name = name; Content = content) ->
                     System.Net.Http.HttpMethod.Put,
                     name,
                     (Some ({
@@ -391,7 +390,7 @@ type Account
                         }
                     } :> obj)),
                     [| (System.Net.HttpStatusCode.Created, typedefof<unit>) |]
-                | Delete name ->
+                | Delete (Name = name) ->
                     System.Net.Http.HttpMethod.Delete,
                     name,
                     None,

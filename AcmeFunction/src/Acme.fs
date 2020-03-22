@@ -68,7 +68,7 @@ let rec Run
                 ArnavionDev.AzureFunctions.RestAPI.Acme.GetAccount
                     Settings.Instance.AcmeDirectoryURL
                     accountKey
-                    (ArnavionDev.AzureFunctions.RestAPI.Acme.AccountCreateOptions.New Settings.Instance.AcmeContactURL)
+                    (ArnavionDev.AzureFunctions.RestAPI.Acme.AccountCreateOptions.New (ContactURL = Settings.Instance.AcmeContactURL))
                     log
                     cancellationToken
 
@@ -76,21 +76,19 @@ let rec Run
 
             let! orderURL = FSharp.Control.Tasks.Builders.task {
                 match acmeOrder with
-                | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Pending pending ->
+                | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Pending
+                    (OrderURL = orderURL; AuthorizationURL = authorizationURL; ChallengeURL = challengeURL; DnsTxtRecordContent = dnsTxtRecordContent) ->
                     let! () =
                         azureAccount.SetDnsTxtRecord
                             Settings.Instance.TopLevelDomainName
                             (ArnavionDev.AzureFunctions.RestAPI.Azure.SetDnsTxtRecordAction.Create (
-                                "_acme-challenge",
-                                pending.DnsTxtRecordContent
+                                Name = "_acme-challenge",
+                                Content = dnsTxtRecordContent
                             ))
 
                     let! acmeAuthorizationResult = FSharp.Control.Tasks.Builders.task {
                         try
-                            let! () =
-                                acmeAccount.CompleteAuthorization
-                                    pending.AuthorizationURL
-                                    pending.ChallengeURL
+                            let! () = acmeAccount.CompleteAuthorization authorizationURL challengeURL
                             return Ok ()
                         with ex ->
                             return Error ex
@@ -99,15 +97,15 @@ let rec Run
                     let! () =
                         azureAccount.SetDnsTxtRecord
                             Settings.Instance.TopLevelDomainName
-                            (ArnavionDev.AzureFunctions.RestAPI.Azure.SetDnsTxtRecordAction.Delete "_acme-challenge")
+                            (ArnavionDev.AzureFunctions.RestAPI.Azure.SetDnsTxtRecordAction.Delete (Name = "_acme-challenge"))
 
                     match acmeAuthorizationResult with
-                    | Ok () -> return pending.OrderURL
+                    | Ok () -> return orderURL
                     | Error ex ->
                         raise ex
                         return Unchecked.defaultof<_>
 
-                | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Ready orderURL ->
+                | ArnavionDev.AzureFunctions.RestAPI.Acme.Order.Ready (OrderURL = orderURL) ->
                     return orderURL
             }
 
