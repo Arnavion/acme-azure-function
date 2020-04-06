@@ -14,9 +14,9 @@ See the READMEs inside the individual directories for how to use them.
 # License
 
 ```
-azure-functions
+acme-azure-function
 
-https://github.com/Arnavion/azure-functions
+https://github.com/Arnavion/acme-azure-function
 
 Copyright 2019 Arnav Singh
 
