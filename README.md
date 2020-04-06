@@ -11,11 +11,6 @@ This setup is used for <https://www.arnavion.dev>, which is a static website in 
 See the READMEs inside the individual directories for how to use them.
 
 
-# Notes
-
-- If you want to deploy both functions, ensure that you do not use the same storage account for both function apps. Multiple function apps cannot share the same storage account because of <https://github.com/Azure/azure-functions-host/issues/4499>
-
-
 # License
 
 ```
