@@ -99,8 +99,6 @@ case "$1" in
                 dotnet publish --nologo -c '$configuration' '-p:LOCAL=$local' &&
                 if [ '$local' = 'true' ]; then
                     cd ./bin/$configuration/netcoreapp3.1/ && func start -p 7071
-                else
-                    exit 1
                 fi
             "
         ;;
