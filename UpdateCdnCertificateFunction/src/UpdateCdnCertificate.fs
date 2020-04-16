@@ -70,7 +70,6 @@ let Run
                     Settings.Instance.AzureCdnEndpointName,
                     Settings.Instance.AzureCdnCustomDomainName
                 )
-                log.LogInformation "CDN custom domain does not have a certificate"
 
             return cdnCustomDomainSecretVersion
         }
