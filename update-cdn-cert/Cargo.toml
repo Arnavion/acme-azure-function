@@ -1,0 +1,16 @@
+[package]
+name = "update-cdn-cert"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Arnavion <me@arnavion.dev>"]
+edition = "2018"
+publish = false
+
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt"] }
+
+azure = { path = "../azure", features = ["cdn", "key_vault_cert"] }
+function-host = { path = "../function-host" }

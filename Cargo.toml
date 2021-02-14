@@ -1,0 +1,9 @@
+[workspace]
+members = [
+	"azure",
+	"function-host",
+	"http-common",
+
+	"acme",
+	"update-cdn-cert",
+]

@@ -1,14 +1,29 @@
 This repository contains two Azure Functions:
 
-- `acme` provisions a wildcard TLS certificate for a domain and stores it in an Azure KeyVault. The certificate is provisioned using [the ACME v2 protocol.](https://ietf-wg-acme.github.io/acme/draft-ietf-acme-acme.html)
+- `acme` provisions a wildcard TLS certificate for a domain and stores it in an Azure KeyVault. The certificate is provisioned using the ACME v2 protocol.
 
 - `update-cdn-cert` monitors an Azure CDN endpoint's custom domain configured to use an HTTPS certificate from an Azure KeyVault. It ensures the CDN endpoint is using the latest certificate in the KeyVault.
 
-Together, these functions can be used to have an Azure CDN endpoint serve HTTPS using a certificate from an ACME provider.
+Together, these Functions can be used to have an Azure CDN endpoint serve HTTPS using a certificate from an ACME provider. Or they can be used individually, to only request new certs via ACME v2 into a KeyVault, or only keep a CDN endpoint's cert in sync with the KeyVault.
 
 This setup is used for <https://www.arnavion.dev>, which is a static website in an Azure Storage Account with an Azure CDN endpoint in front. [Let's Encrypt](https://letsencrypt.org/) is used as the ACME server.
 
 See the READMEs inside the individual directories for how to use them.
+
+
+# Old F# versions
+
+For the old F# versions of these Functions, see [the `fsharp` branch.](https://github.com/Arnavion/acme-azure-function/tree/fsharp) These versions are no longer maintained.
+
+The Rust versions have a few differences compared to the F# versions:
+
+- The F# versions had a bunch of dependency hell from Microsoft .Net libraries, like pulling multiple versions of `Newtonsoft.Json`
+
+- The F# versions were able to use structural logging. The Rust versions only logs strings, and they're all interpreted as errors by the Function Host because they're written to stderr. [This upstream issue](https://github.com/Azure/azure-functions-host/issues/6608) is relevant, though logging via the HTTP response is a non-starter for any Function, and hopefully it's resolved in a way that allows stderr logging to be structured or at least have levels.
+
+- The F# version of the `acme` Function worked with the ACME account key and cert private key in memory, and imported/exported them to/from KeyVault for this. The Rust version lets the KeyVault create the keys and uses KeyVault API to sign them, without ever needing them to be exported to the Function.
+
+- The F# version of the `acme` function was limited to running on a Linux Consumption plan, due to .Net on Windows marking certificate private keys as non-exportable and preventing the cert from being used with Azure CDN. The Rust version does its crypto in pure Rust, so it does not have this limitation. However the build scripts in this repository still only support building a Linux binary, and now also require a Linux build host. (Choice of distro does not matter; the binary is built in an alpine container and is statically linked, so will run on any Linux machine including the Function App) If you want to build a Windows binary on a Windows build host, you'll need to adapt the scripts to your needs.
 
 
 # License
