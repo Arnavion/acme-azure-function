@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 base64 = "0.13"
+chrono = "0.4"
 ct-logs = "0.8"
 http = "0.2"
 hyper = { version = "0.14", features = ["http1", "client"] }

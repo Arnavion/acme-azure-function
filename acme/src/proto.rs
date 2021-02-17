@@ -40,6 +40,7 @@ impl<'a> Account<'a> {
 				fn from_response(
 					status: hyper::StatusCode,
 					body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+					_headers: hyper::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
 						(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
@@ -102,6 +103,7 @@ impl<'a> Account<'a> {
 					fn from_response(
 						status: hyper::StatusCode,
 						_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+						_headers: hyper::HeaderMap,
 					) -> anyhow::Result<Option<Self>> {
 						Ok(match status {
 							hyper::StatusCode::NO_CONTENT => Some(NewNonceResponse),
@@ -143,6 +145,7 @@ impl<'a> Account<'a> {
 				fn from_response(
 					status: hyper::StatusCode,
 					body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+					_headers: hyper::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
 						(hyper::StatusCode::OK, Some((content_type, body))) |
@@ -155,11 +158,9 @@ impl<'a> Account<'a> {
 
 			eprintln!("Creating / getting account corresponding to account key...");
 
-			let Response {
-				location,
-				body: NewAccountResponse {
-					status,
-				},
+			let http_common::ResponseWithLocation {
+				body: NewAccountResponse { status },
+				location: account_url,
 			} = post(
 				&new_account_url,
 				Auth::Jwk(jwk),
@@ -172,9 +173,7 @@ impl<'a> Account<'a> {
 				account_key_kid,
 				account_jws_alg,
 				&client,
-			).await.context("coult not create / get account")?;
-
-			let account_url = location.context("server did not return account URL from newAccount endpoint")?;
+			).await.context("could not create / get account")?;
 
 			eprintln!("Created / got account {} with status {}", account_url, status);
 
@@ -215,7 +214,7 @@ impl<'a> Account<'a> {
 
 		eprintln!("Creating order for {} ...", domain_name);
 
-		let Response::<OrderResponse> {
+		let http_common::ResponseWithLocation::<OrderResponse> {
 			location: order_url,
 			body: _,
 		} = post(
@@ -234,24 +233,20 @@ impl<'a> Account<'a> {
 			&self.client,
 		).await.context("could not create / get order")?;
 
-		let order_url = order_url.context("newOrder endpoint did not return order URL")?;
-
 		eprintln!("Created order for {} : {}", domain_name, order_url);
 
 		let order = loop {
-			let Response {
-				location: _,
-				body: order,
-			} = post(
-				&order_url,
-				Auth::AccountUrl(&self.account_url),
-				None::<&()>,
-				&mut self.nonce,
-				&mut self.azure_account,
-				self.account_key_kid,
-				self.account_jws_alg,
-				&self.client,
-			).await.context("could not get order")?;
+			let order =
+				post(
+					&order_url,
+					Auth::AccountUrl(&self.account_url),
+					None::<&()>,
+					&mut self.nonce,
+					&mut self.azure_account,
+					self.account_key_kid,
+					self.account_jws_alg,
+					&self.client,
+				).await.context("could not get order")?;
 
 			eprintln!("Order {} is {:?}", order_url, order);
 
@@ -264,24 +259,22 @@ impl<'a> Account<'a> {
 						return Err(anyhow::anyhow!("more than one authorization"));
 					}
 
-					let Response {
-						location: _,
-						body: authorization,
-					} = post(
-						&authorization_url,
-						Auth::AccountUrl(&self.account_url),
-						None::<&()>,
-						&mut self.nonce,
-						&mut self.azure_account,
-						self.account_key_kid,
-						self.account_jws_alg,
-						&self.client,
-					).await.context("could not get authorization")?;
+					let authorization =
+						post(
+							&authorization_url,
+							Auth::AccountUrl(&self.account_url),
+							None::<&()>,
+							&mut self.nonce,
+							&mut self.azure_account,
+							self.account_key_kid,
+							self.account_jws_alg,
+							&self.client,
+						).await.context("could not get authorization")?;
 
 					eprintln!("Authorization {} is {:?}", authorization_url, authorization);
 
 					let challenges = match authorization {
-						AuthorizationResponse::Pending { challenges } => challenges,
+						AuthorizationResponse::Pending { challenges, retry_after: _ } => challenges,
 						_ => return Err(anyhow::anyhow!("authorization has unexpected status")),
 					};
 
@@ -308,8 +301,10 @@ impl<'a> Account<'a> {
 					});
 				},
 
-				OrderResponse::Processing =>
-					tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+				OrderResponse::Processing { retry_after } => {
+					eprintln!("Waiting for {:?} before rechecking order...", retry_after);
+					tokio::time::sleep(retry_after).await;
+				},
 
 				OrderResponse::Ready { finalize_url: _ } => break Order::Ready(OrderReady {
 					order_url,
@@ -338,41 +333,44 @@ impl<'a> Account<'a> {
 
 		eprintln!("Completing challenge {} ...", challenge_url);
 
-		let Response::<ChallengeResponse> {
-			location: _,
-			body: _,
-		} = post(
-			&challenge_url,
-			Auth::AccountUrl(&self.account_url),
-			Some(&ChallengeCompleteRequest { }),
-			&mut self.nonce,
-			&mut self.azure_account,
-			self.account_key_kid,
-			self.account_jws_alg,
-			&self.client,
-		).await.context("could not complete challenge")?;
-
-		loop {
-			let Response {
-				location: _,
-				body: challenge,
-			} = post(
+		let _: ChallengeResponse =
+			post(
 				&challenge_url,
 				Auth::AccountUrl(&self.account_url),
-				None::<&()>,
+				Some(&ChallengeCompleteRequest { }),
 				&mut self.nonce,
 				&mut self.azure_account,
 				self.account_key_kid,
 				self.account_jws_alg,
 				&self.client,
-			).await.context("could not get challenge")?;
+			).await.context("could not complete challenge")?;
+
+		loop {
+			let challenge =
+				post(
+					&challenge_url,
+					Auth::AccountUrl(&self.account_url),
+					None::<&()>,
+					&mut self.nonce,
+					&mut self.azure_account,
+					self.account_key_kid,
+					self.account_jws_alg,
+					&self.client,
+				).await.context("could not get challenge")?;
 
 			eprintln!("Challenge {} is {:?}", challenge_url, challenge);
 
 			match challenge {
-				ChallengeResponse::Pending { .. } |
-				ChallengeResponse::Processing =>
-					tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+				ChallengeResponse::Pending { .. } => {
+					let retry_after = std::time::Duration::from_secs(1);
+					eprintln!("Waiting for {:?} before rechecking challenge...", retry_after);
+					tokio::time::sleep(retry_after).await;
+				},
+
+				ChallengeResponse::Processing { retry_after } => {
+					eprintln!("Waiting for {:?} before rechecking challenge...", retry_after);
+					tokio::time::sleep(retry_after).await;
+				},
 
 				ChallengeResponse::Valid => break,
 
@@ -383,25 +381,25 @@ impl<'a> Account<'a> {
 		eprintln!("Waiting for authorization {} ...", authorization_url);
 
 		loop {
-			let Response {
-				location: _,
-				body: authorization,
-			} = post(
-				&authorization_url,
-				Auth::AccountUrl(&self.account_url),
-				None::<&()>,
-				&mut self.nonce,
-				&mut self.azure_account,
-				self.account_key_kid,
-				self.account_jws_alg,
-				&self.client,
-			).await.context("could not get authorization")?;
+			let authorization =
+				post(
+					&authorization_url,
+					Auth::AccountUrl(&self.account_url),
+					None::<&()>,
+					&mut self.nonce,
+					&mut self.azure_account,
+					self.account_key_kid,
+					self.account_jws_alg,
+					&self.client,
+				).await.context("could not get authorization")?;
 
 			eprintln!("Authorization {} is {:?}", authorization_url, authorization);
 
 			match authorization {
-				AuthorizationResponse::Pending { .. } =>
-					tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+				AuthorizationResponse::Pending { challenges: _, retry_after } => {
+					eprintln!("Waiting for {:?} before rechecking authorization...", retry_after);
+					tokio::time::sleep(retry_after).await;
+				},
 
 				AuthorizationResponse::Valid => break,
 
@@ -429,19 +427,17 @@ impl<'a> Account<'a> {
 		eprintln!("Finalizing order {} ...", order_url);
 
 		let order = loop {
-			let Response {
-				location: _,
-				body: order,
-			} = post(
-				&order_url,
-				Auth::AccountUrl(&self.account_url),
-				None::<&()>,
-				&mut self.nonce,
-				&mut self.azure_account,
-				self.account_key_kid,
-				self.account_jws_alg,
-				&self.client,
-			).await.context("could not get order")?;
+			let order =
+				post(
+					&order_url,
+					Auth::AccountUrl(&self.account_url),
+					None::<&()>,
+					&mut self.nonce,
+					&mut self.azure_account,
+					self.account_key_kid,
+					self.account_jws_alg,
+					&self.client,
+				).await.context("could not get order")?;
 
 			eprintln!("Order {} is {:?}", order_url, order);
 
@@ -450,27 +446,27 @@ impl<'a> Account<'a> {
 
 				OrderResponse::Pending { .. } => return Err(anyhow::anyhow!("order is still pending")),
 
-				OrderResponse::Processing =>
-					tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+				OrderResponse::Processing { retry_after } => {
+					eprintln!("Waiting for {:?} before rechecking order...", retry_after);
+					tokio::time::sleep(retry_after).await;
+				},
 
 				OrderResponse::Ready { finalize_url } => {
 					let csr = http_common::jws_base64_encode(csr);
 
-					let Response::<OrderResponse> {
-						location: _,
-						body: _,
-					} = post(
-						&finalize_url,
-						Auth::AccountUrl(&self.account_url),
-						Some(&FinalizeOrderRequest {
-							csr: &csr,
-						}),
-						&mut self.nonce,
-						&mut self.azure_account,
-						self.account_key_kid,
-						self.account_jws_alg,
-						&self.client,
-					).await.context("could not finalize order")?;
+					let _: OrderResponse =
+						post(
+							&finalize_url,
+							Auth::AccountUrl(&self.account_url),
+							Some(&FinalizeOrderRequest {
+								csr: &csr,
+							}),
+							&mut self.nonce,
+							&mut self.azure_account,
+							self.account_key_kid,
+							self.account_jws_alg,
+							&self.client,
+						).await.context("could not finalize order")?;
 
 					continue;
 				},
@@ -496,6 +492,7 @@ impl<'a> Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
 					(hyper::StatusCode::OK, Some((content_type, body))) if content_type == "application/pem-certificate-chain" => {
@@ -510,19 +507,17 @@ impl<'a> Account<'a> {
 
 		eprintln!("Downloading certificate {} ...", certificate_url);
 
-		let Response {
-			location: _,
-			body: CertificateResponse(certificate),
-		} = post(
-			&certificate_url,
-			Auth::AccountUrl(&self.account_url),
-			None::<&()>,
-			&mut self.nonce,
-			&mut self.azure_account,
-			self.account_key_kid,
-			self.account_jws_alg,
-			&self.client,
-		).await.context("could not download certificate")?;
+		let CertificateResponse(certificate) =
+			post(
+				&certificate_url,
+				Auth::AccountUrl(&self.account_url),
+				None::<&()>,
+				&mut self.nonce,
+				&mut self.azure_account,
+				self.account_key_kid,
+				self.account_jws_alg,
+				&self.client,
+			).await.context("could not download certificate")?;
 
 		eprintln!("Downloaded certificate {}", certificate_url);
 
@@ -563,9 +558,10 @@ where
 	*req.method_mut() = hyper::Method::GET;
 	*req.uri_mut() = url.parse().context("could not parse request URI")?;
 
-	let (body, mut headers) = client.request_inner(req).await.context("could not execute HTTP request")?;
+	let ResponseEx { body, new_nonce } =
+		client.request_inner(req).await.context("could not execute HTTP request")?;
 
-	if let Some(new_nonce) = headers.remove("Replay-Nonce") {
+	if let Some(new_nonce) = new_nonce {
 		*nonce = Some(new_nonce);
 	}
 
@@ -581,7 +577,7 @@ async fn post<TRequest, TResponse>(
 	account_key_kid: &str,
 	account_jws_alg: &str,
 	client: &http_common::Client,
-) -> anyhow::Result<Response<TResponse>>
+) -> anyhow::Result<TResponse>
 where
 	TRequest: serde::Serialize,
 	TResponse: http_common::FromResponse,
@@ -634,22 +630,12 @@ where
 	*req.uri_mut() = url.parse().context("could not parse request URI")?;
 	req.headers_mut().insert(hyper::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
 
-	let (body, mut headers) = client.request_inner(req).await.context("could not execute HTTP request")?;
+	let ResponseEx { body, new_nonce } =
+		client.request_inner(req).await.context("could not execute HTTP request")?;
 
-	*nonce = headers.remove("Replay-Nonce").context("server did not return new nonce")?;
+	*nonce = new_nonce.context("server did not return new nonce")?;
 
-	let location = match headers.get(hyper::header::LOCATION) {
-		Some(location) => {
-			let location = location.to_str().with_context(|| format!("malformed location header value {:?}", location))?;
-			Some(location.to_owned())
-		},
-		None => None,
-	};
-
-	Ok(Response {
-		location,
-		body,
-	})
+	Ok(body)
 }
 
 static APPLICATION_JOSE_JSON: once_cell::sync::Lazy<hyper::header::HeaderValue> =
@@ -675,9 +661,24 @@ struct Request<'a> {
 	signature: &'a str,
 }
 
-struct Response<B> {
-	location: Option<String>,
-	body: B,
+struct ResponseEx<TResponse> {
+	body: TResponse,
+	new_nonce: Option<hyper::header::HeaderValue>,
+}
+
+impl<TResponse> http_common::FromResponse for ResponseEx<TResponse> where TResponse: http_common::FromResponse {
+	fn from_response(
+		status: hyper::StatusCode,
+		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		mut headers: hyper::HeaderMap,
+	) -> anyhow::Result<Option<Self>> {
+		let new_nonce = headers.remove("replay-nonce");
+		match TResponse::from_response(status, body, headers) {
+			Ok(Some(body)) => Ok(Some(ResponseEx { body, new_nonce })),
+			Ok(None) => Ok(None),
+			Err(err) => Err(err),
+		}
+	}
 }
 
 #[derive(serde::Serialize)]
@@ -717,7 +718,10 @@ enum OrderResponse {
 	},
 
 	#[serde(rename = "processing")]
-	Processing,
+	Processing {
+		#[serde(default, skip)]
+		retry_after: std::time::Duration,
+	},
 
 	#[serde(rename = "ready")]
 	Ready {
@@ -736,11 +740,17 @@ impl http_common::FromResponse for OrderResponse {
 	fn from_response(
 		status: hyper::StatusCode,
 		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		headers: hyper::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
 			(hyper::StatusCode::CREATED, Some((content_type, body))) |
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-				Some(serde_json::from_reader(body)?),
+			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+				let mut body = serde_json::from_reader(body)?;
+				if let OrderResponse::Processing { retry_after } = &mut body {
+					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+				}
+				Some(body)
+			},
 			_ => None,
 		})
 	}
@@ -761,6 +771,9 @@ enum AuthorizationResponse {
 	#[serde(rename = "pending")]
 	Pending {
 		challenges: Vec<ChallengeResponse>,
+
+		#[serde(default, skip)]
+		retry_after: std::time::Duration,
 	},
 
 	#[serde(rename = "revoked")]
@@ -787,7 +800,10 @@ enum ChallengeResponse {
 	},
 
 	#[serde(rename = "processing")]
-	Processing,
+	Processing {
+		#[serde(default, skip)]
+		retry_after: std::time::Duration,
+	},
 
 	#[serde(rename = "valid")]
 	Valid,
@@ -797,10 +813,16 @@ impl http_common::FromResponse for AuthorizationResponse {
 	fn from_response(
 		status: hyper::StatusCode,
 		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		headers: hyper::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-				Some(serde_json::from_reader(body)?),
+			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+				let mut body = serde_json::from_reader(body)?;
+				if let AuthorizationResponse::Pending { challenges: _, retry_after } = &mut body {
+					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+				}
+				Some(body)
+			},
 			_ => None,
 		})
 	}
@@ -810,10 +832,16 @@ impl http_common::FromResponse for ChallengeResponse {
 	fn from_response(
 		status: hyper::StatusCode,
 		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		headers: hyper::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-				Some(serde_json::from_reader(body)?),
+			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+				let mut body = serde_json::from_reader(body)?;
+				if let ChallengeResponse::Processing { retry_after } = &mut body {
+					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+				}
+				Some(body)
+			},
 			_ => None,
 		})
 	}

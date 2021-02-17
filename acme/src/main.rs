@@ -107,8 +107,6 @@ async fn run(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 			}
 		};
 
-		eprintln!("Certificate: {}", certificate);
-
 		let mut certificates = vec![];
 		let mut current_cert = String::new();
 		let mut lines = certificate.lines();

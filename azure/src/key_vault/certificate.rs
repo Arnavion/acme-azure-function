@@ -53,6 +53,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
 					(hyper::StatusCode::ACCEPTED, Some((content_type, body))) if http_common::is_json(content_type) =>
@@ -70,7 +71,7 @@ impl<'a> crate::Account<'a> {
 				&format!("/certificates/{}/create?api-version=7.1", certificate_name),
 			).await?;
 
-		let (Response { csr }, _) =
+		let Response { csr } =
 			self.client.request(
 				hyper::Method::POST,
 				&url,
@@ -112,6 +113,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
 				struct ResponseInner {
@@ -155,7 +157,7 @@ impl<'a> crate::Account<'a> {
 				&format!("/certificates/{}?api-version=7.1", certificate_name),
 			).await?;
 
-		let (response, _) =
+		let response =
 			self.client.request(
 				hyper::Method::GET,
 				&url,
@@ -191,6 +193,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
 					hyper::StatusCode::CREATED => Some(Response),
@@ -207,7 +210,7 @@ impl<'a> crate::Account<'a> {
 				&format!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
 			).await?;
 
-		let _: (Response, _) =
+		let _: Response =
 			self.client.request(
 				hyper::Method::POST,
 				&url,

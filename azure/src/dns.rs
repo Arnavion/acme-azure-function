@@ -30,6 +30,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
 					hyper::StatusCode::CREATED => Some(Response),
@@ -49,7 +50,7 @@ impl<'a> crate::Account<'a> {
 				),
 			).await?;
 
-		let _: (Response, _) =
+		let _: Response =
 			self.client.request(
 				hyper::Method::PUT,
 				&url,
@@ -82,6 +83,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
 					hyper::StatusCode::ACCEPTED |
@@ -103,7 +105,7 @@ impl<'a> crate::Account<'a> {
 				),
 			).await?;
 
-		let _: (Response, _) =
+		let _: Response =
 			self.client.request(
 				hyper::Method::DELETE,
 				&url,

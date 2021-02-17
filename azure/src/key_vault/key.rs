@@ -19,7 +19,7 @@ impl<'a> crate::Account<'a> {
 				&format!("/keys/{}/create?api-version=7.1", key_name),
 			).await?;
 
-		let (CreateOrGetKeyResponse { key }, _) =
+		let CreateOrGetKeyResponse { key } =
 			self.client.request(
 				hyper::Method::POST,
 				&url,
@@ -47,6 +47,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
 					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
@@ -65,7 +66,7 @@ impl<'a> crate::Account<'a> {
 				&format!("/keys/{}?api-version=7.1", key_name),
 			).await?;
 
-		let (response, _) =
+		let response =
 			self.client.request(
 				hyper::Method::GET,
 				&url,
@@ -105,6 +106,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
 					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
@@ -121,7 +123,7 @@ impl<'a> crate::Account<'a> {
 
 		let value = http_common::jws_base64_encode(signature_input);
 
-		let (Response { value }, _) =
+		let Response { value } =
 			self.client.request(
 				hyper::Method::POST,
 				&url,
@@ -154,6 +156,7 @@ impl http_common::FromResponse for CreateOrGetKeyResponse {
 	fn from_response(
 		status: hyper::StatusCode,
 		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		_headers: hyper::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
 			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>

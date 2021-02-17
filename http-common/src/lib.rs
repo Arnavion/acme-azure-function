@@ -2,12 +2,16 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
 	clippy::default_trait_access,
+	clippy::let_and_return,
 	clippy::missing_errors_doc,
 	clippy::must_use_candidate,
 	clippy::similar_names,
 )]
 
 use anyhow::Context;
+
+pub static APPLICATION_JSON: once_cell::sync::Lazy<hyper::header::HeaderValue> =
+	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("application/json"));
 
 pub struct Client {
 	inner: hyper::Client<hyper_rustls::HttpsConnector<hyper::client::connect::HttpConnector>, hyper::Body>,
@@ -48,7 +52,7 @@ impl Client {
 		url: &str,
 		authorization: hyper::header::HeaderValue,
 		body: Option<&B>,
-	) -> anyhow::Result<(T, hyper::header::HeaderMap)>
+	) -> anyhow::Result<T>
 	where
 		T: FromResponse,
 		B: serde::Serialize,
@@ -70,14 +74,14 @@ impl Client {
 		Ok(value)
 	}
 
-	pub async fn request_inner<T>(&self, mut req: hyper::Request<hyper::Body>) -> anyhow::Result<(T, hyper::header::HeaderMap)> where T: FromResponse {
+	pub async fn request_inner<T>(&self, mut req: hyper::Request<hyper::Body>) -> anyhow::Result<T> where T: FromResponse {
 		req.headers_mut().insert(hyper::header::USER_AGENT, self.user_agent.clone());
 
 		let res = self.inner.request(req).await.context("could not execute request")?;
 
-		let (http::response::Parts { status, headers, .. }, body) = res.into_parts();
+		let (http::response::Parts { status, mut headers, .. }, body) = res.into_parts();
 
-		let mut body = match headers.get(hyper::header::CONTENT_TYPE) {
+		let mut body = match headers.remove(hyper::header::CONTENT_TYPE) {
 			Some(content_type) => {
 				let body = hyper::body::aggregate(body).await.context("could not read response body")?;
 				let body = hyper::body::Buf::reader(body);
@@ -86,8 +90,8 @@ impl Client {
 			None => None,
 		};
 
-		let err = match T::from_response(status, body.as_mut().map(|(content_type, body)| (*content_type, body))) {
-			Ok(Some(value)) => return Ok((value, headers)),
+		let err = match T::from_response(status, body.as_mut().map(|(content_type, body)| (&*content_type, body)), headers) {
+			Ok(Some(value)) => return Ok(value),
 			Ok(None) => None,
 			Err(err) => Some(err),
 		};
@@ -109,18 +113,28 @@ pub trait FromResponse: Sized {
 	fn from_response(
 		status: hyper::StatusCode,
 		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		headers: hyper::HeaderMap,
 	) -> anyhow::Result<Option<Self>>;
 }
 
-impl FromResponse for () {
+pub struct ResponseWithLocation<T> {
+	pub body: T,
+	pub location: String,
+}
+
+impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 	fn from_response(
 		status: hyper::StatusCode,
-		_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+		headers: hyper::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
-		Ok(match status {
-			hyper::StatusCode::OK => Some(()),
-			_ => None,
-		})
+		let location = get_location(&headers)?;
+
+		match T::from_response(status, body, headers) {
+			Ok(Some(body)) => Ok(Some(ResponseWithLocation { body, location })),
+			Ok(None) => Ok(None),
+			Err(err) => Err(err),
+		}
 	}
 }
 
@@ -132,8 +146,51 @@ pub fn is_json(content_type: &hyper::header::HeaderValue) -> bool {
 	content_type == "application/json" || content_type.starts_with("application/json;")
 }
 
-pub static APPLICATION_JSON: once_cell::sync::Lazy<hyper::header::HeaderValue> =
-	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("application/json"));
+pub fn get_location(headers: &hyper::HeaderMap) -> anyhow::Result<String> {
+	let location =
+		headers
+		.get(hyper::header::LOCATION).context("missing location header")?
+		.to_str().context("could not parse location header")?
+		.to_owned();
+	Ok(location)
+}
+
+pub fn get_retry_after(
+	headers: &hyper::HeaderMap,
+	min: std::time::Duration,
+	max: std::time::Duration,
+) -> anyhow::Result<std::time::Duration> {
+	let retry_after =
+		if let Some(retry_after) = headers.get(hyper::header::RETRY_AFTER) {
+			retry_after
+		}
+		else {
+			return Ok(min);
+		};
+
+	let retry_after = retry_after.to_str().context("could not parse retry-after header")?;
+
+	// Ref:
+	//
+	// - https://tools.ietf.org/html/rfc7231#section-7.1.3
+	// - https://tools.ietf.org/html/rfc7231#section-7.1.1.1
+
+	let retry_after =
+		if let Ok(secs) = retry_after.parse() {
+			std::time::Duration::from_secs(secs)
+		}
+		else if let Ok(date) = chrono::NaiveDateTime::parse_from_str(retry_after, "%a, %d %b %Y %T GMT") {
+			let date = chrono::DateTime::from_utc(date, chrono::Utc);
+			let diff = date - chrono::Utc::now();
+			let diff = diff.to_std().context("could not parse retry-after header as HTTP-date")?;
+			diff
+		}
+		else {
+			return Err(anyhow::anyhow!("could not parse retry-after header as delay-seconds or HTTP-date"));
+		};
+
+	Ok(retry_after.clamp(min, max))
+}
 
 pub fn jws_base64_encode(s: &[u8]) -> String {
 	let config = base64::Config::new(base64::CharacterSet::UrlSafe, false);

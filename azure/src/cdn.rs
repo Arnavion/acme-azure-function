@@ -1,5 +1,3 @@
-use anyhow::Context;
-
 impl<'a> crate::Account<'a> {
 	pub async fn cdn_custom_domain_secret_get(
 		&mut self,
@@ -22,6 +20,7 @@ impl<'a> crate::Account<'a> {
 			fn from_response(
 				status: hyper::StatusCode,
 				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
 					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
@@ -43,7 +42,7 @@ impl<'a> crate::Account<'a> {
 				),
 			).await?;
 
-		let (response, _): (Response, _) =
+		let response: Response =
 			self.client.request(
 				hyper::Method::GET,
 				&url,
@@ -76,19 +75,31 @@ impl<'a> crate::Account<'a> {
 		key_vault_secret_name: &str,
 		key_vault_secret_version: &str,
 	) -> anyhow::Result<()> {
+		#[derive(Debug)]
 		enum Response {
 			Ok,
-			Accepted,
+			Accepted {
+				location: String,
+				retry_after: std::time::Duration,
+			},
 		}
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: hyper::StatusCode,
 				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
 					hyper::StatusCode::OK => Some(Response::Ok),
-					hyper::StatusCode::ACCEPTED => Some(Response::Accepted),
+					hyper::StatusCode::ACCEPTED => {
+						let location = http_common::get_location(&headers)?;
+						let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+						Some(Response::Accepted {
+							location,
+							retry_after,
+						})
+					},
 					_ => None,
 				})
 			}
@@ -114,7 +125,7 @@ impl<'a> crate::Account<'a> {
 				),
 			).await?;
 
-		let (mut response, mut headers) =
+		let mut response =
 			self.client.request(
 				hyper::Method::POST,
 				&url,
@@ -139,22 +150,19 @@ impl<'a> crate::Account<'a> {
 			match response {
 				Response::Ok => break,
 
-				Response::Accepted => {
-					let location = headers.remove(hyper::header::LOCATION).context("server returned HTTP 202 without location header")?;
-					let location = location.to_str().context("server returned HTTP 202 with malformed location header")?;
-
-					tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+				Response::Accepted { location, retry_after } => {
+					eprintln!("Waiting for {:?} before rechecking async operation...", retry_after);
+					tokio::time::sleep(retry_after).await;
 
 					eprintln!("Checking async operation {} ...", location);
 
-					let (new_response, new_headers) = self.client.request(
+					let new_response = self.client.request(
 						hyper::Method::GET,
 						&location,
 						authorization.clone(),
 						None::<&()>,
 					).await?;
 					response = new_response;
-					headers = new_headers;
 				},
 			}
 		}

@@ -104,6 +104,7 @@ async fn get_authorization(
 		fn from_response(
 			status: hyper::StatusCode,
 			body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+			_headers: hyper::HeaderMap,
 		) -> anyhow::Result<Option<Self>> {
 			Ok(match (status, body) {
 				(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
@@ -142,7 +143,7 @@ async fn get_authorization(
 		},
 	};
 
-	let (Response { access_token, token_type }, _) =
+	let Response { access_token, token_type } =
 		client.request_inner(req).await.context("could not get authorization")?;
 
 	let header_value = format!("{} {}", token_type, access_token);
