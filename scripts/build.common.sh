@@ -77,7 +77,28 @@ fi
 rm -rf "./$func_name/dist"
 mkdir -p "./$func_name/dist/$func_name"
 
+case "$target" in
+    'debug-http')
+        extensions="$(
+            jq --null-input --sort-keys \
+                '{
+                    "http": {
+                        "dynamicThrottlesEnabled": false,
+                        "maxConcurrentRequests": 1,
+                        "maxOutstandingRequests": 1,
+                        "routePrefix": "",
+                    },
+                }'
+        )"
+        ;;
+
+    'debug-timer'|'publish')
+        extensions='{}'
+        ;;
+esac
+
 >"./$func_name/dist/host.json" jq --null-input --sort-keys \
+    --argjson 'extensions' "$extensions" \
     '{
         "version": "2.0",
         "customHandler": {
@@ -85,10 +106,7 @@ mkdir -p "./$func_name/dist/$func_name"
                 "defaultExecutablePath": "main",
             },
         },
-        "extensionBundle": {
-            "id": "Microsoft.Azure.Functions.ExtensionBundle",
-            "version": "[2.*, 3.0.0)",
-        },
+        "extensions": $extensions,
     }'
 
 >"./$func_name/dist/$func_name/function.json" jq --null-input --sort-keys \

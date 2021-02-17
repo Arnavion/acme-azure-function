@@ -182,7 +182,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     ```sh
     ./acme/build.sh debug
 
-    curl -D - 'http://localhost:7071/api/acme'
+    curl -D - 'http://localhost:7071/acme'
     ```
 
 If you need to force a new certificate to be requested while the previous one in the KeyVault is still valid, delete it:

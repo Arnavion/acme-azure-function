@@ -229,7 +229,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     ```sh
     ./update-cdn-cert/build.sh debug
 
-    curl -D - 'http://localhost:7071/api/update-cdn-cert'
+    curl -D - 'http://localhost:7071/update-cdn-cert'
     ```
 
 

@@ -73,7 +73,7 @@ set -euo pipefail
 
 apt-get update -y
 
-apt-get install -y apt-transport-https curl gpg libicu63 lsb-release sudo unzip
+apt-get install -y apt-transport-https curl gpg libicu63 lsb-release unzip
 curl -L 'https://packages.microsoft.com/keys/microsoft.asc' | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.asc.gpg
 echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ \$(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list
 apt-get update -y
@@ -88,12 +88,7 @@ unzip -d '/usr/local/bin/func/' '/usr/local/bin/func/func.zip'
 rm '/usr/local/bin/func/func.zip'
 chmod +x '/usr/local/bin/func/func' '/usr/local/bin/func/gozip'
 
-sudo -u '$username' mkdir -p '$HOME/data/Functions/ExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/2.4.0/'
-sudo -u '$username' curl -Lo '$HOME/data/Microsoft.Azure.Functions.ExtensionBundle.zip' 'https://functionscdn.azureedge.net/public/ExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/2.4.0/Microsoft.Azure.Functions.ExtensionBundle.2.4.0.zip'
-sudo -u '$username' unzip -d '$HOME/data/Functions/ExtensionBundles/Microsoft.Azure.Functions.ExtensionBundle/2.4.0/' '$HOME/data/Microsoft.Azure.Functions.ExtensionBundle.zip'
-sudo -u '$username' rm '$HOME/data/Microsoft.Azure.Functions.ExtensionBundle.zip'
-
-SUDO_FORCE_REMOVE=yes apt-get remove -y --purge --autoremove curl gpg lsb-release sudo unzip
+apt-get remove -y --purge --autoremove curl gpg lsb-release unzip
 
 apt-get clean -y
 EOF
