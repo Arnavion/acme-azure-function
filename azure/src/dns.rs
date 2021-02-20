@@ -33,6 +33,7 @@ impl<'a> crate::Account<'a> {
 				_headers: hyper::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
+					hyper::StatusCode::OK |
 					hyper::StatusCode::CREATED => Some(Response),
 					_ => None,
 				})
