@@ -217,6 +217,9 @@ FunctionAppLogs
 
 # Misc
 
-- The ACME account key is generated with an ECDSA P-384 key. This is the most secure algorithm supported by Let's Encrypt.
+- The ACME account key is generated with an ECDSA P-384 key by default. This is the most secure algorithm supported by Let's Encrypt and Azure KeyVault;
+  Let's Encrypt does not support P-521 and Azure KeyVault does not support Ed25519 and Ed448.
 
-- The TLS certificate is generated with an RSA 4096-bit key, because this cert is eventually used for an Azure CDN. Let's Encrypt and modern browsers also support ECDSA keys, but Azure CDN does not.
+  You can change the key algorithm in `build.sh` by changing the value of `"azure_key_vault_acme_account_key_type"` in the Function app secret settings.
+
+- The TLS certificate is generated with an RSA 4096-bit key by default. You can change the key algorithm in `build.sh` by changing the value of `"azure_key_vault_certificate_key_type"` in the Function app secret settings.

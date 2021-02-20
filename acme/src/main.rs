@@ -46,11 +46,13 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 			account_key
 		}
 		else {
+			let (kty, crv) = settings.azure_key_vault_acme_account_key_type;
 			let account_key =
 				azure_account.key_vault_key_create(
 					&settings.azure_key_vault_name,
 					&settings.azure_key_vault_acme_account_key_name,
-					azure::EcCurve::P384,
+					kty,
+					crv,
 				).await?;
 			account_key
 		}
@@ -96,6 +98,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 							&settings.azure_key_vault_name,
 							&settings.azure_key_vault_certificate_name,
 							&domain_name,
+							settings.azure_key_vault_certificate_key_type,
 						).await?;
 
 					acme_order = proto::Order::Valid(acme_account.finalize_order(ready, &csr).await?);
@@ -168,10 +171,23 @@ struct Settings {
 	/// A new key will be generated and uploaded if this secret does not already exist.
 	azure_key_vault_acme_account_key_name: String,
 
+	/// The parameters used for the private key of the ACME account key if it needs to be created.
+	#[serde(deserialize_with = "deserialize_key_vault_acme_account_key_type")]
+	azure_key_vault_acme_account_key_type: (azure::EcKty, azure::EcCurve),
+
+	// /// The name of the KeyVault secret that contains the ACME account key.
+	// ///
+	// /// A new key will be generated and uploaded if this secret does not already exist.
+	// azure_key_vault_acme_account_key_name: String,
+
 	/// The name of the certificate in the Azure KeyVault that contains the TLS certificate.
 	///
 	/// The new certificate will be uploaded here, and used for the custom domain.
 	azure_key_vault_certificate_name: String,
+
+	/// The parameters used for the private key of the new TLS certificate.
+	#[serde(deserialize_with = "deserialize_key_vault_certificate_key_type")]
+	azure_key_vault_certificate_key_type: azure::KeyVaultCreateCsrKeyType,
 
 	/// The domain name to request the TLS certificate for
 	top_level_domain_name: String,
@@ -190,4 +206,83 @@ struct Settings {
 	///
 	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
 	azure_tenant_id: Option<String>,
+}
+
+fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::EcKty, azure::EcCurve), D::Error>
+where
+	D: serde::Deserializer<'de>,
+{
+	struct Visitor;
+
+	impl<'de> serde::de::Visitor<'de> for Visitor {
+		type Value = (azure::EcKty, azure::EcCurve);
+
+		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+			f.write_str(r#"one of "#)?;
+			f.write_str(r#""ec:p256", "ec-hsm:p256", "#)?;
+			f.write_str(r#""ec:p384", "ec-hsm:p384", "#)?;
+			f.write_str(r#""ec:p521", "ec-hsm:p521""#)?;
+			Ok(())
+		}
+
+		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+			Ok(match s {
+				"ec:p256" => (azure::EcKty::Ec, azure::EcCurve::P256),
+				"ec-hsm:p256" => (azure::EcKty::EcHsm, azure::EcCurve::P256),
+				"ec:p384" => (azure::EcKty::Ec, azure::EcCurve::P384),
+				"ec-hsm:p384" => (azure::EcKty::EcHsm, azure::EcCurve::P384),
+				"ec:p521" => (azure::EcKty::Ec, azure::EcCurve::P521),
+				"ec-hsm:p521" => (azure::EcKty::EcHsm, azure::EcCurve::P521),
+
+				s => return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(s), &self)),
+			})
+		}
+	}
+
+	deserializer.deserialize_str(Visitor)
+}
+
+fn deserialize_key_vault_certificate_key_type<'de, D>(deserializer: D) -> Result<azure::KeyVaultCreateCsrKeyType, D::Error>
+where
+	D: serde::Deserializer<'de>,
+{
+	struct Visitor;
+
+	impl<'de> serde::de::Visitor<'de> for Visitor {
+		type Value = azure::KeyVaultCreateCsrKeyType;
+
+		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+			f.write_str(r#"one of "#)?;
+			f.write_str(r#""rsa:2048", "rsa:2048:exportable", "rsa-hsm:2048", "#)?;
+			f.write_str(r#""rsa:4096", "rsa:4096:exportable", "rsa-hsm:4096", "#)?;
+			f.write_str(r#""ec:p256", "ec:p256:exportable", "ec-hsm:p256", "#)?;
+			f.write_str(r#""ec:p384", "ec:p384:exportable", "ec-hsm:p384", "#)?;
+			f.write_str(r#""ec:p521", "ec:p521:exportable", "ec-hsm:p521""#)?;
+			Ok(())
+		}
+
+		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+			Ok(match s {
+				"rsa:2048" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 2048, exportable: false },
+				"rsa:2048:exportable" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 2048, exportable: true },
+				"rsa-hsm:2048" => azure::KeyVaultCreateCsrKeyType::RsaHsm { num_bits: 2048 },
+				"rsa:4096" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 4096, exportable: false },
+				"rsa:4096:exportable" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 4096, exportable: true },
+				"rsa-hsm:4096" => azure::KeyVaultCreateCsrKeyType::RsaHsm { num_bits: 4096 },
+				"ec:p256" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P256, exportable: false },
+				"ec:p256:exportable" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P256, exportable: true },
+				"ec-hsm:p256" => azure::KeyVaultCreateCsrKeyType::EcHsm { curve: azure::EcCurve::P256 },
+				"ec:p384" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P384, exportable: false },
+				"ec:p384:exportable" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P384, exportable: true },
+				"ec-hsm:p384" => azure::KeyVaultCreateCsrKeyType::EcHsm { curve: azure::EcCurve::P384 },
+				"ec:p521" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P521, exportable: false },
+				"ec:p521:exportable" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P521, exportable: true },
+				"ec-hsm:p521" => azure::KeyVaultCreateCsrKeyType::EcHsm { curve: azure::EcCurve::P521 },
+
+				s => return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(s), &self)),
+			})
+		}
+	}
+
+	deserializer.deserialize_str(Visitor)
 }

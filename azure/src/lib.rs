@@ -6,6 +6,7 @@
 	clippy::let_unit_value,
 	clippy::missing_errors_doc,
 	clippy::must_use_candidate,
+	clippy::similar_names,
 )]
 
 #![cfg(any(
@@ -26,10 +27,14 @@ mod dns;
 #[cfg(any(feature = "key_vault_cert", feature = "key_vault_key"))]
 mod key_vault;
 #[cfg(feature = "key_vault_cert")]
-pub use key_vault::Certificate as KeyVaultCertificate;
+pub use key_vault::{
+	Certificate as KeyVaultCertificate,
+	CreateCsrKeyType as KeyVaultCreateCsrKeyType,
+};
 #[cfg(feature = "key_vault_key")]
 pub use key_vault::{
 	EcCurve,
+	EcKty,
 	Jwk,
 	Key as KeyVaultKey,
 };

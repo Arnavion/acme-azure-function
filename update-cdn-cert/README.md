@@ -248,3 +248,10 @@ FunctionAppLogs
 | order by TimeGenerated desc
 | project TimeGenerated, Message
 ```
+
+
+# Misc
+
+- Azure CDN does not support certificates with ECDSA keys, only RSA keys. It also requires the private key to be exportable, which precludes the key from being stored in HSMs.
+
+  If you're generating the cert using the `acme` function in this repo, ensure that you set `"azure_key_vault_certificate_key_type"` in the Function app secret settings to `"rsa-2048:exportable"` or `"rsa-4096:exportable"`, not to any of `"rsa:2048"`, `"rsa:4096"`, `"rsa-hsm:*"`, `"ec:*"` or `"ec-hsm:*"`.

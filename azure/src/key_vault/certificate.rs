@@ -6,6 +6,7 @@ impl<'a> crate::Account<'a> {
 		key_vault_name: &str,
 		certificate_name: &str,
 		common_name: &str,
+		key_type: CreateCsrKeyType,
 	) -> anyhow::Result<Vec<u8>> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
@@ -27,8 +28,11 @@ impl<'a> crate::Account<'a> {
 
 		#[derive(serde::Serialize)]
 		struct RequestPolicyKeyProps<'a> {
+			#[serde(skip_serializing_if = "Option::is_none")]
+			crv: Option<crate::EcCurve>,
 			exportable: bool,
-			key_size: u32,
+			#[serde(skip_serializing_if = "Option::is_none")]
+			key_size: Option<u16>,
 			kty: &'a str,
 			reuse_key: bool,
 		}
@@ -82,11 +86,21 @@ impl<'a> crate::Account<'a> {
 							cert_transparency: false,
 							name: "Unknown",
 						},
-						key_props: RequestPolicyKeyProps {
-							exportable: true,
-							key_size: 4096,
-							kty: "RSA",
-							reuse_key: false,
+						key_props: {
+							let (kty, crv, key_size, exportable) = match key_type {
+								CreateCsrKeyType::Ec { curve, exportable } => ("EC", Some(curve), None, exportable),
+								CreateCsrKeyType::EcHsm { curve } => ("EC-HSM", Some(curve), None, false),
+								CreateCsrKeyType::Rsa { num_bits, exportable } => ("RSA", None, Some(num_bits), exportable),
+								CreateCsrKeyType::RsaHsm { num_bits } => ("RSA-HSM", None, Some(num_bits), false),
+							};
+
+							RequestPolicyKeyProps {
+								crv,
+								exportable,
+								key_size,
+								kty,
+								reuse_key: false,
+							}
 						},
 						x509_props: RequestPolicyX509Props {
 							sans: RequestPolicyX509PropsSans {
@@ -224,6 +238,27 @@ impl<'a> crate::Account<'a> {
 
 		Ok(())
 	}
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CreateCsrKeyType {
+	Ec {
+		curve: crate::EcCurve,
+		exportable: bool,
+	},
+
+	EcHsm {
+		curve: crate::EcCurve,
+	},
+
+	Rsa {
+		num_bits: u16,
+		exportable: bool,
+	},
+
+	RsaHsm {
+		num_bits: u16,
+	},
 }
 
 #[derive(Debug)]

@@ -5,12 +5,13 @@ impl<'a> crate::Account<'a> {
 		&'b self,
 		key_vault_name: &str,
 		key_name: &str,
+		kty: EcKty,
 		crv: EcCurve,
 	) -> anyhow::Result<Key<'b>> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
 			crv: EcCurve,
-			kty: &'a str,
+			kty: EcKty,
 			key_ops: &'a [&'a str],
 		}
 
@@ -29,7 +30,7 @@ impl<'a> crate::Account<'a> {
 				authorization,
 				Some(&Request {
 					crv,
-					kty: "EC",
+					kty,
 					key_ops: &["sign", "verify"],
 				}),
 			).await?;
@@ -39,7 +40,6 @@ impl<'a> crate::Account<'a> {
 		Ok(Key {
 			crv: key.crv,
 			kid: key.kid,
-			kty: key.kty,
 			x: key.x,
 			y: key.y,
 			account: self,
@@ -89,7 +89,6 @@ impl<'a> crate::Account<'a> {
 				Some(Key {
 					crv: key.crv,
 					kid: key.kid,
-					kty: key.kty,
 					x: key.x,
 					y: key.y,
 					account: self,
@@ -103,10 +102,18 @@ impl<'a> crate::Account<'a> {
 	}
 }
 
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
+pub enum EcKty {
+	#[serde(rename = "EC")]
+	Ec,
+
+	#[serde(rename = "EC-HSM")]
+	EcHsm,
+}
+
 pub struct Key<'a> {
 	pub crv: EcCurve,
 	pub kid: String,
-	pub kty: String,
 	pub x: String,
 	pub y: String,
 	account: &'a crate::Account<'a>,
@@ -114,15 +121,21 @@ pub struct Key<'a> {
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 pub enum EcCurve {
+	#[serde(rename = "P-256")]
+	P256,
+
 	#[serde(rename = "P-384")]
 	P384,
+
+	#[serde(rename = "P-521")]
+	P521,
 }
 
 impl Key<'_> {
 	pub fn jwk(&self) -> Jwk<'_> {
 		Jwk {
 			crv: self.crv,
-			kty: &self.kty,
+			kty: "EC",
 			x: &self.x,
 			y: &self.y,
 		}
@@ -170,10 +183,34 @@ impl Key<'_> {
 		}
 
 		let (alg, hash): (&'static str, fn(&str, &str) -> String) = match self.crv {
+			EcCurve::P256 => (
+				"ES256",
+				|protected, payload| {
+					let mut hasher: sha2::Sha256 = sha2::Digest::new();
+					sha2::Digest::update(&mut hasher, &protected);
+					sha2::Digest::update(&mut hasher, b".");
+					sha2::Digest::update(&mut hasher, &payload);
+					let signature_input = sha2::Digest::finalize(hasher);
+					http_common::jws_base64_encode(&signature_input)
+				},
+			),
+
 			EcCurve::P384 => (
 				"ES384",
 				|protected, payload| {
 					let mut hasher: sha2::Sha384 = sha2::Digest::new();
+					sha2::Digest::update(&mut hasher, &protected);
+					sha2::Digest::update(&mut hasher, b".");
+					sha2::Digest::update(&mut hasher, &payload);
+					let signature_input = sha2::Digest::finalize(hasher);
+					http_common::jws_base64_encode(&signature_input)
+				},
+			),
+
+			EcCurve::P521 => (
+				"ES512",
+				|protected, payload| {
+					let mut hasher: sha2::Sha512 = sha2::Digest::new();
 					sha2::Digest::update(&mut hasher, &protected);
 					sha2::Digest::update(&mut hasher, b".");
 					sha2::Digest::update(&mut hasher, &payload);
@@ -255,7 +292,7 @@ struct CreateOrGetKeyResponse {
 struct KeyResponse {
 	crv: EcCurve,
 	kid: String,
-	kty: String,
+	kty: EcKty,
 	x: String,
 	y: String,
 }

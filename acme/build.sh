@@ -37,7 +37,9 @@ esac
                 "azure_resource_group_name": $AZURE_RESOURCE_GROUP_NAME,
                 "azure_key_vault_name": $AZURE_KEY_VAULT_NAME,
                 "azure_key_vault_acme_account_key_name": $AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME,
+                "azure_key_vault_acme_account_key_type": "ec:p384",
                 "azure_key_vault_certificate_name": $AZURE_KEY_VAULT_CERTIFICATE_NAME,
+                "azure_key_vault_certificate_key_type": "rsa:4096:exportable",
                 "top_level_domain_name": $TOP_LEVEL_DOMAIN_NAME
             }'
     )"
