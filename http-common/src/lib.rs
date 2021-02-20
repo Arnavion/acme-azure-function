@@ -51,7 +51,7 @@ impl Client {
 		method: hyper::Method,
 		url: &str,
 		authorization: hyper::header::HeaderValue,
-		body: Option<&B>,
+		body: Option<B>,
 	) -> anyhow::Result<T>
 	where
 		T: FromResponse,
@@ -59,7 +59,7 @@ impl Client {
 	{
 		let mut req =
 			if let Some(body) = body {
-				let mut req = hyper::Request::new(serde_json::to_vec(body).context("could not serialize request body")?.into());
+				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
 				req.headers_mut().insert(hyper::header::CONTENT_TYPE, APPLICATION_JSON.clone());
 				req
 			}

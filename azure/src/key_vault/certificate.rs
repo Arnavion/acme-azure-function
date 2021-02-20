@@ -2,7 +2,7 @@ use anyhow::Context;
 
 impl<'a> crate::Account<'a> {
 	pub async fn key_vault_csr_create(
-		&mut self,
+		&self,
 		key_vault_name: &str,
 		certificate_name: &str,
 		common_name: &str,
@@ -103,7 +103,7 @@ impl<'a> crate::Account<'a> {
 	}
 
 	pub async fn key_vault_certificate_get(
-		&mut self,
+		&self,
 		key_vault_name: &str,
 		certificate_name: &str,
 	) -> anyhow::Result<Option<Certificate>> {
@@ -177,7 +177,7 @@ impl<'a> crate::Account<'a> {
 	}
 
 	pub async fn key_vault_certificate_merge(
-		&mut self,
+		&self,
 		key_vault_name: &str,
 		certificate_name: &str,
 		certificates: &[String],

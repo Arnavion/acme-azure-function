@@ -1,14 +1,9 @@
 use anyhow::Context;
 
 pub(crate) struct Account<'a> {
-	pub(crate) azure_account: &'a mut azure::Account<'a>,
-
-	jwk_thumbprint: String,
-	account_key_kid: &'a str,
-	account_jws_alg: &'static str,
-
-	client: http_common::Client,
+	account_key: &'a azure::KeyVaultKey<'a>,
 	account_url: String,
+	client: http_common::Client,
 	nonce: hyper::header::HeaderValue,
 	new_order_url: String,
 }
@@ -17,8 +12,7 @@ impl<'a> Account<'a> {
 	pub(crate) async fn new(
 		acme_directory_url: &'a str,
 		acme_contact_url: &'a str,
-		azure_account: &'a mut azure::Account<'a>,
-		account_key: &'a azure::KeyVaultKey,
+		account_key: &'a azure::KeyVaultKey<'a>,
 		user_agent: &str,
 	) -> anyhow::Result<Account<'a>> {
 		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
@@ -59,37 +53,15 @@ impl<'a> Account<'a> {
 				new_nonce_url,
 				new_order_url,
 			} = get(
-				acme_directory_url,
-				&mut nonce,
 				&client,
+				&mut nonce,
+				acme_directory_url,
 			).await.context("could not query ACME directory")?;
 
 			eprintln!("Got directory {}", acme_directory_url);
 
 			(nonce, new_nonce_url, new_account_url, new_order_url)
 		};
-
-		let jwk = Jwk {
-			crv: &account_key.crv,
-			kty: &account_key.kty,
-			x: &account_key.x,
-			y: &account_key.y,
-		};
-		let account_key_kid = &account_key.kid;
-		let account_jws_alg = match &*account_key.crv {
-			"P-384" => "ES384",
-			crv => return Err(anyhow::anyhow!("unexpected account key curve {:?}", crv)),
-		};
-
-		eprintln!("Creating account key thumbprint...");
-		let jwk_thumbprint = {
-			let jwk = serde_json::to_vec(&jwk).context("could not serialize JWK")?;
-			let mut hasher: sha2::Sha256 = sha2::Digest::new();
-			sha2::Digest::update(&mut hasher, &jwk);
-			let result = sha2::Digest::finalize(hasher);
-			http_common::jws_base64_encode(&result)
-		};
-		eprintln!("Created account key thumbprint");
 
 		let mut nonce =
 			if let Some(nonce) = nonce {
@@ -115,9 +87,9 @@ impl<'a> Account<'a> {
 				eprintln!("Getting initial nonce...");
 
 				let NewNonceResponse = get(
-					&new_nonce_url,
-					&mut nonce,
 					&client,
+					&mut nonce,
+					&new_nonce_url,
 				).await.context("could not get initial nonce")?;
 
 				let nonce = nonce.context("server did not return initial nonce")?;
@@ -162,17 +134,15 @@ impl<'a> Account<'a> {
 				body: NewAccountResponse { status },
 				location: account_url,
 			} = post(
+				account_key,
+				None,
+				&client,
+				&mut nonce,
 				&new_account_url,
-				Auth::Jwk(jwk),
 				Some(&NewAccountRequest {
 					contact_urls: &[acme_contact_url],
 					terms_of_service_agreed: true,
 				}),
-				&mut nonce,
-				azure_account,
-				account_key_kid,
-				account_jws_alg,
-				&client,
 			).await.context("could not create / get account")?;
 
 			eprintln!("Created / got account {} with status {}", account_url, status);
@@ -185,13 +155,8 @@ impl<'a> Account<'a> {
 		};
 
 		let result = Account {
-			azure_account,
-
-			jwk_thumbprint,
-			account_key_kid,
-			account_jws_alg,
-
 			client,
+			account_key,
 			account_url,
 			nonce,
 			new_order_url,
@@ -218,19 +183,17 @@ impl<'a> Account<'a> {
 			location: order_url,
 			body: _,
 		} = post(
+			self.account_key,
+			Some(&self.account_url),
+			&self.client,
+			&mut self.nonce,
 			&self.new_order_url,
-			Auth::AccountUrl(&self.account_url),
 			Some(&NewOrderRequest {
 				identifiers: &[NewOrderRequestIdentifier {
 					r#type: "dns",
 					value: domain_name,
 				}],
 			}),
-			&mut self.nonce,
-			&mut self.azure_account,
-			self.account_key_kid,
-			self.account_jws_alg,
-			&self.client,
 		).await.context("could not create / get order")?;
 
 		eprintln!("Created order for {} : {}", domain_name, order_url);
@@ -238,14 +201,12 @@ impl<'a> Account<'a> {
 		let order = loop {
 			let order =
 				post(
-					&order_url,
-					Auth::AccountUrl(&self.account_url),
-					None::<&()>,
-					&mut self.nonce,
-					&mut self.azure_account,
-					self.account_key_kid,
-					self.account_jws_alg,
+					self.account_key,
+					Some(&self.account_url),
 					&self.client,
+					&mut self.nonce,
+					&order_url,
+					None::<&()>,
 				).await.context("could not get order")?;
 
 			eprintln!("Order {} is {:?}", order_url, order);
@@ -261,14 +222,12 @@ impl<'a> Account<'a> {
 
 					let authorization =
 						post(
-							&authorization_url,
-							Auth::AccountUrl(&self.account_url),
-							None::<&()>,
-							&mut self.nonce,
-							&mut self.azure_account,
-							self.account_key_kid,
-							self.account_jws_alg,
+							self.account_key,
+							Some(&self.account_url),
 							&self.client,
+							&mut self.nonce,
+							&authorization_url,
+							None::<&()>,
 						).await.context("could not get authorization")?;
 
 					eprintln!("Authorization {} is {:?}", authorization_url, authorization);
@@ -294,7 +253,7 @@ impl<'a> Account<'a> {
 							let mut hasher: sha2::Sha256 = sha2::Digest::new();
 							sha2::Digest::update(&mut hasher, token.as_bytes());
 							sha2::Digest::update(&mut hasher, b".");
-							sha2::Digest::update(&mut hasher, self.jwk_thumbprint.as_bytes());
+							sha2::Digest::update(&mut hasher, self.account_key.jwk().thumbprint().as_bytes());
 							let result = sha2::Digest::finalize(hasher);
 							http_common::jws_base64_encode(&result)
 						},
@@ -335,27 +294,23 @@ impl<'a> Account<'a> {
 
 		let _: ChallengeResponse =
 			post(
-				&challenge_url,
-				Auth::AccountUrl(&self.account_url),
-				Some(&ChallengeCompleteRequest { }),
-				&mut self.nonce,
-				&mut self.azure_account,
-				self.account_key_kid,
-				self.account_jws_alg,
+				self.account_key,
+				Some(&self.account_url),
 				&self.client,
+				&mut self.nonce,
+				&challenge_url,
+				Some(&ChallengeCompleteRequest { }),
 			).await.context("could not complete challenge")?;
 
 		loop {
 			let challenge =
 				post(
-					&challenge_url,
-					Auth::AccountUrl(&self.account_url),
-					None::<&()>,
-					&mut self.nonce,
-					&mut self.azure_account,
-					self.account_key_kid,
-					self.account_jws_alg,
+					self.account_key,
+					Some(&self.account_url),
 					&self.client,
+					&mut self.nonce,
+					&challenge_url,
+					None::<&()>,
 				).await.context("could not get challenge")?;
 
 			eprintln!("Challenge {} is {:?}", challenge_url, challenge);
@@ -383,14 +338,12 @@ impl<'a> Account<'a> {
 		loop {
 			let authorization =
 				post(
-					&authorization_url,
-					Auth::AccountUrl(&self.account_url),
-					None::<&()>,
-					&mut self.nonce,
-					&mut self.azure_account,
-					self.account_key_kid,
-					self.account_jws_alg,
+					self.account_key,
+					Some(&self.account_url),
 					&self.client,
+					&mut self.nonce,
+					&authorization_url,
+					None::<&()>,
 				).await.context("could not get authorization")?;
 
 			eprintln!("Authorization {} is {:?}", authorization_url, authorization);
@@ -429,14 +382,12 @@ impl<'a> Account<'a> {
 		let order = loop {
 			let order =
 				post(
-					&order_url,
-					Auth::AccountUrl(&self.account_url),
-					None::<&()>,
-					&mut self.nonce,
-					&mut self.azure_account,
-					self.account_key_kid,
-					self.account_jws_alg,
+					self.account_key,
+					Some(&self.account_url),
 					&self.client,
+					&mut self.nonce,
+					&order_url,
+					None::<&()>,
 				).await.context("could not get order")?;
 
 			eprintln!("Order {} is {:?}", order_url, order);
@@ -456,16 +407,14 @@ impl<'a> Account<'a> {
 
 					let _: OrderResponse =
 						post(
+							self.account_key,
+							Some(&self.account_url),
+							&self.client,
+							&mut self.nonce,
 							&finalize_url,
-							Auth::AccountUrl(&self.account_url),
 							Some(&FinalizeOrderRequest {
 								csr: &csr,
 							}),
-							&mut self.nonce,
-							&mut self.azure_account,
-							self.account_key_kid,
-							self.account_jws_alg,
-							&self.client,
 						).await.context("could not finalize order")?;
 
 					continue;
@@ -509,14 +458,12 @@ impl<'a> Account<'a> {
 
 		let CertificateResponse(certificate) =
 			post(
-				&certificate_url,
-				Auth::AccountUrl(&self.account_url),
-				None::<&()>,
-				&mut self.nonce,
-				&mut self.azure_account,
-				self.account_key_kid,
-				self.account_jws_alg,
+				self.account_key,
+				Some(&self.account_url),
 				&self.client,
+				&mut self.nonce,
+				&certificate_url,
+				None::<&()>,
 			).await.context("could not download certificate")?;
 
 		eprintln!("Downloaded certificate {}", certificate_url);
@@ -547,9 +494,9 @@ pub(crate) struct OrderValid {
 }
 
 async fn get<TResponse>(
-	url: &str,
-	nonce: &mut Option<hyper::header::HeaderValue>,
 	client: &http_common::Client,
+	nonce: &mut Option<hyper::header::HeaderValue>,
+	url: &str,
 ) -> anyhow::Result<TResponse>
 where
 	TResponse: http_common::FromResponse,
@@ -569,61 +516,55 @@ where
 }
 
 async fn post<TRequest, TResponse>(
-	url: &str,
-	auth: Auth<'_>,
-	body: Option<&TRequest>,
-	nonce: &mut hyper::header::HeaderValue,
-	azure_account: &mut azure::Account<'_>,
-	account_key_kid: &str,
-	account_jws_alg: &str,
+	account_key: &azure::KeyVaultKey<'_>,
+	account_url: Option<&str>,
 	client: &http_common::Client,
+	nonce: &mut hyper::header::HeaderValue,
+	url: &str,
+	body: Option<TRequest>,
 ) -> anyhow::Result<TResponse>
 where
 	TRequest: serde::Serialize,
 	TResponse: http_common::FromResponse,
 {
+	#[derive(serde::Serialize)]
+	struct Protected<'a> {
+		alg: &'a str,
+
+		#[serde(skip_serializing_if = "Option::is_none")]
+		jwk: Option<azure::Jwk<'a>>,
+
+		#[serde(skip_serializing_if = "Option::is_none")]
+		kid: Option<&'a str>,
+
+		#[serde(serialize_with = "serialize_header_value")]
+		nonce: &'a hyper::header::HeaderValue,
+
+		url: &'a str,
+	}
+
+	fn serialize_header_value<S>(header_value: &hyper::header::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+		let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
+		serializer.serialize_str(header_value)
+	}
+
 	let mut req = {
-		let (kid, jwk) = match auth {
-			Auth::AccountUrl(account_url) => (Some(account_url), None),
-			Auth::Jwk(jwk) => (None, Some(jwk)),
-		};
-
-		let protected = Protected {
-			alg: account_jws_alg,
-			jwk,
-			kid,
-			nonce,
-			url,
-		};
-		let protected_encoded = serde_json::to_vec(&protected).context("could not serialize `protected`")?;
-		let protected_encoded = http_common::jws_base64_encode(&protected_encoded);
-
-		let payload_encoded =
-			if let Some(body) = body {
-				let payload_encoded = serde_json::to_vec(body).context("could not serialize `payload`")?;
-				let payload_encoded = http_common::jws_base64_encode(&payload_encoded);
-				payload_encoded
-			}
-			else {
-				String::new()
+		let body = account_key.jws(body, |alg| {
+			let (jwk, kid) =
+				account_url.map_or_else(
+					|| (Some(account_key.jwk()), None),
+					|account_url| (None, Some(account_url)),
+				);
+			let protected = Protected {
+				alg,
+				jwk,
+				kid,
+				nonce,
+				url,
 			};
-
-		let signature_input = {
-			let mut hasher: sha2::Sha384 = sha2::Digest::new();
-			sha2::Digest::update(&mut hasher, &protected_encoded);
-			sha2::Digest::update(&mut hasher, b".");
-			sha2::Digest::update(&mut hasher, &payload_encoded);
-			sha2::Digest::finalize(hasher)
-		};
-		let signature = azure_account.key_vault_key_sign(account_key_kid, protected.alg, &signature_input).await?;
-
-		let body = Request {
-			payload: &payload_encoded,
-			protected: &protected_encoded,
-			signature: &signature,
-		};
-		let body = serde_json::to_vec(&body).context("could not serialize request body")?;
-
+			let protected = serde_json::to_vec(&protected).expect("could not serialize `protected`");
+			protected
+		}).await?;
 		hyper::Request::new(body.into())
 	};
 	*req.method_mut() = hyper::Method::POST;
@@ -640,26 +581,6 @@ where
 
 static APPLICATION_JOSE_JSON: once_cell::sync::Lazy<hyper::header::HeaderValue> =
 	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("application/jose+json"));
-
-enum Auth<'a> {
-	AccountUrl(&'a str),
-	Jwk(Jwk<'a>),
-}
-
-#[derive(serde::Serialize)]
-struct Jwk<'a> {
-	crv: &'a str,
-	kty: &'a str,
-	x: &'a str,
-	y: &'a str,
-}
-
-#[derive(serde::Serialize)]
-struct Request<'a> {
-	payload: &'a str,
-	protected: &'a str,
-	signature: &'a str,
-}
 
 struct ResponseEx<TResponse> {
 	body: TResponse,
@@ -679,27 +600,6 @@ impl<TResponse> http_common::FromResponse for ResponseEx<TResponse> where TRespo
 			Err(err) => Err(err),
 		}
 	}
-}
-
-#[derive(serde::Serialize)]
-struct Protected<'a> {
-	alg: &'a str,
-
-	#[serde(skip_serializing_if = "Option::is_none")]
-	jwk: Option<Jwk<'a>>,
-
-	#[serde(skip_serializing_if = "Option::is_none")]
-	kid: Option<&'a str>,
-
-	#[serde(serialize_with = "serialize_header_value")]
-	nonce: &'a hyper::header::HeaderValue,
-
-	url: &'a str,
-}
-
-fn serialize_header_value<S>(header_value: &hyper::header::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
-	let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
-	serializer.serialize_str(header_value)
 }
 
 #[derive(Debug, serde::Deserialize)]

@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
+futures-util = { version = "0.3", default-features = false }
 
 azure = { path = "../azure", features = ["cdn", "key_vault_cert"] }
 function-worker = { path = "../function-worker" }

@@ -22,7 +22,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 		settings.azure_client_secret.as_deref(),
 		settings.azure_tenant_id.as_deref(),
 	)?;
-	let mut azure_account = azure::Account::new(
+	let azure_account = azure::Account::new(
 		&settings.azure_subscription_id,
 		&settings.azure_resource_group_name,
 		&azure_auth,
@@ -46,7 +46,12 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 			account_key
 		}
 		else {
-			let account_key = azure_account.key_vault_key_create(&settings.azure_key_vault_name, &settings.azure_key_vault_acme_account_key_name).await?;
+			let account_key =
+				azure_account.key_vault_key_create(
+					&settings.azure_key_vault_name,
+					&settings.azure_key_vault_acme_account_key_name,
+					azure::EcCurve::P384,
+				).await?;
 			account_key
 		}
 	};
@@ -54,7 +59,6 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let mut acme_account = proto::Account::new(
 		&settings.acme_directory_url,
 		&settings.acme_contact_url,
-		&mut azure_account,
 		&account_key,
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 	).await.context("could not initialize ACME API client")?;
@@ -68,7 +72,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 			match acme_order {
 				proto::Order::Pending(pending) => {
 					let () =
-						acme_account.azure_account.dns_txt_record_create(
+						azure_account.dns_txt_record_create(
 							&settings.top_level_domain_name,
 							"_acme-challenge",
 							&pending.dns_txt_record_content,
@@ -78,7 +82,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 					let new_acme_order = acme_account.complete_authorization(pending).await;
 
 					let () =
-						acme_account.azure_account.dns_txt_record_delete(
+						azure_account.dns_txt_record_delete(
 							&settings.top_level_domain_name,
 							"_acme-challenge",
 						).await?;
@@ -88,7 +92,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 
 				proto::Order::Ready(ready) => {
 					let csr =
-						acme_account.azure_account.key_vault_csr_create(
+						azure_account.key_vault_csr_create(
 							&settings.azure_key_vault_name,
 							&settings.azure_key_vault_certificate_name,
 							&domain_name,
@@ -131,7 +135,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	};
 
 	let () =
-		acme_account.azure_account.key_vault_certificate_merge(
+		azure_account.key_vault_certificate_merge(
 			&settings.azure_key_vault_name,
 			&settings.azure_key_vault_certificate_name,
 			&certificates,

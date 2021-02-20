@@ -1,6 +1,6 @@
 impl<'a> crate::Account<'a> {
 	pub async fn dns_txt_record_create(
-		&mut self,
+		&self,
 		dns_zone_name: &str,
 		name: &str,
 		content: &str,
@@ -73,7 +73,7 @@ impl<'a> crate::Account<'a> {
 	}
 
 	pub async fn dns_txt_record_delete(
-		&mut self,
+		&self,
 		dns_zone_name: &str,
 		name: &str,
 	) -> anyhow::Result<()> {

@@ -1,6 +1,6 @@
 impl<'a> crate::Account<'a> {
 	pub async fn cdn_custom_domain_secret_get(
-		&mut self,
+		&self,
 		cdn_profile_name: &str,
 		cdn_endpoint_name: &str,
 		cdn_custom_domain_name: &str,
@@ -67,7 +67,7 @@ impl<'a> crate::Account<'a> {
 	}
 
 	pub async fn cdn_custom_domain_secret_set(
-		&mut self,
+		&self,
 		cdn_profile_name: &str,
 		cdn_endpoint_name: &str,
 		cdn_custom_domain_name: &str,

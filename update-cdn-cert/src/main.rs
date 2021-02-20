@@ -16,32 +16,59 @@ async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Res
 		settings.azure_client_secret.as_deref(),
 		settings.azure_tenant_id.as_deref(),
 	)?;
-	let mut azure_account = azure::Account::new(
+	let azure_account = azure::Account::new(
 		&settings.azure_subscription_id,
 		&settings.azure_resource_group_name,
 		&azure_auth,
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 	).context("could not initialize Azure API client")?;
 
-	let key_vault_certificate_version = {
-		let certificate = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name).await?;
-		if let Some(certificate) = certificate {
-			certificate.version
-		}
-		else {
-			eprintln!("Nothing to do.");
-			return Ok(());
-		}
-	};
+	let (key_vault_certificate_version, cdn_custom_domain_secret) = {
+		let certificate_f = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name);
+		futures_util::pin_mut!(certificate_f);
 
-	let cdn_custom_domain_secret =
-		azure_account.cdn_custom_domain_secret_get(
+		let secret_f = azure_account.cdn_custom_domain_secret_get(
 			&settings.azure_cdn_profile_name,
 			&settings.azure_cdn_endpoint_name,
 			&settings.azure_cdn_custom_domain_name,
-		).await?;
+		);
+		futures_util::pin_mut!(secret_f);
 
-	if let Some(cdn_custom_domain_secret) = &cdn_custom_domain_secret {
+		let result =
+			futures_util::future::try_select(certificate_f, secret_f).await
+			.map_err(|err| err.factor_first().0)?;
+		match result {
+			futures_util::future::Either::Left((certificate, secret_f)) => {
+				let certificate_version =
+					if let Some(certificate) = certificate {
+						certificate.version
+					}
+					else {
+						eprintln!("Nothing to do.");
+						return Ok(());
+					};
+
+				(certificate_version, secret_f.await?)
+			},
+
+			futures_util::future::Either::Right((secret, certificate_f)) => {
+				let certificate = certificate_f.await?;
+
+				let certificate_version =
+					if let Some(certificate) = certificate {
+						certificate.version
+					}
+					else {
+						eprintln!("Nothing to do.");
+						return Ok(());
+					};
+
+				(certificate_version, secret)
+			},
+		}
+	};
+
+	if let Some(cdn_custom_domain_secret) = cdn_custom_domain_secret {
 		if cdn_custom_domain_secret.name == settings.azure_key_vault_certificate_name && cdn_custom_domain_secret.version == key_vault_certificate_version {
 			eprintln!("Nothing to do.");
 			return Ok(());

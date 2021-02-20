@@ -41,6 +41,7 @@ dependencies = [
  "hyper",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 
@@ -687,6 +688,7 @@ dependencies = [
  "anyhow",
  "azure",
  "function-worker",
+ "futures-util",
  "serde",
 ]
 

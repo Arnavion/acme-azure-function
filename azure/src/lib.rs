@@ -2,8 +2,10 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
 	clippy::default_trait_access,
+	clippy::let_and_return,
 	clippy::let_unit_value,
 	clippy::missing_errors_doc,
+	clippy::must_use_candidate,
 )]
 
 #![cfg(any(
@@ -26,7 +28,11 @@ mod key_vault;
 #[cfg(feature = "key_vault_cert")]
 pub use key_vault::Certificate as KeyVaultCertificate;
 #[cfg(feature = "key_vault_key")]
-pub use key_vault::Key as KeyVaultKey;
+pub use key_vault::{
+	EcCurve,
+	Jwk,
+	Key as KeyVaultKey,
+};
 
 use anyhow::Context;
 
@@ -36,8 +42,8 @@ pub struct Account<'a> {
 	auth: &'a Auth<'a>,
 
 	client: http_common::Client,
-	cached_management_authorization: Option<hyper::header::HeaderValue>,
-	cached_key_vault_authorization: Option<hyper::header::HeaderValue>,
+	cached_management_authorization: tokio::sync::RwLock<Option<hyper::header::HeaderValue>>,
+	cached_key_vault_authorization: tokio::sync::RwLock<Option<hyper::header::HeaderValue>>,
 }
 
 impl<'a> Account<'a> {
@@ -53,23 +59,23 @@ impl<'a> Account<'a> {
 			auth,
 
 			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
-			cached_management_authorization: None,
-			cached_key_vault_authorization: None,
+			cached_management_authorization: Default::default(),
+			cached_key_vault_authorization: Default::default(),
 		})
 	}
 
 	#[cfg(any(feature = "cdn", feature = "dns"))]
-	async fn management_request_parameters(&mut self, relative_url: &str) -> anyhow::Result<(String, hyper::header::HeaderValue)> {
-		let url =
-			format!(
-				"https://management.azure.com/subscriptions/{}/resourceGroups/{}{}",
-				self.subscription_id,
-				self.resource_group_name,
-				relative_url,
-			);
+	async fn management_authorization(&self) -> anyhow::Result<hyper::header::HeaderValue> {
+		{
+			let cached_management_authorization = self.cached_management_authorization.read().await;
+			if let Some(authorization) = &*cached_management_authorization {
+				return Ok(authorization.clone());
+			}
+		}
 
-		let authorization = match &mut self.cached_management_authorization {
-			Some(authorization) => authorization.clone(),
+		let mut cached_management_authorization = self.cached_management_authorization.write().await;
+		match &mut *cached_management_authorization {
+			Some(authorization) => Ok(authorization.clone()),
 
 			None => {
 				eprintln!("Getting Management API authorization...");
@@ -80,10 +86,23 @@ impl<'a> Account<'a> {
 						"https://management.azure.com",
 					).await.context("could not get Management API authorization")?;
 				eprintln!("Got Management API authorization");
-				self.cached_management_authorization = Some(authorization.clone());
-				authorization
+				*cached_management_authorization = Some(authorization.clone());
+				Ok(authorization)
 			},
-		};
+		}
+	}
+
+	#[cfg(any(feature = "cdn", feature = "dns"))]
+	async fn management_request_parameters(&self, relative_url: &str) -> anyhow::Result<(String, hyper::header::HeaderValue)> {
+		let url =
+			format!(
+				"https://management.azure.com/subscriptions/{}/resourceGroups/{}{}",
+				self.subscription_id,
+				self.resource_group_name,
+				relative_url,
+			);
+
+		let authorization = self.management_authorization().await?;
 
 		Ok((url, authorization))
 	}
