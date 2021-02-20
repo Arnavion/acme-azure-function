@@ -12,16 +12,11 @@ mod proto;
 
 use anyhow::Context;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-	function_host::run([
-		("/acme", (|settings| Box::pin(run(settings)) as _) as fn(_) -> _),
-	].iter().copied().collect()).await?;
-
-	Ok(())
+function_worker::run! {
+	"acme" => acme_main,
 }
 
-async fn run(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
+async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
 		settings.azure_client_id.as_deref(),
 		settings.azure_client_secret.as_deref(),

@@ -10,7 +10,6 @@ publish = false
 [dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["macros", "rt"] }
 
 azure = { path = "../azure", features = ["cdn", "key_vault_cert"] }
-function-host = { path = "../function-host" }
+function-worker = { path = "../function-worker" }

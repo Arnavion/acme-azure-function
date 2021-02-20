@@ -7,7 +7,7 @@ dependencies = [
  "anyhow",
  "azure",
  "chrono",
- "function-host",
+ "function-worker",
  "http-common",
  "hyper",
  "once_cell",
@@ -137,15 +137,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "function-host"
+name = "function-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "http-common",
  "hyper",
- "once_cell",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -617,18 +617,6 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
- "tokio-macros",
-]
-
-[[package]]
-name = "tokio-macros"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caf7b11a536f46a809a8a9f0bb4237020f70ecbf115b842360afb127ea2fda57"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -698,9 +686,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "azure",
- "function-host",
+ "function-worker",
  "serde",
- "tokio",
 ]
 
 [[package]]

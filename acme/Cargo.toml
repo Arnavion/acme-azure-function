@@ -15,8 +15,8 @@ once_cell = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = { version = "0.9", default-features = false }
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["time"] }
 
 azure = { path = "../azure", features = ["dns", "key_vault_cert", "key_vault_key"] }
-function-host = { path = "../function-host" }
+function-worker = { path = "../function-worker" }
 http-common = { path = "../http-common" }

@@ -6,16 +6,11 @@
 
 use anyhow::Context;
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-	function_host::run([
-		("/update-cdn-cert", (|settings| Box::pin(run(settings)) as _) as fn(_) -> _),
-	].iter().copied().collect()).await?;
-
-	Ok(())
+function_worker::run! {
+	"update-cdn-cert" => update_cdn_cert_main,
 }
 
-async fn run(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
+async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
 		settings.azure_client_id.as_deref(),
 		settings.azure_client_secret.as_deref(),
