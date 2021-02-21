@@ -112,10 +112,10 @@ pub enum EcKty {
 }
 
 pub struct Key<'a> {
-	pub crv: EcCurve,
-	pub kid: String,
-	pub x: String,
-	pub y: String,
+	crv: EcCurve,
+	kid: String,
+	x: String,
+	y: String,
 	account: &'a crate::Account<'a>,
 }
 
@@ -141,15 +141,40 @@ impl Key<'_> {
 		}
 	}
 
-	pub async fn jws<FProtected, TPayload>(
+	pub fn jws_alg(&self) -> &'static str {
+		match self.crv {
+			EcCurve::P256 => "ES256",
+			EcCurve::P384 => "ES384",
+			EcCurve::P521 => "ES512",
+		}
+	}
+
+	pub async fn jws<TProtected, TPayload>(
 		&self,
+		protected: TProtected,
 		payload: Option<TPayload>,
-		protected: FProtected,
 	) -> anyhow::Result<Vec<u8>>
 	where
-		FProtected: FnOnce(&str) -> Vec<u8>,
+		TProtected: serde::Serialize,
 		TPayload: serde::Serialize,
 	{
+		macro_rules! hash {
+			($crv:expr, $protected:expr, $payload:expr, { $($crv_name:pat => $hash:ty,)* }) => {
+				match $crv {
+					$(
+						$crv_name => {
+							let mut hasher: $hash = sha2::Digest::new();
+							sha2::Digest::update(&mut hasher, $protected);
+							sha2::Digest::update(&mut hasher, b".");
+							sha2::Digest::update(&mut hasher, $payload);
+							let hash = sha2::Digest::finalize(hasher);
+							http_common::jws_base64_encode(&hash)
+						},
+					)*
+				}
+			};
+		}
+
 		#[derive(serde::Serialize)]
 		struct KeyVaultSignRequest<'a> {
 			alg: &'a str,
@@ -182,45 +207,7 @@ impl Key<'_> {
 			signature: &'a str,
 		}
 
-		let (alg, hash): (&'static str, fn(&str, &str) -> String) = match self.crv {
-			EcCurve::P256 => (
-				"ES256",
-				|protected, payload| {
-					let mut hasher: sha2::Sha256 = sha2::Digest::new();
-					sha2::Digest::update(&mut hasher, &protected);
-					sha2::Digest::update(&mut hasher, b".");
-					sha2::Digest::update(&mut hasher, &payload);
-					let signature_input = sha2::Digest::finalize(hasher);
-					http_common::jws_base64_encode(&signature_input)
-				},
-			),
-
-			EcCurve::P384 => (
-				"ES384",
-				|protected, payload| {
-					let mut hasher: sha2::Sha384 = sha2::Digest::new();
-					sha2::Digest::update(&mut hasher, &protected);
-					sha2::Digest::update(&mut hasher, b".");
-					sha2::Digest::update(&mut hasher, &payload);
-					let signature_input = sha2::Digest::finalize(hasher);
-					http_common::jws_base64_encode(&signature_input)
-				},
-			),
-
-			EcCurve::P521 => (
-				"ES512",
-				|protected, payload| {
-					let mut hasher: sha2::Sha512 = sha2::Digest::new();
-					sha2::Digest::update(&mut hasher, &protected);
-					sha2::Digest::update(&mut hasher, b".");
-					sha2::Digest::update(&mut hasher, &payload);
-					let signature_input = sha2::Digest::finalize(hasher);
-					http_common::jws_base64_encode(&signature_input)
-				},
-			),
-		};
-
-		let protected = protected(alg);
+		let protected = serde_json::to_vec(&protected).context("could not serialize `protected`")?;
 		let protected = http_common::jws_base64_encode(&protected);
 
 		let payload =
@@ -234,7 +221,13 @@ impl Key<'_> {
 			};
 
 		let signature = {
-			let signature_input = hash(&protected, &payload);
+			let alg = self.jws_alg();
+
+			let hash = hash!(self.crv, &protected, &payload, {
+				EcCurve::P256 => sha2::Sha256,
+				EcCurve::P384 => sha2::Sha384,
+				EcCurve::P521 => sha2::Sha512,
+			});
 
 			eprintln!("Signing using key {} ...", self.kid);
 
@@ -248,7 +241,7 @@ impl Key<'_> {
 					authorization,
 					Some(&KeyVaultSignRequest {
 						alg,
-						value: &signature_input,
+						value: &hash,
 					}),
 				).await?;
 			eprintln!("Got signature using key {}", self.kid);
@@ -278,8 +271,8 @@ impl Jwk<'_> {
 		let jwk = serde_json::to_vec(self).expect("could not compute JWK thumbprint");
 		let mut hasher: sha2::Sha256 = sha2::Digest::new();
 		sha2::Digest::update(&mut hasher, &jwk);
-		let result = sha2::Digest::finalize(hasher);
-		http_common::jws_base64_encode(&result)
+		let hash = sha2::Digest::finalize(hasher);
+		http_common::jws_base64_encode(&hash)
 	}
 }
 

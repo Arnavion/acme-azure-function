@@ -254,8 +254,8 @@ impl<'a> Account<'a> {
 							sha2::Digest::update(&mut hasher, token.as_bytes());
 							sha2::Digest::update(&mut hasher, b".");
 							sha2::Digest::update(&mut hasher, self.account_key.jwk().thumbprint().as_bytes());
-							let result = sha2::Digest::finalize(hasher);
-							http_common::jws_base64_encode(&result)
+							let hash = sha2::Digest::finalize(hasher);
+							http_common::jws_base64_encode(&hash)
 						},
 					});
 				},
@@ -372,11 +372,6 @@ impl<'a> Account<'a> {
 		}: OrderReady,
 		csr: &[u8],
 	) -> anyhow::Result<OrderValid> {
-		#[derive(serde::Serialize)]
-		struct FinalizeOrderRequest<'a> {
-			csr: &'a str,
-		}
-
 		eprintln!("Finalizing order {} ...", order_url);
 
 		let order = loop {
@@ -403,6 +398,11 @@ impl<'a> Account<'a> {
 				},
 
 				OrderResponse::Ready { finalize_url } => {
+					#[derive(serde::Serialize)]
+					struct FinalizeOrderRequest<'a> {
+						csr: &'a str,
+					}
+
 					let csr = http_common::jws_base64_encode(csr);
 
 					let _: OrderResponse =
@@ -416,8 +416,6 @@ impl<'a> Account<'a> {
 								csr: &csr,
 							}),
 						).await.context("could not finalize order")?;
-
-					continue;
 				},
 
 				OrderResponse::Valid { certificate_url } => break OrderValid {
@@ -505,7 +503,7 @@ where
 	*req.method_mut() = hyper::Method::GET;
 	*req.uri_mut() = url.parse().context("could not parse request URI")?;
 
-	let ResponseEx { body, new_nonce } =
+	let ResponseWithNewNonce { body, new_nonce } =
 		client.request_inner(req).await.context("could not execute HTTP request")?;
 
 	if let Some(new_nonce) = new_nonce {
@@ -527,51 +525,52 @@ where
 	TRequest: serde::Serialize,
 	TResponse: http_common::FromResponse,
 {
-	#[derive(serde::Serialize)]
-	struct Protected<'a> {
-		alg: &'a str,
-
-		#[serde(skip_serializing_if = "Option::is_none")]
-		jwk: Option<azure::Jwk<'a>>,
-
-		#[serde(skip_serializing_if = "Option::is_none")]
-		kid: Option<&'a str>,
-
-		#[serde(serialize_with = "serialize_header_value")]
-		nonce: &'a hyper::header::HeaderValue,
-
-		url: &'a str,
-	}
-
 	fn serialize_header_value<S>(header_value: &hyper::header::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
 		let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
 		serializer.serialize_str(header_value)
 	}
 
 	let mut req = {
-		let body = account_key.jws(body, |alg| {
-			let (jwk, kid) =
-				account_url.map_or_else(
-					|| (Some(account_key.jwk()), None),
-					|account_url| (None, Some(account_url)),
-				);
-			let protected = Protected {
-				alg,
-				jwk,
-				kid,
-				nonce,
-				url,
-			};
-			let protected = serde_json::to_vec(&protected).expect("could not serialize `protected`");
-			protected
-		}).await?;
+		#[derive(serde::Serialize)]
+		struct Protected<'a> {
+			alg: &'a str,
+
+			#[serde(skip_serializing_if = "Option::is_none")]
+			jwk: Option<azure::Jwk<'a>>,
+
+			#[serde(skip_serializing_if = "Option::is_none")]
+			kid: Option<&'a str>,
+
+			#[serde(serialize_with = "serialize_header_value")]
+			nonce: &'a hyper::header::HeaderValue,
+
+			url: &'a str,
+		}
+
+		let alg = account_key.jws_alg();
+
+		let (jwk, kid) =
+			account_url.map_or_else(
+				|| (Some(account_key.jwk()), None),
+				|account_url| (None, Some(account_url)),
+			);
+
+		let protected = Protected {
+			alg,
+			jwk,
+			kid,
+			nonce,
+			url,
+		};
+
+		let body = account_key.jws(protected, body).await?;
 		hyper::Request::new(body.into())
 	};
 	*req.method_mut() = hyper::Method::POST;
 	*req.uri_mut() = url.parse().context("could not parse request URI")?;
 	req.headers_mut().insert(hyper::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
 
-	let ResponseEx { body, new_nonce } =
+	let ResponseWithNewNonce { body, new_nonce } =
 		client.request_inner(req).await.context("could not execute HTTP request")?;
 
 	*nonce = new_nonce.context("server did not return new nonce")?;
@@ -582,12 +581,12 @@ where
 static APPLICATION_JOSE_JSON: once_cell::sync::Lazy<hyper::header::HeaderValue> =
 	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("application/jose+json"));
 
-struct ResponseEx<TResponse> {
+struct ResponseWithNewNonce<TResponse> {
 	body: TResponse,
 	new_nonce: Option<hyper::header::HeaderValue>,
 }
 
-impl<TResponse> http_common::FromResponse for ResponseEx<TResponse> where TResponse: http_common::FromResponse {
+impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> where TResponse: http_common::FromResponse {
 	fn from_response(
 		status: hyper::StatusCode,
 		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
@@ -595,7 +594,7 @@ impl<TResponse> http_common::FromResponse for ResponseEx<TResponse> where TRespo
 	) -> anyhow::Result<Option<Self>> {
 		let new_nonce = headers.remove("replay-nonce");
 		match TResponse::from_response(status, body, headers) {
-			Ok(Some(body)) => Ok(Some(ResponseEx { body, new_nonce })),
+			Ok(Some(body)) => Ok(Some(ResponseWithNewNonce { body, new_nonce })),
 			Ok(None) => Ok(None),
 			Err(err) => Err(err),
 		}
