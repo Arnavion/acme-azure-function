@@ -42,12 +42,18 @@ pub use key_vault::{
 use anyhow::Context;
 
 pub struct Account<'a> {
+	#[cfg_attr(not(any(feature = "cdn", feature = "dns")), allow(dead_code))]
 	subscription_id: &'a str,
+	#[cfg_attr(not(any(feature = "cdn", feature = "dns")), allow(dead_code))]
 	resource_group_name: &'a str,
-	auth: &'a Auth<'a>,
+	auth: &'a Auth,
 
 	client: http_common::Client,
+
+	#[cfg(any(feature = "cdn", feature = "dns"))]
 	cached_management_authorization: tokio::sync::RwLock<Option<hyper::header::HeaderValue>>,
+
+	#[cfg(any(feature = "key_vault_cert", feature = "key_vault_key"))]
 	cached_key_vault_authorization: tokio::sync::RwLock<Option<hyper::header::HeaderValue>>,
 }
 
@@ -55,7 +61,7 @@ impl<'a> Account<'a> {
 	pub fn new(
 		subscription_id: &'a str,
 		resource_group_name: &'a str,
-		auth: &'a Auth<'a>,
+		auth: &'a Auth,
 		user_agent: &str,
 	) -> anyhow::Result<Self> {
 		Ok(Account {
@@ -64,7 +70,11 @@ impl<'a> Account<'a> {
 			auth,
 
 			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
+
+			#[cfg(any(feature = "cdn", feature = "dns"))]
 			cached_management_authorization: Default::default(),
+
+			#[cfg(any(feature = "key_vault_cert", feature = "key_vault_key"))]
 			cached_key_vault_authorization: Default::default(),
 		})
 	}
@@ -98,7 +108,9 @@ impl<'a> Account<'a> {
 	}
 
 	#[cfg(any(feature = "cdn", feature = "dns"))]
-	async fn management_request_parameters(&self, relative_url: &str) -> anyhow::Result<(String, hyper::header::HeaderValue)> {
+	fn management_request_parameters(&self, relative_url: std::fmt::Arguments<'_>) ->
+		impl std::future::Future<Output = anyhow::Result<(String, hyper::header::HeaderValue)>> + '_
+	{
 		let url =
 			format!(
 				"https://management.azure.com/subscriptions/{}/resourceGroups/{}{}",
@@ -107,15 +119,17 @@ impl<'a> Account<'a> {
 				relative_url,
 			);
 
-		let authorization = self.management_authorization().await?;
+		async move {
+			let authorization = self.management_authorization().await?;
 
-		Ok((url, authorization))
+			Ok((url, authorization))
+		}
 	}
 }
 
 async fn get_authorization(
 	client: &http_common::Client,
-	auth: &Auth<'_>,
+	auth: &Auth,
 	resource: &str,
 ) -> anyhow::Result<hyper::header::HeaderValue> {
 	#[derive(serde::Deserialize)]
@@ -149,6 +163,7 @@ async fn get_authorization(
 			req
 		},
 
+		#[cfg(debug_assertions)]
 		Auth::ServicePrincipal { client_id, client_secret, tenant_id } => {
 			let body = {
 				let mut body = form_urlencoded::Serializer::new(String::new());
@@ -175,34 +190,39 @@ async fn get_authorization(
 	Ok(header_value)
 }
 
-pub enum Auth<'a> {
+pub enum Auth {
 	ManagedIdentity {
 		endpoint: String,
 		secret: hyper::header::HeaderValue,
 	},
 
+	#[cfg(debug_assertions)]
 	ServicePrincipal {
-		client_id: &'a str,
-		client_secret: &'a str,
-		tenant_id: &'a str,
+		client_id: String,
+		client_secret: String,
+		tenant_id: String,
 	},
 }
 
-impl<'a> Auth<'a> {
+impl Auth {
 	pub fn from_env(
-		client_id: Option<&'a str>,
-		client_secret: Option<&'a str>,
-		tenant_id: Option<&'a str>,
+		#[cfg_attr(not(debug_assertions), allow(unused_variables))]
+		client_id: Option<String>,
+		#[cfg_attr(not(debug_assertions), allow(unused_variables))]
+		client_secret: Option<String>,
+		#[cfg_attr(not(debug_assertions), allow(unused_variables))]
+		tenant_id: Option<String>,
 	) -> anyhow::Result<Self> {
 		if let (Ok(endpoint), Ok(secret)) = (std::env::var("MSI_ENDPOINT"), std::env::var("MSI_SECRET")) {
 			let secret = std::convert::TryInto::try_into(&secret).context("could not parse MSI_SECRET as HeaderValue")?;
-			Ok(Auth::ManagedIdentity { endpoint, secret })
+			return Ok(Auth::ManagedIdentity { endpoint, secret });
 		}
-		else if let (Some(client_id), Some(client_secret), Some(tenant_id)) = (client_id, client_secret, tenant_id) {
-			Ok(Auth::ServicePrincipal { client_id, client_secret, tenant_id })
+
+		#[cfg(debug_assertions)]
+		if let (Some(client_id), Some(client_secret), Some(tenant_id)) = (client_id, client_secret, tenant_id) {
+			return Ok(Auth::ServicePrincipal { client_id, client_secret, tenant_id });
 		}
-		else {
-			Err(anyhow::anyhow!("found neither MSI_ENDPOINT+MSI_SECRET nor client_id+client_secret+tenant_id"))
-		}
+
+		Err(anyhow::anyhow!("found neither MSI_ENDPOINT+MSI_SECRET nor client_id+client_secret+tenant_id"))
 	}
 }

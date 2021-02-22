@@ -6,22 +6,23 @@ impl<'a> crate::Account<'a> {
 		key_vault_name: &str,
 		key_name: &str,
 		kty: EcKty,
-		crv: EcCurve,
+		crv: super::EcCurve,
 	) -> anyhow::Result<Key<'b>> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
-			crv: EcCurve,
+			crv: super::EcCurve,
 			kty: EcKty,
 			key_ops: &'a [&'a str],
 		}
 
 		eprintln!("Creating key {}/{} ...", key_vault_name, key_name);
 
-		let (url, authorization) =
+		let key_vault_request_parameters =
 			self.key_vault_request_parameters(
 				key_vault_name,
-				&format!("/keys/{}/create?api-version=7.1", key_name),
-			).await?;
+				format_args!("/keys/{}/create?api-version=7.1", key_name),
+			);
+		let (url, authorization) = key_vault_request_parameters.await?;
 
 		let CreateOrGetKeyResponse { key } =
 			self.client.request(
@@ -70,11 +71,12 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Getting key {}/{} ...", key_vault_name, key_name);
 
-		let (url, authorization) =
+		let key_vault_request_parameters =
 			self.key_vault_request_parameters(
 				key_vault_name,
-				&format!("/keys/{}?api-version=7.1", key_name),
-			).await?;
+				format_args!("/keys/{}?api-version=7.1", key_name),
+			);
+		let (url, authorization) = key_vault_request_parameters.await?;
 
 		let response =
 			self.client.request(
@@ -112,23 +114,11 @@ pub enum EcKty {
 }
 
 pub struct Key<'a> {
-	crv: EcCurve,
+	crv: super::EcCurve,
 	kid: String,
 	x: String,
 	y: String,
 	account: &'a crate::Account<'a>,
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
-pub enum EcCurve {
-	#[serde(rename = "P-256")]
-	P256,
-
-	#[serde(rename = "P-384")]
-	P384,
-
-	#[serde(rename = "P-521")]
-	P521,
 }
 
 impl Key<'_> {
@@ -143,9 +133,9 @@ impl Key<'_> {
 
 	pub fn jws_alg(&self) -> &'static str {
 		match self.crv {
-			EcCurve::P256 => "ES256",
-			EcCurve::P384 => "ES384",
-			EcCurve::P521 => "ES512",
+			super::EcCurve::P256 => "ES256",
+			super::EcCurve::P384 => "ES384",
+			super::EcCurve::P521 => "ES512",
 		}
 	}
 
@@ -224,9 +214,9 @@ impl Key<'_> {
 			let alg = self.jws_alg();
 
 			let hash = hash!(self.crv, &protected, &payload, {
-				EcCurve::P256 => sha2::Sha256,
-				EcCurve::P384 => sha2::Sha384,
-				EcCurve::P521 => sha2::Sha512,
+				super::EcCurve::P256 => sha2::Sha256,
+				super::EcCurve::P384 => sha2::Sha384,
+				super::EcCurve::P521 => sha2::Sha512,
 			});
 
 			eprintln!("Signing using key {} ...", self.kid);
@@ -260,7 +250,7 @@ impl Key<'_> {
 
 #[derive(serde::Serialize)]
 pub struct Jwk<'a> {
-	crv: EcCurve,
+	crv: super::EcCurve,
 	kty: &'a str,
 	x: &'a str,
 	y: &'a str,
@@ -283,7 +273,7 @@ struct CreateOrGetKeyResponse {
 
 #[derive(Debug, serde::Deserialize)]
 struct KeyResponse {
-	crv: EcCurve,
+	crv: super::EcCurve,
 	kid: String,
 	kty: EcKty,
 	x: String,

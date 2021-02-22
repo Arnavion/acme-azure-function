@@ -63,12 +63,8 @@ where
 		Err(std::env::VarError::NotUnicode(value)) => return Err(anyhow::anyhow!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {:?}", value)),
 	};
 
-	let incoming =
-		hyper::server::conn::AddrIncoming::bind(&([127, 0, 0, 1], port).into())
-		.context("could not bind HTTP server")?;
-
 	let server =
-		hyper::Server::builder(incoming)
+		hyper::Server::try_bind(&([127, 0, 0, 1], port).into())?
 		.serve(hyper::service::make_service_fn(|_| {
 			let settings = settings.clone();
 

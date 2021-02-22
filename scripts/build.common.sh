@@ -168,7 +168,7 @@ case "$target" in
             -u "$(id -u)" \
             -w "$PWD" \
             'azure-function-build-rust' \
-            sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl" debug'
+            sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl"'
         cp -f "./target/x86_64-unknown-linux-musl/debug/$func_name" "./$func_name/dist/main"
 
         docker run \
@@ -192,7 +192,7 @@ case "$target" in
             -u "$(id -u)" \
             -w "$PWD" \
             'azure-function-build-rust' \
-            sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl"'
+            sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl --release"'
         cp -f "./target/x86_64-unknown-linux-musl/release/$func_name" "./$func_name/dist/main"
 
         [ -d ~/.azure ]

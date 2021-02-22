@@ -32,15 +32,14 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Getting CDN custom domain {}/{}/{} secret version", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name);
 
-		let (url, authorization) =
-			self.management_request_parameters(
-				&format!(
-					"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2018-04-02",
-					cdn_profile_name,
-					cdn_endpoint_name,
-					cdn_custom_domain_name,
-				),
-			).await?;
+		let management_request_parameters =
+			self.management_request_parameters(format_args!(
+				"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2018-04-02",
+				cdn_profile_name,
+				cdn_endpoint_name,
+				cdn_custom_domain_name,
+			));
+		let (url, authorization) = management_request_parameters.await?;
 
 		let response: Response =
 			self.client.request(
@@ -115,15 +114,14 @@ impl<'a> crate::Account<'a> {
 			key_vault_secret_version,
 		);
 
-		let (url, authorization) =
-			self.management_request_parameters(
-				&format!(
-					"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2018-04-02",
-					cdn_profile_name,
-					cdn_endpoint_name,
-					cdn_custom_domain_name,
-				),
-			).await?;
+		let management_request_parameters =
+			self.management_request_parameters(format_args!(
+				"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2018-04-02",
+				cdn_profile_name,
+				cdn_endpoint_name,
+				cdn_custom_domain_name,
+			));
+		let (url, authorization) = management_request_parameters.await?;
 
 		let mut response =
 			self.client.request(

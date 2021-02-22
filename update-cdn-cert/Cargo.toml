@@ -8,9 +8,16 @@ publish = false
 
 
 [dependencies]
-anyhow = "1"
-serde = { version = "1", features = ["derive"] }
+anyhow = { version = "1", default-features = false, features = [
+	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
+] }
+serde = { version = "1", default-features = false, features = [
+	"derive",
+] }
 futures-util = { version = "0.3", default-features = false }
 
-azure = { path = "../azure", features = ["cdn", "key_vault_cert"] }
+azure = { path = "../azure", features = [
+	"cdn",
+	"key_vault_cert",
+] }
 function-worker = { path = "../function-worker" }

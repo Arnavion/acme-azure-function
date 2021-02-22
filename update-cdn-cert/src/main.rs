@@ -12,9 +12,9 @@ function_worker::run! {
 
 async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
-		settings.azure_client_id.as_deref(),
-		settings.azure_client_secret.as_deref(),
-		settings.azure_tenant_id.as_deref(),
+		settings.azure_client_id.clone(),
+		settings.azure_client_secret.clone(),
+		settings.azure_tenant_id.clone(),
 	)?;
 	let azure_account = azure::Account::new(
 		&settings.azure_subscription_id,

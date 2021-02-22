@@ -8,10 +8,20 @@ publish = false
 
 
 [dependencies]
-anyhow = "1"
-hyper = { version = "0.14", features = ["http1", "server", "tcp"] }
-serde = "1"
-serde_json = "1"
-tokio = "1"
+anyhow = { version = "1", default-features = false, features = [
+	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
+] }
+hyper = { version = "0.14", default-features = false, features = [
+	"http1",
+	"server",
+	"tcp", # for hyper::Server::try_bind
+] }
+serde = { version = "1", default-features = false }
+serde_json = { version = "1", default-features = false, features = [
+	"std", # for serde_json::Error: std::error::Error
+] }
+tokio = { version = "1", default-features = false, features = [
+	"rt",
+] }
 
 http-common = { path = "../http-common" }

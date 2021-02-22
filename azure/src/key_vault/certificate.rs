@@ -29,7 +29,7 @@ impl<'a> crate::Account<'a> {
 		#[derive(serde::Serialize)]
 		struct RequestPolicyKeyProps<'a> {
 			#[serde(skip_serializing_if = "Option::is_none")]
-			crv: Option<crate::EcCurve>,
+			crv: Option<super::EcCurve>,
 			exportable: bool,
 			#[serde(skip_serializing_if = "Option::is_none")]
 			key_size: Option<u16>,
@@ -69,11 +69,12 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Creating CSR {}/{} ...", key_vault_name, certificate_name);
 
-		let (url, authorization) =
+		let key_vault_request_parameters =
 			self.key_vault_request_parameters(
 				key_vault_name,
-				&format!("/certificates/{}/create?api-version=7.1", certificate_name),
-			).await?;
+				format_args!("/certificates/{}/create?api-version=7.1", certificate_name),
+			);
+		let (url, authorization) = key_vault_request_parameters.await?;
 
 		let Response { csr } =
 			self.client.request(
@@ -165,11 +166,12 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Getting certificate {}/{} ...", key_vault_name, certificate_name);
 
-		let (url, authorization) =
+		let key_vault_request_parameters =
 			self.key_vault_request_parameters(
 				key_vault_name,
-				&format!("/certificates/{}?api-version=7.1", certificate_name),
-			).await?;
+				format_args!("/certificates/{}?api-version=7.1", certificate_name),
+			);
+		let (url, authorization) = key_vault_request_parameters.await?;
 
 		let response =
 			self.client.request(
@@ -218,11 +220,12 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Merging certificate {}/{} ...", key_vault_name, certificate_name);
 
-		let (url, authorization) =
+		let key_vault_request_parameters =
 			self.key_vault_request_parameters(
 				key_vault_name,
-				&format!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
-			).await?;
+				format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
+			);
+		let (url, authorization) = key_vault_request_parameters.await?;
 
 		let _: Response =
 			self.client.request(
@@ -243,12 +246,12 @@ impl<'a> crate::Account<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum CreateCsrKeyType {
 	Ec {
-		curve: crate::EcCurve,
+		curve: super::EcCurve,
 		exportable: bool,
 	},
 
 	EcHsm {
-		curve: crate::EcCurve,
+		curve: super::EcCurve,
 	},
 
 	Rsa {

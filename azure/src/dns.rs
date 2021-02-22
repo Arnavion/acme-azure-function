@@ -42,14 +42,13 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Creating DNS TXT record {}/{} ...", dns_zone_name, name);
 
-		let (url, authorization) =
-			self.management_request_parameters(
-				&format!(
-					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
-					dns_zone_name,
-					name,
-				),
-			).await?;
+		let management_request_parameters =
+			self.management_request_parameters(format_args!(
+				"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
+				dns_zone_name,
+				name,
+			));
+		let (url, authorization) = management_request_parameters.await?;
 
 		let _: Response =
 			self.client.request(
@@ -97,14 +96,13 @@ impl<'a> crate::Account<'a> {
 
 		eprintln!("Deleting DNS TXT record {}/{} ...", dns_zone_name, name);
 
-		let (url, authorization) =
-			self.management_request_parameters(
-				&format!(
-					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
-					dns_zone_name,
-					name,
-				),
-			).await?;
+		let management_request_parameters =
+			self.management_request_parameters(format_args!(
+				"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
+				dns_zone_name,
+				name,
+			));
+		let (url, authorization) = management_request_parameters.await?;
 
 		let _: Response =
 			self.client.request(
