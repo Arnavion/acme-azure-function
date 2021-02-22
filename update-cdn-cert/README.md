@@ -20,25 +20,31 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     export DOMAIN_NAME='www.arnavion.dev'
 
     # The resource group that will host the KeyVault and Function app.
-    export AZURE_RESOURCE_GROUP_NAME='arnavion-dev'
+    export AZURE_CDN_RESOURCE_GROUP_NAME='arnavion-dev-www'
 
     # The name of the CDN profile.
-    export AZURE_CDN_PROFILE_NAME='arnavion-dev'
+    export AZURE_CDN_PROFILE_NAME='cdn-profile'
 
     # The name of the CDN endpoint.
     export AZURE_CDN_ENDPOINT_NAME='www-arnavion-dev'
 
     # The name of the KeyVault that the certificate will be looked up from.
-    export AZURE_KEY_VAULT_NAME='arnavion-dev'
+    export AZURE_KEY_VAULT_NAME='arnavion-dev-acme'
 
     # The name of the Azure KeyVault certificate
     export AZURE_KEY_VAULT_CERTIFICATE_NAME='arnavion-dev'
 
     # The name of the Function app.
-    export AZURE_CDN_FUNCTION_APP_NAME='www-arnavion-dev'
+    export AZURE_CDN_FUNCTION_APP_NAME='arnavion-dev-www'
 
     # The name of the Storage Account used by the Function app.
-    export AZURE_CDN_STORAGE_ACCOUNT_NAME='www-arnavion-dev'
+    export AZURE_CDN_STORAGE_ACCOUNT_NAME='wwwarnaviondev'
+
+    # The resource group that will host the Log Analytics workspace.
+    export AZURE_MONITOR_RESOURCE_GROUP_NAME='logs'
+
+    # The Log Analytics workspace.
+    export AZURE_LOG_ANALYTICS_WORKSPACE_NAME='arnavion-log-analytics'
 
 
     export AZURE_ACCOUNT="$(az account show)"
@@ -65,40 +71,39 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 
     ```sh
     # Create a resource group.
-    az group create --name "$AZURE_RESOURCE_GROUP_NAME"
-
-
-    # Create a KeyVault.
-    az keyvault create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME"
+    az group create --name "$AZURE_CDN_RESOURCE_GROUP_NAME"
 
 
     # Create a Storage account for the website and the Function app.
     az storage account create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
+        --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
         --sku 'Standard_LRS' --https-only --min-tls-version 'TLS1_2' --allow-blob-public-access false
 
     storage_account_web_endpoint="$(
         az storage account show \
-            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
+            --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
             --query 'primaryEndpoints.web' --output tsv |
             sed -Ee 's|^https://(.*)/$|\1|'
     )"
 
     export AZURE_CDN_STORAGE_ACCOUNT_CONNECTION_STRING="$(
         az storage account show-connection-string \
-            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
+            --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
             --query connectionString --output tsv
     )"
 
 
+    # Register the CDN service principal "Microsoft.AzureFrontDoor-Cdn"
+    az ad sp create --id '205478c0-bd83-4e1b-a9d6-db63a3e1e1c8'
+
+
     # Create a CDN.
     az cdn profile create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_PROFILE_NAME" \
+        --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_PROFILE_NAME" \
         --sku 'Standard_Microsoft'
 
     az cdn endpoint create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
+        --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
         --origin "$storage_account_web_endpoint" \
         --origin-host-header "$storage_account_web_endpoint" \
         --enable-compression \
@@ -106,22 +111,22 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --query-string-caching-behavior 'IgnoreQueryString'
 
     az cdn custom-domain create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" \
+        --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" \
         --profile-name "$AZURE_CDN_PROFILE_NAME" --endpoint-name "$AZURE_CDN_ENDPOINT_NAME" --name "${DOMAIN_NAME//./-}" \
         --hostname "$DOMAIN_NAME"
 
 
     # Create a Function app.
     az functionapp create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" \
+        --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" \
         --storage-account "$AZURE_CDN_STORAGE_ACCOUNT_NAME" \
-        --consumption-plan-location "$(az group show --name "$AZURE_RESOURCE_GROUP_NAME" --query location --output tsv)" \
+        --consumption-plan-location "$(az group show --name "$AZURE_CDN_RESOURCE_GROUP_NAME" --query location --output tsv)" \
         --functions-version '3' --os-type 'Linux' --runtime 'custom' \
         --assign-identity '[system]' \
         --disable-app-insights
 
     function_app_identity="$(
-        az functionapp identity show --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" --query principalId --output tsv
+        az functionapp identity show --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" --query principalId --output tsv
     )"
 
 
@@ -131,7 +136,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --assignee "$function_app_identity" \
         --scope "$(
             az cdn endpoint show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
+                --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
                 --query id --output tsv
         )"
 
@@ -145,14 +150,18 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     # Give the CDN access to the KeyVault.
     az keyvault set-policy --name "$AZURE_KEY_VAULT_NAME" \
         --object-id "$(
-            az ad sp list --display-name Microsoft.Azure.Cdn --query '[0].objectId' --output tsv
+            az ad sp list --display-name 'Microsoft.AzureFrontDoor-Cdn' --query '[0].objectId' --output tsv
         )" \
         --secret-permissions 'get'
 
 
+    # Create a resource group for the Log Analytics workspace.
+    az group create --name "$AZURE_MONITOR_RESOURCE_GROUP_NAME"
+
+
     # Create a Log Analytics workspace.
     az monitor log-analytics workspace create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
+        --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
 
 
     # Configure the CDN to log to the Log Analytics workspace.
@@ -160,12 +169,12 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --name 'logs' \
         --resource "$(
             az cdn profile show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_PROFILE_NAME" \
+                --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_PROFILE_NAME" \
                 --query id --output tsv
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "AzureCdnAccessLog", "enabled": true }]'
@@ -176,12 +185,12 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --name 'logs' \
         --resource "$(
             az functionapp show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" \
+                --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" \
                 --query id --output tsv
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "FunctionAppLogs", "enabled": true }]'
@@ -212,7 +221,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --assignee "$AZURE_CDN_SP_NAME" \
         --scope "$(
             az cdn endpoint show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
+                --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
                 --query id --output tsv
         )"
 
@@ -246,7 +255,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 FunctionAppLogs
 | where TimeGenerated > now(-7d)
 | order by TimeGenerated desc
-| project TimeGenerated, Message
+| project TimeGenerated, Category, Level, Message
 ```
 
 

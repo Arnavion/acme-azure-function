@@ -5,6 +5,7 @@ set -euo pipefail
 ./scripts/build.common.sh \
     "$1" \
     'update-cdn-cert' \
+    "$AZURE_CDN_RESOURCE_GROUP_NAME" \
     "$AZURE_CDN_CLIENT_ID" \
     "$AZURE_CDN_CLIENT_SECRET" \
     "$AZURE_CDN_STORAGE_ACCOUNT_CONNECTION_STRING" \
@@ -13,7 +14,7 @@ set -euo pipefail
     "$(
         jq --null-input --sort-keys --compact-output \
             --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
-            --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_RESOURCE_GROUP_NAME" \
+            --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_CDN_RESOURCE_GROUP_NAME" \
             --arg AZURE_CDN_PROFILE_NAME "$AZURE_CDN_PROFILE_NAME" \
             --arg AZURE_CDN_ENDPOINT_NAME "$AZURE_CDN_ENDPOINT_NAME" \
             --arg AZURE_CDN_CUSTOM_DOMAIN_NAME "${DOMAIN_NAME//./-}" \

@@ -26,22 +26,28 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     export ACME_CONTACT_URL='mailto:admin@arnavion.dev'
 
     # The resource group that will host the KeyVault and Function app.
-    export AZURE_RESOURCE_GROUP_NAME='arnavion-dev'
+    export AZURE_ACME_RESOURCE_GROUP_NAME='arnavion-dev-acme'
 
     # The name of the KeyVault.
-    export AZURE_KEY_VAULT_NAME='arnavion-dev'
+    export AZURE_KEY_VAULT_NAME='arnavion-dev-acme'
 
     # The name of the Function app.
-    export AZURE_ACME_FUNCTION_APP_NAME='arnavion-dev'
+    export AZURE_ACME_FUNCTION_APP_NAME='arnavion-dev-acme'
 
     # The name of the Storage Account used by the Function app.
-    export AZURE_ACME_STORAGE_ACCOUNT_NAME='arnavion-dev'
+    export AZURE_ACME_STORAGE_ACCOUNT_NAME='arnaviondevacme'
 
-    # The name of the KeyVault secret that will store the ACME account key.
-    export AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME='arnavion-dev'
+    # The name of the KeyVault key that will store the ACME account key.
+    export AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME='letsencrypt-account-key'
 
     # The name of the Azure KeyVault certificate
-    export AZURE_KEY_VAULT_CERTIFICATE_NAME='arnavion-dev'
+    export AZURE_KEY_VAULT_CERTIFICATE_NAME='star-arnavion-dev'
+
+    # The resource group that will host the Log Analytics workspace.
+    export AZURE_MONITOR_RESOURCE_GROUP_NAME='logs'
+
+    # The Log Analytics workspace.
+    export AZURE_LOG_ANALYTICS_WORKSPACE_NAME='arnavion-log-analytics'
 
 
     export AZURE_ACCOUNT="$(az account show)"
@@ -52,42 +58,42 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 
     ```sh
     # Create a resource group.
-    az group create --name "$AZURE_RESOURCE_GROUP_NAME"
+    az group create --name "$AZURE_ACME_RESOURCE_GROUP_NAME"
 
 
     # Create a KeyVault.
     az keyvault create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME"
+        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME"
 
 
     # Create a DNS zone.
     az network dns zone create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME"
+        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME"
 
 
     # Create a Storage account for the Function app.
     az storage account create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_STORAGE_ACCOUNT_NAME" \
+        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_STORAGE_ACCOUNT_NAME" \
         --sku 'Standard_LRS' --https-only --min-tls-version 'TLS1_2' --allow-blob-public-access false
 
     export AZURE_ACME_STORAGE_ACCOUNT_CONNECTION_STRING="$(
         az storage account show-connection-string \
-            --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_STORAGE_ACCOUNT_NAME" \
+            --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_STORAGE_ACCOUNT_NAME" \
             --query connectionString --output tsv
     )"
 
 
     # Create a Function app.
     az functionapp create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" \
+        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" \
         --storage-account "$AZURE_ACME_STORAGE_ACCOUNT_NAME" \
-        --consumption-plan-location "$(az group show --name "$AZURE_RESOURCE_GROUP_NAME" --query location --output tsv)" \
+        --consumption-plan-location "$(az group show --name "$AZURE_ACME_RESOURCE_GROUP_NAME" --query location --output tsv)" \
         --functions-version '3' --os-type 'Linux' --runtime 'custom' \
         --assign-identity '[system]' \
         --disable-app-insights
 
     function_app_identity="$(
-        az functionapp identity show --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" --query principalId --output tsv
+        az functionapp identity show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" --query principalId --output tsv
     )"
 
 
@@ -96,7 +102,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --role 'DNS Zone Contributor' \
         --assignee "$function_app_identity" \
         --scope "$(
-            az network dns zone show --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv
+            az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv
         )"
 
 
@@ -107,9 +113,13 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --key-permissions 'create' 'get' 'sign'
 
 
+    # Create a resource group for the Log Analytics workspace.
+    az group create --name "$AZURE_MONITOR_RESOURCE_GROUP_NAME"
+
+
     # Create a Log Analytics workspace.
     az monitor log-analytics workspace create \
-        --resource-group "$AZURE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
+        --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
 
 
     # Configure the Function app to log to the Log Analytics workspace.
@@ -117,12 +127,12 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --name 'logs' \
         --resource "$(
             az functionapp show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" \
+                --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" \
                 --query id --output tsv
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "FunctionAppLogs", "enabled": true }]'
@@ -131,7 +141,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Create an NS record with your DNS registrar for the dns-01 challenge.
 
     ```sh
-    echo "Create NS record for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to $(az network dns zone show --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query 'nameServers[0]' --output tsv)"
+    echo "Create NS record for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to $(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query 'nameServers[0]' --output tsv)"
     ```
 
 
@@ -165,7 +175,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --role 'DNS Zone Contributor' \
         --assignee "$AZURE_ACME_SP_NAME" \
         --scope "$(
-            az network dns zone show --resource-group "$AZURE_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv
+            az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv
         )"
 
 
@@ -215,7 +225,7 @@ az keyvault secret purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$ACME_ACCO
 FunctionAppLogs
 | where TimeGenerated > now(-7d)
 | order by TimeGenerated desc
-| project TimeGenerated, Message
+| project TimeGenerated, Category, Level, Message
 ```
 
 

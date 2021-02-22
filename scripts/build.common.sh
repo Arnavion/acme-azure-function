@@ -6,15 +6,17 @@ target="$1"
 
 func_name="$2"
 
-azure_client_id="$3"
-azure_client_secret="$4"
+azure_resource_group_name="$3"
 
-azure_storage_account_connection_string="$5"
-azure_function_app_name="$6"
+azure_client_id="$4"
+azure_client_secret="$5"
 
-timer_trigger_schedule="$7"
+azure_storage_account_connection_string="$6"
+azure_function_app_name="$7"
 
-secret_settings="$8"
+timer_trigger_schedule="$8"
+
+secret_settings="$9"
 
 case "$target" in
     'debug-http')
@@ -207,7 +209,7 @@ case "$target" in
                 set -euo pipefail
 
                 az functionapp config appsettings set \
-                    --resource-group '$AZURE_RESOURCE_GROUP_NAME' --name '$azure_function_app_name' \
+                    --resource-group '$azure_resource_group_name' --name '$azure_function_app_name' \
                     --settings 'SECRET_SETTINGS=$secret_settings'
 
                 cd './$func_name/dist/'
