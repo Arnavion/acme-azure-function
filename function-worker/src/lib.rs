@@ -106,6 +106,7 @@ where
 						else {
 							let mut res = hyper::Response::new(Default::default());
 							*res.status_mut() = hyper::StatusCode::METHOD_NOT_ALLOWED;
+							res.headers_mut().insert(hyper::header::ALLOW, ALLOW_POST.clone());
 							res
 						};
 					eprintln!("{:?}", res);
@@ -117,3 +118,6 @@ where
 	let () = server.await.context("HTTP server failed")?;
 	Ok(())
 }
+
+static ALLOW_POST: once_cell::sync::Lazy<hyper::header::HeaderValue> =
+	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("POST"));

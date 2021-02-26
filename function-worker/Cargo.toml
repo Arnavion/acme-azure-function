@@ -16,6 +16,7 @@ hyper = { version = "0.14", default-features = false, features = [
 	"server",
 	"tcp", # for hyper::Server::try_bind
 ] }
+once_cell = { version = "1", default-features = false }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error

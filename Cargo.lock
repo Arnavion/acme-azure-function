@@ -143,6 +143,7 @@ dependencies = [
  "anyhow",
  "http-common",
  "hyper",
+ "once_cell",
  "serde",
  "serde_json",
  "tokio",
