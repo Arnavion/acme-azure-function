@@ -18,20 +18,18 @@ macro_rules! run {
 				.enable_io()
 				.enable_time()
 				.build()?
-				.block_on(async {
-					$crate::_run(|req, settings| async move {
-						let path = req.uri().path();
-						if let Some(path) = path.strip_prefix('/') {
-							Ok(match path {
-								$($name => Some($f(settings).await?) ,)*
-								_ => None,
-							})
-						}
-						else {
-							Ok(None)
-						}
-					}).await
-				})?;
+				.block_on($crate::_run(|req, settings| async move {
+					let path = req.uri().path();
+					if let Some(path) = path.strip_prefix('/') {
+						Ok(match path {
+							$($name => Some($f(settings).await?) ,)*
+							_ => None,
+						})
+					}
+					else {
+						Ok(None)
+					}
+				}))?;
 			Ok(())
 		}
 	};
@@ -68,51 +66,52 @@ where
 		.serve(hyper::service::make_service_fn(|_| {
 			let settings = settings.clone();
 
-			async move {
-				Ok::<_, std::convert::Infallible>(hyper::service::service_fn(move |req| {
-					let settings = settings.clone();
+			std::future::ready(Ok::<_, std::convert::Infallible>(hyper::service::service_fn(move |req| {
+				let settings = settings.clone();
 
-					async move {
-						eprintln!("{:?}", req);
+				async move {
+					eprintln!("{:?}", req);
 
-						if req.method() != hyper::Method::POST {
-							let mut response = hyper::Response::new(Default::default());
-							*response.status_mut() = hyper::StatusCode::METHOD_NOT_ALLOWED;
-							return Ok(response);
+					let res: hyper::Response<hyper::Body> =
+						if req.method() == hyper::Method::POST {
+							let output = run_function(req, settings).await;
+							match output {
+								Ok(Some(())) => {
+									let mut res = hyper::Response::new(
+										// Workaround for https://github.com/Azure/azure-functions-host/issues/6717
+										br#"{"Outputs":{"":""},"Logs":null,"ReturnValue":""}"#[..].into(),
+									);
+									*res.status_mut() = hyper::StatusCode::OK;
+									res.headers_mut().insert(
+										hyper::header::CONTENT_TYPE,
+										http_common::APPLICATION_JSON.clone(),
+									);
+									res
+								},
+
+								Ok(None) => {
+									let mut res = hyper::Response::new(Default::default());
+									*res.status_mut() = hyper::StatusCode::NOT_FOUND;
+									res
+								},
+
+								Err(err) => {
+									eprintln!("{:?}", err);
+									let mut res = hyper::Response::new(format!("{:?}", err).into());
+									*res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+									res
+								},
+							}
 						}
-
-						let output = run_function(req, settings).await;
-						let response = match output {
-							Ok(Some(())) => {
-								let mut response = hyper::Response::new(hyper::Body::from(
-									hyper::body::Bytes::from_static(br#"{"Outputs":{"":""},"Logs":null,"ReturnValue":""}"#),
-								));
-								*response.status_mut() = hyper::StatusCode::OK;
-								response.headers_mut().insert(
-									hyper::header::CONTENT_TYPE,
-									http_common::APPLICATION_JSON.clone(),
-								);
-								response
-							},
-
-							Ok(None) => {
-								let mut response = hyper::Response::new(Default::default());
-								*response.status_mut() = hyper::StatusCode::NOT_FOUND;
-								response
-							},
-
-							Err(err) => {
-								eprintln!("{:?}", err);
-								let mut response = hyper::Response::new(format!("{:?}", err).into());
-								*response.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
-								response
-							},
+						else {
+							let mut res = hyper::Response::new(Default::default());
+							*res.status_mut() = hyper::StatusCode::METHOD_NOT_ALLOWED;
+							res
 						};
-						eprintln!("{:?}", response);
-						Ok::<_, std::convert::Infallible>(response)
-					}
-				}))
-			}
+					eprintln!("{:?}", res);
+					Ok::<_, std::convert::Infallible>(res)
+				}
+			})))
 		}));
 
 	let () = server.await.context("HTTP server failed")?;
