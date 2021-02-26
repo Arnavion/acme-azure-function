@@ -24,7 +24,9 @@ hyper = { version = "0.14", default-features = false, features = [
 hyper-rustls = { version = "0.22", default-features = false, features = [
 	"webpki-tokio",
 ] }
-once_cell = { version = "1", default-features = false }
+once_cell = { version = "1", default-features = false, features = [
+	"std", # for once_cell::sync
+] }
 rustls = { version = "0.19", default-features = false }
 serde = { version = "1", default-features = false }
 serde_json = { version = "1", default-features = false, features = [

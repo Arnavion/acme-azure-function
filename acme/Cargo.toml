@@ -15,7 +15,9 @@ chrono = { version = "0.4", default-features = false, features = [
 	"clock", # for chrono::Utc::now()
 ] }
 hyper = { version = "0.14", default-features = false }
-once_cell = { version = "1", default-features = false }
+once_cell = { version = "1", default-features = false, features = [
+	"std", # for once_cell::sync
+] }
 serde = { version = "1", default-features = false, features = [
 	"derive",
 ] }
