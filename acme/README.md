@@ -136,6 +136,22 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
                 --query id --output tsv
         )" \
         --logs '[{ "category": "FunctionAppLogs", "enabled": true }]'
+
+
+    # Configure the KeyVault to log to the Log Analytics workspace.
+    az monitor diagnostic-settings create \
+        --name 'logs' \
+        --resource "$(
+            az keyvault show \
+                --name "$AZURE_KEY_VAULT_NAME" \
+                --query id --output tsv
+        )" \
+        --workspace "$(
+            az monitor log-analytics workspace show \
+                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --query id --output tsv
+        )" \
+        --logs '[{ "category": "AuditEvent", "enabled": true }]'
     ```
 
 1. Create an NS record with your DNS registrar for the dns-01 challenge.
