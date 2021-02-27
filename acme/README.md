@@ -121,6 +121,17 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     az monitor log-analytics workspace create \
         --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
 
+    export AZURE_LOG_ANALYTICS_WORKSPACE_ID="$(
+        az monitor log-analytics workspace show \
+            --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+            --query customerId --output tsv
+    )"
+
+    export AZURE_LOG_ANALYTICS_WORKSPACE_KEY="$(
+        az monitor log-analytics workspace get-shared-keys \
+            --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+            --query primarySharedKey --output tsv
+    )"
 
     # Configure the Function app to log to the Log Analytics workspace.
     az monitor diagnostic-settings create \
@@ -237,11 +248,32 @@ az keyvault secret purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$ACME_ACCO
 
 # Monitor (Log Analytics)
 
+## Function invocations
+
 ```
-FunctionAppLogs
-| where TimeGenerated > now(-7d)
-| order by TimeGenerated desc
-| project TimeGenerated, Category, Level, Message
+FunctionAppLogs_CL
+| order by TimeGenerated desc, SequenceNumber_d desc
+| where ObjectType_s == "function_invocation"
+| project TimeGenerated, FunctionInvocationId_g, ObjectState_s
+```
+
+## Function invocation logs
+
+```
+FunctionAppLogs_CL
+| order by TimeGenerated desc, SequenceNumber_d desc
+| where FunctionInvocationId_g == "..."
+| extend Record =
+    case(
+        isnotempty(Exception_s), Exception_s,
+        isnotempty(Message), Message,
+        strcat(
+            ObjectType_s,
+            iff(isempty(ObjectId_s), "", strcat("/", ObjectId_s)),
+            iff(isnotempty(ObjectOperation_s), strcat(" does ", ObjectOperation_s, " ", ObjectValue_s), strcat(" is ", ObjectState_s))
+        )
+    )
+| project TimeGenerated, Level, Record
 ```
 
 

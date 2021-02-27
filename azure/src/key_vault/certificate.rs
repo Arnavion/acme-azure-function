@@ -67,53 +67,60 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		eprintln!("Creating CSR {}/{} ...", key_vault_name, certificate_name);
+		let csr =
+			log2::report_operation(
+				"azure/key_vault/csr",
+				&format!("{}/{}", key_vault_name, certificate_name),
+				log2::ScopedObjectOperation::Create { value: &format!("{:?}", (common_name, key_type)) },
+				async {
+					let key_vault_request_parameters =
+						self.key_vault_request_parameters(
+							key_vault_name,
+							format_args!("/certificates/{}/create?api-version=7.1", certificate_name),
+						);
+					let (url, authorization) = key_vault_request_parameters.await?;
 
-		let key_vault_request_parameters =
-			self.key_vault_request_parameters(
-				key_vault_name,
-				format_args!("/certificates/{}/create?api-version=7.1", certificate_name),
-			);
-		let (url, authorization) = key_vault_request_parameters.await?;
+					let Response { csr } =
+						self.client.request(
+							hyper::Method::POST,
+							&url,
+							authorization,
+							Some(&Request {
+								policy: RequestPolicy {
+									issuer: RequestPolicyIssuer {
+										cert_transparency: false,
+										name: "Unknown",
+									},
+									key_props: {
+										let (kty, crv, key_size, exportable) = match key_type {
+											CreateCsrKeyType::Ec { curve, exportable } => ("EC", Some(curve), None, exportable),
+											CreateCsrKeyType::EcHsm { curve } => ("EC-HSM", Some(curve), None, false),
+											CreateCsrKeyType::Rsa { num_bits, exportable } => ("RSA", None, Some(num_bits), exportable),
+											CreateCsrKeyType::RsaHsm { num_bits } => ("RSA-HSM", None, Some(num_bits), false),
+										};
 
-		let Response { csr } =
-			self.client.request(
-				hyper::Method::POST,
-				&url,
-				authorization,
-				Some(&Request {
-					policy: RequestPolicy {
-						issuer: RequestPolicyIssuer {
-							cert_transparency: false,
-							name: "Unknown",
-						},
-						key_props: {
-							let (kty, crv, key_size, exportable) = match key_type {
-								CreateCsrKeyType::Ec { curve, exportable } => ("EC", Some(curve), None, exportable),
-								CreateCsrKeyType::EcHsm { curve } => ("EC-HSM", Some(curve), None, false),
-								CreateCsrKeyType::Rsa { num_bits, exportable } => ("RSA", None, Some(num_bits), exportable),
-								CreateCsrKeyType::RsaHsm { num_bits } => ("RSA-HSM", None, Some(num_bits), false),
-							};
-
-							RequestPolicyKeyProps {
-								crv,
-								exportable,
-								key_size,
-								kty,
-								reuse_key: false,
-							}
-						},
-						x509_props: RequestPolicyX509Props {
-							sans: RequestPolicyX509PropsSans {
-								dns_names: &[&common_name],
-							},
-							subject: &format!("CN={}", common_name),
-						},
-					},
-				}),
+										RequestPolicyKeyProps {
+											crv,
+											exportable,
+											key_size,
+											kty,
+											reuse_key: false,
+										}
+									},
+									x509_props: RequestPolicyX509Props {
+										sans: RequestPolicyX509PropsSans {
+											dns_names: &[&common_name],
+										},
+										subject: &format!("CN={}", common_name),
+									},
+								},
+							}),
+						).await?;
+					let csr = base64::decode(&csr).context("could not parse CSR from base64")?;
+					Ok::<_, anyhow::Error>(csr)
+				},
 			).await?;
-		let csr = base64::decode(&csr).context("could not parse CSR from base64")?;
-		eprintln!("Created CSR {}/{}", key_vault_name, certificate_name);
+
 		Ok(csr)
 	}
 
@@ -164,32 +171,31 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		eprintln!("Getting certificate {}/{} ...", key_vault_name, certificate_name);
+		let certificate =
+			log2::report_operation(
+				"azure/key_vault/certificate",
+				&format!("{}/{}", key_vault_name, certificate_name),
+				log2::ScopedObjectOperation::Get,
+				async {
+					let key_vault_request_parameters =
+						self.key_vault_request_parameters(
+							key_vault_name,
+							format_args!("/certificates/{}?api-version=7.1", certificate_name),
+						);
+					let (url, authorization) = key_vault_request_parameters.await?;
 
-		let key_vault_request_parameters =
-			self.key_vault_request_parameters(
-				key_vault_name,
-				format_args!("/certificates/{}?api-version=7.1", certificate_name),
-			);
-		let (url, authorization) = key_vault_request_parameters.await?;
-
-		let response =
-			self.client.request(
-				hyper::Method::GET,
-				&url,
-				authorization,
-				None::<&()>,
+					let Response(certificate) =
+						self.client.request(
+							hyper::Method::GET,
+							&url,
+							authorization,
+							None::<&()>,
+						).await?;
+					Ok::<_, anyhow::Error>(certificate)
+				},
 			).await?;
-		Ok(match response {
-			Response(Some(certificate)) => {
-				eprintln!("Got certificate {}/{}: {:?}", key_vault_name, certificate_name, certificate);
-				Some(certificate)
-			},
-			Response(None) => {
-				eprintln!("Certificate {}/{} does not exist", key_vault_name, certificate_name);
-				None
-			},
-		})
+
+		Ok(certificate)
 	}
 
 	pub async fn key_vault_certificate_merge(
@@ -218,26 +224,31 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		eprintln!("Merging certificate {}/{} ...", key_vault_name, certificate_name);
+		let () =
+			log2::report_operation(
+				"azure/key_vault/certificate",
+				&format!("{}/{}", key_vault_name, certificate_name),
+				log2::ScopedObjectOperation::Create { value: &format!("{:?}", certificates) },
+				async {
+					let key_vault_request_parameters =
+						self.key_vault_request_parameters(
+							key_vault_name,
+							format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
+						);
+					let (url, authorization) = key_vault_request_parameters.await?;
 
-		let key_vault_request_parameters =
-			self.key_vault_request_parameters(
-				key_vault_name,
-				format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
-			);
-		let (url, authorization) = key_vault_request_parameters.await?;
-
-		let _: Response =
-			self.client.request(
-				hyper::Method::POST,
-				&url,
-				authorization,
-				Some(&Request {
-					x5c: certificates,
-				}),
+					let _: Response =
+						self.client.request(
+							hyper::Method::POST,
+							&url,
+							authorization,
+							Some(&Request {
+								x5c: certificates,
+							}),
+						).await?;
+					Ok::<_, anyhow::Error>(())
+				},
 			).await?;
-
-		eprintln!("Merged certificate {}/{}", key_vault_name, certificate_name);
 
 		Ok(())
 	}

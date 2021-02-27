@@ -14,6 +14,8 @@ set -euo pipefail
     "$(
         jq --null-input --sort-keys --compact-output \
             --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
+            --arg AZURE_LOG_ANALYTICS_WORKSPACE_ID "$AZURE_LOG_ANALYTICS_WORKSPACE_ID" \
+            --arg AZURE_LOG_ANALYTICS_WORKSPACE_KEY "$AZURE_LOG_ANALYTICS_WORKSPACE_KEY" \
             --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_CDN_RESOURCE_GROUP_NAME" \
             --arg AZURE_CDN_PROFILE_NAME "$AZURE_CDN_PROFILE_NAME" \
             --arg AZURE_CDN_ENDPOINT_NAME "$AZURE_CDN_ENDPOINT_NAME" \
@@ -22,6 +24,8 @@ set -euo pipefail
             --arg AZURE_KEY_VAULT_CERTIFICATE_NAME "$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
             '{
                 "azure_subscription_id": $AZURE_SUBSCRIPTION_ID,
+                "azure_log_analytics_workspace_id": $AZURE_LOG_ANALYTICS_WORKSPACE_ID,
+                "azure_log_analytics_workspace_key": $AZURE_LOG_ANALYTICS_WORKSPACE_KEY,
                 "azure_resource_group_name": $AZURE_RESOURCE_GROUP_NAME,
                 "azure_cdn_profile_name": $AZURE_CDN_PROFILE_NAME,
                 "azure_cdn_endpoint_name": $AZURE_CDN_ENDPOINT_NAME,

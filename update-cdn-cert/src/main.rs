@@ -44,7 +44,7 @@ async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Res
 						certificate.version
 					}
 					else {
-						eprintln!("Nothing to do.");
+						log2::report_message("Nothing to do.");
 						return Ok(());
 					};
 
@@ -59,7 +59,7 @@ async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Res
 						certificate.version
 					}
 					else {
-						eprintln!("Nothing to do.");
+						log2::report_message("Nothing to do.");
 						return Ok(());
 					};
 
@@ -70,7 +70,7 @@ async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Res
 
 	if let Some(cdn_custom_domain_secret) = cdn_custom_domain_secret {
 		if cdn_custom_domain_secret.name == settings.azure_key_vault_certificate_name && cdn_custom_domain_secret.version == key_vault_certificate_version {
-			eprintln!("Nothing to do.");
+			log2::report_message("Nothing to do.");
 			return Ok(());
 		}
 	}

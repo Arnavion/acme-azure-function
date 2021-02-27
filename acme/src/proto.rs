@@ -17,8 +17,10 @@ impl<'a> Account<'a> {
 	) -> anyhow::Result<Account<'a>> {
 		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
 
-		let (mut nonce, new_nonce_url, new_account_url, new_order_url) = {
-			#[derive(serde::Deserialize)]
+		let mut nonce = None;
+
+		let (new_nonce_url, new_account_url, new_order_url) = {
+			#[derive(Debug, serde::Deserialize)]
 			struct DirectoryResponse {
 				#[serde(rename = "newAccount")]
 				new_account_url: String,
@@ -44,28 +46,24 @@ impl<'a> Account<'a> {
 				}
 			}
 
-			eprintln!("Getting directory {} ...", acme_directory_url);
-
-			let mut nonce = None;
-
 			let DirectoryResponse {
 				new_account_url,
 				new_nonce_url,
 				new_order_url,
-			} = get(
-				&client,
-				&mut nonce,
-				acme_directory_url,
-			).await.context("could not query ACME directory")?;
+			} = log2::report_operation("acme/directory", acme_directory_url, log2::ScopedObjectOperation::Get, async {
+				get(
+					&client,
+					&mut nonce,
+					acme_directory_url,
+				).await.context("could not query ACME directory")
+			}).await?;
 
-			eprintln!("Got directory {}", acme_directory_url);
-
-			(nonce, new_nonce_url, new_account_url, new_order_url)
+			(new_nonce_url, new_account_url, new_order_url)
 		};
 
 		let mut nonce =
 			if let Some(nonce) = nonce {
-				eprintln!("Already have initial nonce");
+				log2::report_state("acme/nonce", "", "already have initial");
 				nonce
 			}
 			else {
@@ -84,17 +82,16 @@ impl<'a> Account<'a> {
 					}
 				}
 
-				eprintln!("Getting initial nonce...");
+				let log2::Secret(nonce) = log2::report_operation("acme/nonce", "", log2::ScopedObjectOperation::Get, async {
+					let NewNonceResponse = get(
+						&client,
+						&mut nonce,
+						&new_nonce_url,
+					).await.context("could not get initial nonce")?;
 
-				let NewNonceResponse = get(
-					&client,
-					&mut nonce,
-					&new_nonce_url,
-				).await.context("could not get initial nonce")?;
-
-				let nonce = nonce.context("server did not return initial nonce")?;
-
-				eprintln!("Got initial nonce");
+					let nonce = nonce.context("server did not return initial nonce")?;
+					Ok::<_, anyhow::Error>(log2::Secret(nonce))
+				}).await?;
 				nonce
 			};
 
@@ -128,24 +125,25 @@ impl<'a> Account<'a> {
 				}
 			}
 
-			eprintln!("Creating / getting account corresponding to account key...");
+			let (account_url, status) = log2::report_operation("acme/account", "", log2::ScopedObjectOperation::Get, async {
+				let http_common::ResponseWithLocation {
+					body: NewAccountResponse { status },
+					location: account_url,
+				} = post(
+					account_key,
+					None,
+					&client,
+					&mut nonce,
+					&new_account_url,
+					Some(&NewAccountRequest {
+						contact_urls: &[acme_contact_url],
+						terms_of_service_agreed: true,
+					}),
+				).await.context("could not create / get account")?;
+				Ok::<_, anyhow::Error>((account_url, status))
+			}).await?;
 
-			let http_common::ResponseWithLocation {
-				body: NewAccountResponse { status },
-				location: account_url,
-			} = post(
-				account_key,
-				None,
-				&client,
-				&mut nonce,
-				&new_account_url,
-				Some(&NewAccountRequest {
-					contact_urls: &[acme_contact_url],
-					terms_of_service_agreed: true,
-				}),
-			).await.context("could not create / get account")?;
-
-			eprintln!("Created / got account {} with status {}", account_url, status);
+			log2::report_state("acme/account", &account_url, &status);
 
 			if status != "valid" {
 				return Err(anyhow::anyhow!("Account has {} status", status));
@@ -177,26 +175,25 @@ impl<'a> Account<'a> {
 			value: &'a str,
 		}
 
-		eprintln!("Creating order for {} ...", domain_name);
-
-		let http_common::ResponseWithLocation::<OrderResponse> {
-			location: order_url,
-			body: _,
-		} = post(
-			self.account_key,
-			Some(&self.account_url),
-			&self.client,
-			&mut self.nonce,
-			&self.new_order_url,
-			Some(&NewOrderRequest {
-				identifiers: &[NewOrderRequestIdentifier {
-					r#type: "dns",
-					value: domain_name,
-				}],
-			}),
-		).await.context("could not create / get order")?;
-
-		eprintln!("Created order for {} : {}", domain_name, order_url);
+		let order_url = log2::report_operation("acme/order", domain_name, log2::ScopedObjectOperation::Get, async {
+			let http_common::ResponseWithLocation::<OrderResponse> {
+				location: order_url,
+				body: _,
+			} = post(
+				self.account_key,
+				Some(&self.account_url),
+				&self.client,
+				&mut self.nonce,
+				&self.new_order_url,
+				Some(&NewOrderRequest {
+					identifiers: &[NewOrderRequestIdentifier {
+						r#type: "dns",
+						value: domain_name,
+					}],
+				}),
+			).await.context("could not create / get order")?;
+			Ok::<_, anyhow::Error>(order_url)
+		}).await?;
 
 		let order = loop {
 			let order =
@@ -209,7 +206,7 @@ impl<'a> Account<'a> {
 					None::<&()>,
 				).await.context("could not get order")?;
 
-			eprintln!("Order {} is {:?}", order_url, order);
+			log2::report_state("acme/order", &order_url, &format!("{:?}", order));
 
 			match order {
 				OrderResponse::Invalid { .. } => return Err(anyhow::anyhow!("order failed")),
@@ -230,7 +227,7 @@ impl<'a> Account<'a> {
 							None::<&()>,
 						).await.context("could not get authorization")?;
 
-					eprintln!("Authorization {} is {:?}", authorization_url, authorization);
+					log2::report_state("acme/authorization", &authorization_url, &format!("{:?}", authorization));
 
 					let challenges = match authorization {
 						AuthorizationResponse::Pending { challenges, retry_after: _ } => challenges,
@@ -240,7 +237,7 @@ impl<'a> Account<'a> {
 					let (token, challenge_url) =
 						challenges.into_iter()
 						.find_map(|challenge| match challenge {
-							ChallengeResponse::Pending { token, r#type, url } => (r#type == "dns-01").then(|| (token, url)),
+							ChallengeResponse::Pending { token: log2::Secret(token), r#type, url } => (r#type == "dns-01").then(|| (token, url)),
 							_ => None,
 						})
 						.context("did not find any pending dns-01 challenges")?;
@@ -261,7 +258,7 @@ impl<'a> Account<'a> {
 				},
 
 				OrderResponse::Processing { retry_after } => {
-					eprintln!("Waiting for {:?} before rechecking order...", retry_after);
+					log2::report_message(&format!("Waiting for {:?} before rechecking order...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -290,7 +287,7 @@ impl<'a> Account<'a> {
 		#[derive(serde::Serialize)]
 		struct ChallengeCompleteRequest { }
 
-		eprintln!("Completing challenge {} ...", challenge_url);
+		log2::report_message(&format!("Completing challenge {} ...", challenge_url));
 
 		let _: ChallengeResponse =
 			post(
@@ -313,17 +310,17 @@ impl<'a> Account<'a> {
 					None::<&()>,
 				).await.context("could not get challenge")?;
 
-			eprintln!("Challenge {} is {:?}", challenge_url, challenge);
+			log2::report_state("acme/challenge", &challenge_url, &format!("{:?}", challenge));
 
 			match challenge {
 				ChallengeResponse::Pending { .. } => {
 					let retry_after = std::time::Duration::from_secs(1);
-					eprintln!("Waiting for {:?} before rechecking challenge...", retry_after);
+					log2::report_message(&format!("Waiting for {:?} before rechecking challenge...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
 				ChallengeResponse::Processing { retry_after } => {
-					eprintln!("Waiting for {:?} before rechecking challenge...", retry_after);
+					log2::report_message(&format!("Waiting for {:?} before rechecking challenge...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -333,7 +330,7 @@ impl<'a> Account<'a> {
 			};
 		}
 
-		eprintln!("Waiting for authorization {} ...", authorization_url);
+		log2::report_message(&format!("Waiting for authorization {} ...", authorization_url));
 
 		loop {
 			let authorization =
@@ -346,11 +343,11 @@ impl<'a> Account<'a> {
 					None::<&()>,
 				).await.context("could not get authorization")?;
 
-			eprintln!("Authorization {} is {:?}", authorization_url, authorization);
+			log2::report_state("acme/authorization", &authorization_url, &format!("{:?}", authorization));
 
 			match authorization {
 				AuthorizationResponse::Pending { challenges: _, retry_after } => {
-					eprintln!("Waiting for {:?} before rechecking authorization...", retry_after);
+					log2::report_message(&format!("Waiting for {:?} before rechecking authorization...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -372,7 +369,7 @@ impl<'a> Account<'a> {
 		}: OrderReady,
 		csr: &[u8],
 	) -> anyhow::Result<OrderValid> {
-		eprintln!("Finalizing order {} ...", order_url);
+		log2::report_message(&format!("Finalizing order {} ...", order_url));
 
 		let order = loop {
 			let order =
@@ -385,7 +382,7 @@ impl<'a> Account<'a> {
 					None::<&()>,
 				).await.context("could not get order")?;
 
-			eprintln!("Order {} is {:?}", order_url, order);
+			log2::report_state("acme/order", &order_url, &format!("{:?}", order));
 
 			match order {
 				OrderResponse::Invalid { .. } => return Err(anyhow::anyhow!("order failed")),
@@ -393,7 +390,7 @@ impl<'a> Account<'a> {
 				OrderResponse::Pending { .. } => return Err(anyhow::anyhow!("order is still pending")),
 
 				OrderResponse::Processing { retry_after } => {
-					eprintln!("Waiting for {:?} before rechecking order...", retry_after);
+					log2::report_message(&format!("Waiting for {:?} before rechecking order...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -452,19 +449,18 @@ impl<'a> Account<'a> {
 			}
 		}
 
-		eprintln!("Downloading certificate {} ...", certificate_url);
-
-		let CertificateResponse(certificate) =
-			post(
-				self.account_key,
-				Some(&self.account_url),
-				&self.client,
-				&mut self.nonce,
-				&certificate_url,
-				None::<&()>,
-			).await.context("could not download certificate")?;
-
-		eprintln!("Downloaded certificate {}", certificate_url);
+		let certificate = log2::report_operation("acme/certificate", &certificate_url, log2::ScopedObjectOperation::Get, async {
+			let CertificateResponse(certificate) =
+				post(
+					self.account_key,
+					Some(&self.account_url),
+					&self.client,
+					&mut self.nonce,
+					&certificate_url,
+					None::<&()>,
+				).await.context("could not download certificate")?;
+			Ok::<_, anyhow::Error>(certificate)
+		}).await?;
 
 		Ok(certificate)
 	}
@@ -693,7 +689,7 @@ enum ChallengeResponse {
 
 	#[serde(rename = "pending")]
 	Pending {
-		token: String,
+		token: log2::Secret<String>,
 		r#type: String,
 		url: String,
 	},

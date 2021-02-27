@@ -14,10 +14,14 @@ anyhow = { version = "1", optional = true, default-features = false, features = 
 base64 = { version = "0.13", optional = true, default-features = false }
 chrono = { version = "0.4", optional = true, default-features = false }
 form_urlencoded = { version = "1", optional = true, default-features = false }
+hmac = { version = "0.10", optional = true, default-features = false, features = [
+	"std", # for hmac::crypto_mac::InvalidKeyLength: std::error::Error
+] }
 hyper = { version = "0.14", optional = true, default-features = false, features = [
 	"http1",
 	"client",
 ] }
+log = { version = "0.4", optional = true, default-features = false }
 serde = { version = "1", optional = true, default-features = false, features = [
 	"derive",
 ] }
@@ -31,12 +35,14 @@ tokio = { version = "1", optional = true, default-features = false, features = [
 ] }
 
 http-common = { path = "../http-common", optional = true }
+log2 = { path = "../log2", optional = true }
 
 
 [features]
-cdn = ["_common"]
-dns = ["_common"]
-key_vault_cert = ["base64", "chrono", "_common"]
-key_vault_key = ["sha2", "_common"]
+cdn = ["form_urlencoded", "_common"]
+dns = ["form_urlencoded", "_common"]
+key_vault_cert = ["base64", "chrono", "form_urlencoded", "_common"]
+key_vault_key = ["form_urlencoded", "sha2", "_common"]
+log_analytics = ["base64", "chrono", "chrono/clock", "hmac", "log", "serde/rc", "sha2", "_common"]
 
-_common = ["anyhow", "form_urlencoded", "hyper", "serde", "serde_json", "tokio", "http-common"]
+_common = ["anyhow", "hyper", "serde", "serde_json", "tokio", "http-common", "log2"]

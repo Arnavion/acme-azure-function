@@ -30,37 +30,37 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		eprintln!("Getting CDN custom domain {}/{}/{} secret version", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name);
-
-		let management_request_parameters =
-			self.management_request_parameters(format_args!(
-				"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2018-04-02",
-				cdn_profile_name,
-				cdn_endpoint_name,
-				cdn_custom_domain_name,
-			));
-		let (url, authorization) = management_request_parameters.await?;
-
-		let response: Response =
-			self.client.request(
-				hyper::Method::GET,
-				&url,
-				authorization,
-				None::<&()>,
-			).await?;
 		let secret =
-			response.properties.custom_https_parameters
-			.map(|custom_https_parameters| CustomDomainSecret {
-				name: custom_https_parameters.certificate_source_parameters.secret_name.into_owned(),
-				version: custom_https_parameters.certificate_source_parameters.secret_version.into_owned(),
-			});
+			log2::report_operation(
+				"azure/cdn/custom_domain/secret",
+				&format!("{}/{}/{}", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
+				log2::ScopedObjectOperation::Get,
+				async {
+					let management_request_parameters =
+						self.management_request_parameters(format_args!(
+							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2018-04-02",
+							cdn_profile_name,
+							cdn_endpoint_name,
+							cdn_custom_domain_name,
+						));
+					let (url, authorization) = management_request_parameters.await?;
 
-		if let Some(secret) = &secret {
-			eprintln!("CDN custom domain {}/{}/{} has secret {:?}", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name, secret);
-		}
-		else {
-			eprintln!("CDN custom domain {}/{}/{} does not have HTTPS enabled", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name);
-		}
+					let response: Response =
+						self.client.request(
+							hyper::Method::GET,
+							&url,
+							authorization,
+							None::<&()>,
+						).await?;
+					let secret =
+						response.properties.custom_https_parameters
+						.map(|custom_https_parameters| CustomDomainSecret {
+							name: custom_https_parameters.certificate_source_parameters.secret_name.into_owned(),
+							version: custom_https_parameters.certificate_source_parameters.secret_version.into_owned(),
+						});
+					Ok::<_, anyhow::Error>(secret)
+				},
+			).await?;
 
 		Ok(secret)
 	}
@@ -104,76 +104,66 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		eprintln!(
-			"Setting CDN custom domain {}/{}/{} secret to {}/{}/{} ...",
-			cdn_profile_name,
-			cdn_endpoint_name,
-			cdn_custom_domain_name,
-			key_vault_name,
-			key_vault_secret_name,
-			key_vault_secret_version,
-		);
+		let () =
+			log2::report_operation(
+				"azure/cdn/custom_domain/secret",
+				&format!("{}/{}/{}", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
+				log2::ScopedObjectOperation::Create { value: &format!("{}/{}", key_vault_secret_name, key_vault_secret_version) },
+				async {
+					let management_request_parameters =
+						self.management_request_parameters(format_args!(
+							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2018-04-02",
+							cdn_profile_name,
+							cdn_endpoint_name,
+							cdn_custom_domain_name,
+						));
+					let (url, authorization) = management_request_parameters.await?;
 
-		let management_request_parameters =
-			self.management_request_parameters(format_args!(
-				"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2018-04-02",
-				cdn_profile_name,
-				cdn_endpoint_name,
-				cdn_custom_domain_name,
-			));
-		let (url, authorization) = management_request_parameters.await?;
+					let mut response =
+						self.client.request(
+							hyper::Method::POST,
+							&url,
+							authorization.clone(),
+							Some(&CustomDomainPropertiesCustomHttpsParameters {
+								certificate_source: "AzureKeyVault".into(),
+								certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters {
+									delete_rule: "NoAction".into(),
+									key_vault_name: key_vault_name.into(),
+									odata_type: "#Microsoft.Azure.Cdn.Models.KeyVaultCertificateSourceParameters".into(),
+									resource_group: self.resource_group_name.into(),
+									secret_name: key_vault_secret_name.into(),
+									secret_version: key_vault_secret_version.into(),
+									subscription_id: self.subscription_id.into(),
+									update_rule: "NoAction".into(),
+								},
+								protocol_type: "ServerNameIndication".into(),
+							}),
+						).await?;
 
-		let mut response =
-			self.client.request(
-				hyper::Method::POST,
-				&url,
-				authorization.clone(),
-				Some(&CustomDomainPropertiesCustomHttpsParameters {
-					certificate_source: "AzureKeyVault".into(),
-					certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters {
-						delete_rule: "NoAction".into(),
-						key_vault_name: key_vault_name.into(),
-						odata_type: "#Microsoft.Azure.Cdn.Models.KeyVaultCertificateSourceParameters".into(),
-						resource_group: self.resource_group_name.into(),
-						secret_name: key_vault_secret_name.into(),
-						secret_version: key_vault_secret_version.into(),
-						subscription_id: self.subscription_id.into(),
-						update_rule: "NoAction".into(),
-					},
-					protocol_type: "ServerNameIndication".into(),
-				}),
-			).await?;
+					loop {
+						match response {
+							Response::Ok => break,
 
-		loop {
-			match response {
-				Response::Ok => break,
+							Response::Accepted { location, retry_after } => {
+								log2::report_message(&format!("Waiting for {:?} before rechecking async operation...", retry_after));
+								tokio::time::sleep(retry_after).await;
 
-				Response::Accepted { location, retry_after } => {
-					eprintln!("Waiting for {:?} before rechecking async operation...", retry_after);
-					tokio::time::sleep(retry_after).await;
+								log2::report_message(&format!("Checking async operation {} ...", location));
 
-					eprintln!("Checking async operation {} ...", location);
+								let new_response = self.client.request(
+									hyper::Method::GET,
+									&location,
+									authorization.clone(),
+									None::<&()>,
+								).await?;
+								response = new_response;
+							},
+						}
+					}
 
-					let new_response = self.client.request(
-						hyper::Method::GET,
-						&location,
-						authorization.clone(),
-						None::<&()>,
-					).await?;
-					response = new_response;
+					Ok::<_, anyhow::Error>(())
 				},
-			}
-		}
-
-		eprintln!(
-			"Set CDN custom domain {}/{}/{} secret to {}/{}/{}",
-			cdn_profile_name,
-			cdn_endpoint_name,
-			cdn_custom_domain_name,
-			key_vault_name,
-			key_vault_secret_name,
-			key_vault_secret_version,
-		);
+			).await?;
 
 		Ok(())
 	}

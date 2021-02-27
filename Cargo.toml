@@ -3,6 +3,7 @@ members = [
 	"azure",
 	"function-worker",
 	"http-common",
+	"log2",
 
 	"acme",
 	"update-cdn-cert",

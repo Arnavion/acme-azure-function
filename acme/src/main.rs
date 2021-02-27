@@ -29,6 +29,8 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 	).context("could not initialize Azure API client")?;
 
+	let log_id = format!("{}/{}", &settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name);
+
 	let need_new_certificate = {
 		let certificate = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name).await?;
 		let need_new_certificate =
@@ -36,7 +38,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 		need_new_certificate
 	};
 	if !need_new_certificate {
-		eprintln!("Certificate does not need to be renewed");
+		log2::report_state("azure/key_vault/certificate", &log_id, "does not need to be renewed");
 		return Ok(());
 	}
 
@@ -144,21 +146,21 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 			&certificates,
 		).await?;
 
-	eprintln!("Certificate has been renewed");
+	log2::report_state("azure/key_vault/certificate", &log_id, "renewed");
 
 	Ok(())
 }
 
 #[derive(serde::Deserialize)]
 struct Settings {
+	/// The Azure subscription ID
+	azure_subscription_id: String,
+
 	/// The directory URL of the ACME server
 	acme_directory_url: String,
 
 	/// The contact URL of the ACME account
 	acme_contact_url: String,
-
-	/// The Azure subscription ID
-	azure_subscription_id: String,
 
 	/// The name of the Azure resource group
 	azure_resource_group_name: String,

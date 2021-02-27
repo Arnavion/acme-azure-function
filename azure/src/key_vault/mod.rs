@@ -24,14 +24,15 @@ impl<'a> crate::Account<'a> {
 			Some(authorization) => Ok(authorization.clone()),
 
 			None => {
-				eprintln!("Getting KeyVault API authorization...");
-				let authorization =
-					crate::get_authorization(
-						&self.client,
-						&self.auth,
-						"https://vault.azure.net",
-					).await.context("could not get KeyVault API authorization")?;
-				eprintln!("Got KeyVault API authorization");
+				const RESOURCE: &str = "https://vault.azure.net";
+
+				let log2::Secret(authorization) = log2::report_operation("authorization", RESOURCE, log2::ScopedObjectOperation::Get, async {
+					let authorization =
+						crate::get_authorization(&self.client, &self.auth, RESOURCE).await
+						.context("could not get KeyVault API authorization")?;
+					Ok::<_, anyhow::Error>(log2::Secret(authorization))
+				}).await?;
+
 				*cached_key_vault_authorization = Some(authorization.clone());
 				Ok(authorization)
 			},

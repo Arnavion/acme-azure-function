@@ -7,14 +7,16 @@
 	clippy::missing_errors_doc,
 	clippy::must_use_candidate,
 	clippy::similar_names,
+	clippy::too_many_lines,
 )]
 
-#![cfg(any(
+#[cfg(any(
 	feature = "cdn",
 	feature = "dns",
 	feature = "key_vault_cert",
 	feature = "key_vault_key",
 ))]
+use anyhow::Context;
 
 #[cfg(feature = "cdn")]
 mod cdn;
@@ -39,8 +41,20 @@ pub use key_vault::{
 	Key as KeyVaultKey,
 };
 
-use anyhow::Context;
+#[cfg(feature = "log_analytics")]
+mod log_analytics;
+#[cfg(feature = "log_analytics")]
+pub use log_analytics::{
+	LogRecord as LogAnalyticsLogRecord,
+	LogSender as LogAnalyticsLogSender,
+};
 
+#[cfg(any(
+	feature = "cdn",
+	feature = "dns",
+	feature = "key_vault_cert",
+	feature = "key_vault_key",
+))]
 pub struct Account<'a> {
 	#[cfg_attr(not(any(feature = "cdn", feature = "dns")), allow(dead_code))]
 	subscription_id: &'a str,
@@ -57,6 +71,12 @@ pub struct Account<'a> {
 	cached_key_vault_authorization: tokio::sync::RwLock<Option<hyper::header::HeaderValue>>,
 }
 
+#[cfg(any(
+	feature = "cdn",
+	feature = "dns",
+	feature = "key_vault_cert",
+	feature = "key_vault_key",
+))]
 impl<'a> Account<'a> {
 	pub fn new(
 		subscription_id: &'a str,
@@ -93,14 +113,15 @@ impl<'a> Account<'a> {
 			Some(authorization) => Ok(authorization.clone()),
 
 			None => {
-				eprintln!("Getting Management API authorization...");
-				let authorization =
-					get_authorization(
-						&self.client,
-						&self.auth,
-						"https://management.azure.com",
-					).await.context("could not get Management API authorization")?;
-				eprintln!("Got Management API authorization");
+				const RESOURCE: &str = "https://management.azure.com";
+
+				let log2::Secret(authorization) = log2::report_operation("authorization", RESOURCE, log2::ScopedObjectOperation::Get, async {
+					let authorization =
+						get_authorization(&self.client, &self.auth, RESOURCE).await
+						.context("could not get Management API authorization")?;
+					Ok::<_, anyhow::Error>(log2::Secret(authorization))
+				}).await?;
+
 				*cached_management_authorization = Some(authorization.clone());
 				Ok(authorization)
 			},
@@ -127,6 +148,12 @@ impl<'a> Account<'a> {
 	}
 }
 
+#[cfg(any(
+	feature = "cdn",
+	feature = "dns",
+	feature = "key_vault_cert",
+	feature = "key_vault_key",
+))]
 async fn get_authorization(
 	client: &http_common::Client,
 	auth: &Auth,
@@ -190,6 +217,12 @@ async fn get_authorization(
 	Ok(header_value)
 }
 
+#[cfg(any(
+	feature = "cdn",
+	feature = "dns",
+	feature = "key_vault_cert",
+	feature = "key_vault_key",
+))]
 pub enum Auth {
 	ManagedIdentity {
 		endpoint: String,
@@ -204,6 +237,12 @@ pub enum Auth {
 	},
 }
 
+#[cfg(any(
+	feature = "cdn",
+	feature = "dns",
+	feature = "key_vault_cert",
+	feature = "key_vault_key",
+))]
 impl Auth {
 	pub fn from_env(
 		#[cfg_attr(not(debug_assertions), allow(unused_variables))]

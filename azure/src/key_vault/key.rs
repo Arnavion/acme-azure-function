@@ -15,28 +15,33 @@ impl<'a> crate::Account<'a> {
 			key_ops: &'a [&'a str],
 		}
 
-		eprintln!("Creating key {}/{} ...", key_vault_name, key_name);
+		let key =
+			log2::report_operation(
+				"azure/key_vault/key",
+				&format!("{}/{}", key_vault_name, key_name),
+				log2::ScopedObjectOperation::Create { value: &format!("{:?}", (kty, crv)) },
+				async {
+					let key_vault_request_parameters =
+						self.key_vault_request_parameters(
+							key_vault_name,
+							format_args!("/keys/{}/create?api-version=7.1", key_name),
+						);
+					let (url, authorization) = key_vault_request_parameters.await?;
 
-		let key_vault_request_parameters =
-			self.key_vault_request_parameters(
-				key_vault_name,
-				format_args!("/keys/{}/create?api-version=7.1", key_name),
-			);
-		let (url, authorization) = key_vault_request_parameters.await?;
-
-		let CreateOrGetKeyResponse { key } =
-			self.client.request(
-				hyper::Method::POST,
-				&url,
-				authorization,
-				Some(&Request {
-					crv,
-					kty,
-					key_ops: &["sign", "verify"],
-				}),
+					let CreateOrGetKeyResponse { key } =
+						self.client.request(
+							hyper::Method::POST,
+							&url,
+							authorization,
+							Some(&Request {
+								crv,
+								kty,
+								key_ops: &["sign", "verify"],
+							}),
+						).await?;
+					Ok::<_, anyhow::Error>(key)
+				},
 			).await?;
-
-		eprintln!("Created key {}/{}: {:?}", key_vault_name, key_name, key);
 
 		Ok(Key {
 			crv: key.crv,
@@ -69,38 +74,32 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		eprintln!("Getting key {}/{} ...", key_vault_name, key_name);
+		let key = log2::report_operation("azure/key_vault/key", &format!("{}/{}", key_vault_name, key_name), log2::ScopedObjectOperation::Get, async {
+			let key_vault_request_parameters =
+				self.key_vault_request_parameters(
+					key_vault_name,
+					format_args!("/keys/{}?api-version=7.1", key_name),
+				);
+			let (url, authorization) = key_vault_request_parameters.await?;
 
-		let key_vault_request_parameters =
-			self.key_vault_request_parameters(
-				key_vault_name,
-				format_args!("/keys/{}?api-version=7.1", key_name),
-			);
-		let (url, authorization) = key_vault_request_parameters.await?;
+			let Response(response) =
+				self.client.request(
+					hyper::Method::GET,
+					&url,
+					authorization,
+					None::<&()>,
+				).await?;
+			let key = response.map(|CreateOrGetKeyResponse { key }| key);
+			Ok::<_, anyhow::Error>(key)
+		}).await?;
 
-		let response =
-			self.client.request(
-				hyper::Method::GET,
-				&url,
-				authorization,
-				None::<&()>,
-			).await?;
-		Ok(match response {
-			Response(Some(CreateOrGetKeyResponse { key })) => {
-				eprintln!("Got key {}/{}: {:?}", key_vault_name, key_name, key);
-				Some(Key {
-					crv: key.crv,
-					kid: key.kid,
-					x: key.x,
-					y: key.y,
-					account: self,
-				})
-			},
-			Response(None) => {
-				eprintln!("Key {}/{} does not exist", key_vault_name, key_name);
-				None
-			},
-		})
+		Ok(key.map(|key| Key {
+			crv: key.crv,
+			kid: key.kid,
+			x: key.x,
+			y: key.y,
+			account: self,
+		}))
 	}
 }
 
@@ -219,22 +218,23 @@ impl Key<'_> {
 				super::EcCurve::P521 => sha2::Sha512,
 			});
 
-			eprintln!("Signing using key {} ...", self.kid);
+			let signature = log2::report_operation("azure/key_vault/key/signature", &self.kid, log2::ScopedObjectOperation::Create { value: "" }, async {
+				let url = format!("{}/sign?api-version=7.1", self.kid);
+				let authorization = self.account.key_vault_authorization().await?;
 
-			let url = format!("{}/sign?api-version=7.1", self.kid);
-			let authorization = self.account.key_vault_authorization().await?;
+				let KeyVaultSignResponse { value: signature } =
+					self.account.client.request(
+						hyper::Method::POST,
+						&url,
+						authorization,
+						Some(&KeyVaultSignRequest {
+							alg,
+							value: &hash,
+						}),
+					).await?;
+				Ok::<_, anyhow::Error>(signature)
+			}).await?;
 
-			let KeyVaultSignResponse { value: signature } =
-				self.account.client.request(
-					hyper::Method::POST,
-					&url,
-					authorization,
-					Some(&KeyVaultSignRequest {
-						alg,
-						value: &hash,
-					}),
-				).await?;
-			eprintln!("Got signature using key {}", self.kid);
 			signature
 		};
 

@@ -21,3 +21,4 @@ azure = { path = "../azure", features = [
 	"key_vault_cert",
 ] }
 function-worker = { path = "../function-worker" }
+log2 = { path = "../log2" }

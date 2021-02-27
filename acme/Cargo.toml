@@ -36,3 +36,4 @@ azure = { path = "../azure", features = [
 ] }
 function-worker = { path = "../function-worker" }
 http-common = { path = "../http-common" }
+log2 = { path = "../log2" }
