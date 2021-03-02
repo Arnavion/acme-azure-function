@@ -217,9 +217,9 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Build the Function app and run it in the Functions host.
 
     ```sh
-    ./acme/build.sh debug
+    ./function-renew-cert/build.sh debug
 
-    curl -D - 'http://localhost:7071/acme'
+    curl -D - 'http://localhost:7071/renew-cert'
     ```
 
 If you need to force a new certificate to be requested while the previous one in the KeyVault is still valid, delete it:
@@ -242,7 +242,7 @@ az keyvault secret purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$ACME_ACCO
 # Deploy to Azure
 
 ```sh
-./acme/build.sh publish
+./function-renew-cert/build.sh publish
 ```
 
 

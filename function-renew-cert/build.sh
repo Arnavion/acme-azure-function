@@ -14,7 +14,8 @@ esac
 
 ./scripts/build.common.sh \
     "$1" \
-    'acme' \
+    'renew-cert' \
+    'function-renew-cert' \
     "$AZURE_ACME_RESOURCE_GROUP_NAME" \
     "$AZURE_ACME_CLIENT_ID" \
     "$AZURE_ACME_CLIENT_SECRET" \

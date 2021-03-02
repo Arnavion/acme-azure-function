@@ -14,9 +14,8 @@ anyhow = { version = "1", optional = true, default-features = false, features = 
 base64 = { version = "0.13", optional = true, default-features = false }
 chrono = { version = "0.4", optional = true, default-features = false }
 form_urlencoded = { version = "1", optional = true, default-features = false }
-hmac = { version = "0.10", optional = true, default-features = false, features = [
-	"std", # for hmac::crypto_mac::InvalidKeyLength: std::error::Error
-] }
+futures-util = { version = "0.3", optional = true, default-features = false }
+hmac = { version = "0.10", optional = true, default-features = false }
 hyper = { version = "0.14", optional = true, default-features = false, features = [
 	"http1",
 	"client",
@@ -28,21 +27,25 @@ serde = { version = "1", optional = true, default-features = false, features = [
 serde_json = { version = "1", optional = true, default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
-sha2 = { version = "0.9", default-features = false, optional = true }
+sha2 = { version = "0.9", optional = true, default-features = false, features = [
+	"std", # for sha2::Sha256: std::io::Write
+] }
 tokio = { version = "1", optional = true, default-features = false, features = [
 	"sync",
 	"time",
 ] }
 
+acme = { path = "../acme", optional = true }
 http-common = { path = "../http-common", optional = true }
 log2 = { path = "../log2", optional = true }
+once_cell2 = { path = "../once_cell2", optional = true }
 
 
 [features]
-cdn = ["form_urlencoded", "_common"]
-dns = ["form_urlencoded", "_common"]
-key_vault_cert = ["base64", "chrono", "form_urlencoded", "_common"]
-key_vault_key = ["form_urlencoded", "sha2", "_common"]
-log_analytics = ["base64", "chrono", "chrono/clock", "hmac", "log", "serde/rc", "sha2", "_common"]
+cdn = ["form_urlencoded", "serde_json", "tokio", "_common"]
+dns = ["form_urlencoded", "serde_json", "tokio", "_common"]
+key_vault_cert = ["base64", "chrono", "form_urlencoded", "serde_json", "tokio", "_common"]
+key_vault_key = ["form_urlencoded", "serde_json", "tokio", "acme", "_common"]
+log_analytics = ["base64", "chrono", "chrono/clock", "futures-util", "hmac", "hyper/stream", "log", "sha2", "_common"]
 
-_common = ["anyhow", "hyper", "serde", "serde_json", "tokio", "http-common", "log2"]
+_common = ["anyhow", "hyper", "serde", "http-common", "log2", "once_cell2"]

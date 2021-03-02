@@ -3,12 +3,14 @@
 CARGOFLAGS =
 
 default:
-	cargo build -p acme -p update-cdn-cert ${CARGOFLAGS}
+	cargo build -p function-deploy-cert-to-cdn -p function-renew-cert ${CARGOFLAGS}
 
 test:
 	cargo clippy -p log2
 
 	cargo clippy -p http-common
+
+	cargo clippy -p acme
 
 	set -euo pipefail; \
 	for cdn in '' 'cdn,'; do \
@@ -32,9 +34,9 @@ test:
 
 	cargo clippy -p function-worker
 
-	cargo clippy -p acme
+	cargo clippy -p function-renew-cert
 
-	cargo clippy -p update-cdn-cert
+	cargo clippy -p function-deploy-cert-to-cdn
 
 clean:
 	cargo clean

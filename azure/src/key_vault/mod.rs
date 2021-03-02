@@ -6,7 +6,7 @@ pub use certificate::{Certificate, CreateCsrKeyType};
 #[cfg(feature = "key_vault_key")]
 mod key;
 #[cfg(feature = "key_vault_key")]
-pub use key::{EcKty, Jwk, Key};
+pub use key::{EcKty, Key};
 
 use anyhow::Context;
 
@@ -26,7 +26,7 @@ impl<'a> crate::Account<'a> {
 			None => {
 				const RESOURCE: &str = "https://vault.azure.net";
 
-				let log2::Secret(authorization) = log2::report_operation("authorization", RESOURCE, log2::ScopedObjectOperation::Get, async {
+				let log2::Secret(authorization) = log2::report_operation("azure/authorization", RESOURCE, <log2::ScopedObjectOperation>::Get, async {
 					let authorization =
 						crate::get_authorization(&self.client, &self.auth, RESOURCE).await
 						.context("could not get KeyVault API authorization")?;

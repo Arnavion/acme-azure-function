@@ -33,8 +33,8 @@ impl<'a> crate::Account<'a> {
 		let secret =
 			log2::report_operation(
 				"azure/cdn/custom_domain/secret",
-				&format!("{}/{}/{}", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
-				log2::ScopedObjectOperation::Get,
+				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
+				<log2::ScopedObjectOperation>::Get,
 				async {
 					let management_request_parameters =
 						self.management_request_parameters(format_args!(
@@ -48,7 +48,7 @@ impl<'a> crate::Account<'a> {
 					let response: Response =
 						self.client.request(
 							hyper::Method::GET,
-							&url,
+							url,
 							authorization,
 							None::<&()>,
 						).await?;
@@ -78,7 +78,7 @@ impl<'a> crate::Account<'a> {
 		enum Response {
 			Ok,
 			Accepted {
-				location: String,
+				location: hyper::Uri,
 				retry_after: std::time::Duration,
 			},
 		}
@@ -107,8 +107,8 @@ impl<'a> crate::Account<'a> {
 		let () =
 			log2::report_operation(
 				"azure/cdn/custom_domain/secret",
-				&format!("{}/{}/{}", cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
-				log2::ScopedObjectOperation::Create { value: &format!("{}/{}", key_vault_secret_name, key_vault_secret_version) },
+				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
+				log2::ScopedObjectOperation::Create { value: log2::ObjectId((key_vault_secret_name, key_vault_secret_version)) },
 				async {
 					let management_request_parameters =
 						self.management_request_parameters(format_args!(
@@ -122,7 +122,7 @@ impl<'a> crate::Account<'a> {
 					let mut response =
 						self.client.request(
 							hyper::Method::POST,
-							&url,
+							url,
 							authorization.clone(),
 							Some(&CustomDomainPropertiesCustomHttpsParameters {
 								certificate_source: "AzureKeyVault".into(),
@@ -145,14 +145,14 @@ impl<'a> crate::Account<'a> {
 							Response::Ok => break,
 
 							Response::Accepted { location, retry_after } => {
-								log2::report_message(&format!("Waiting for {:?} before rechecking async operation...", retry_after));
+								log2::report_message(format_args!("Waiting for {:?} before rechecking async operation...", retry_after));
 								tokio::time::sleep(retry_after).await;
 
-								log2::report_message(&format!("Checking async operation {} ...", location));
+								log2::report_message(format_args!("Checking async operation {} ...", location));
 
 								let new_response = self.client.request(
 									hyper::Method::GET,
-									&location,
+									location,
 									authorization.clone(),
 									None::<&()>,
 								).await?;

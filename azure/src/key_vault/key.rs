@@ -1,5 +1,3 @@
-use anyhow::Context;
-
 impl<'a> crate::Account<'a> {
 	pub async fn key_vault_key_create<'b>(
 		&'b self,
@@ -18,8 +16,8 @@ impl<'a> crate::Account<'a> {
 		let key =
 			log2::report_operation(
 				"azure/key_vault/key",
-				&format!("{}/{}", key_vault_name, key_name),
-				log2::ScopedObjectOperation::Create { value: &format!("{:?}", (kty, crv)) },
+				(key_vault_name, key_name),
+				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (kty, crv)) },
 				async {
 					let key_vault_request_parameters =
 						self.key_vault_request_parameters(
@@ -31,7 +29,7 @@ impl<'a> crate::Account<'a> {
 					let CreateOrGetKeyResponse { key } =
 						self.client.request(
 							hyper::Method::POST,
-							&url,
+							url,
 							authorization,
 							Some(&Request {
 								crv,
@@ -74,7 +72,7 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		let key = log2::report_operation("azure/key_vault/key", &format!("{}/{}", key_vault_name, key_name), log2::ScopedObjectOperation::Get, async {
+		let key = log2::report_operation("azure/key_vault/key", (key_vault_name, key_name), <log2::ScopedObjectOperation>::Get, async {
 			let key_vault_request_parameters =
 				self.key_vault_request_parameters(
 					key_vault_name,
@@ -85,7 +83,7 @@ impl<'a> crate::Account<'a> {
 			let Response(response) =
 				self.client.request(
 					hyper::Method::GET,
-					&url,
+					url,
 					authorization,
 					None::<&()>,
 				).await?;
@@ -120,50 +118,25 @@ pub struct Key<'a> {
 	account: &'a crate::Account<'a>,
 }
 
-impl Key<'_> {
-	pub fn jwk(&self) -> Jwk<'_> {
-		Jwk {
-			crv: self.crv,
+impl acme::AccountKey for Key<'_> {
+	fn jwk(&self) -> acme::Jwk<'_> {
+		acme::Jwk {
+			crv: match self.crv {
+				super::EcCurve::P256 => acme::EcCurve::P256,
+				super::EcCurve::P384 => acme::EcCurve::P384,
+				super::EcCurve::P521 => acme::EcCurve::P521,
+			},
 			kty: "EC",
 			x: &self.x,
 			y: &self.y,
 		}
 	}
 
-	pub fn jws_alg(&self) -> &'static str {
-		match self.crv {
-			super::EcCurve::P256 => "ES256",
-			super::EcCurve::P384 => "ES384",
-			super::EcCurve::P521 => "ES512",
-		}
-	}
-
-	pub async fn jws<TProtected, TPayload>(
-		&self,
-		protected: TProtected,
-		payload: Option<TPayload>,
-	) -> anyhow::Result<Vec<u8>>
-	where
-		TProtected: serde::Serialize,
-		TPayload: serde::Serialize,
-	{
-		macro_rules! hash {
-			($crv:expr, $protected:expr, $payload:expr, { $($crv_name:pat => $hash:ty,)* }) => {
-				match $crv {
-					$(
-						$crv_name => {
-							let mut hasher: $hash = sha2::Digest::new();
-							sha2::Digest::update(&mut hasher, $protected);
-							sha2::Digest::update(&mut hasher, b".");
-							sha2::Digest::update(&mut hasher, $payload);
-							let hash = sha2::Digest::finalize(hasher);
-							http_common::jws_base64_encode(&hash)
-						},
-					)*
-				}
-			};
-		}
-
+	fn sign<'a>(
+		&'a self,
+		alg: &'static str,
+		digest: &'a str,
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>> {
 		#[derive(serde::Serialize)]
 		struct KeyVaultSignRequest<'a> {
 			alg: &'a str,
@@ -189,80 +162,22 @@ impl Key<'_> {
 			}
 		}
 
-		#[derive(serde::Serialize)]
-		struct JwsRequest<'a> {
-			payload: &'a str,
-			protected: &'a str,
-			signature: &'a str,
-		}
+		Box::pin(log2::report_operation("azure/key_vault/key/signature", &self.kid, log2::ScopedObjectOperation::Create { value: "" }, async move {
+			let url = format!("{}/sign?api-version=7.1", self.kid);
+			let authorization = self.account.key_vault_authorization().await?;
 
-		let protected = serde_json::to_vec(&protected).context("could not serialize `protected`")?;
-		let protected = http_common::jws_base64_encode(&protected);
-
-		let payload =
-			if let Some(payload) = payload {
-				let payload = serde_json::to_vec(&payload).context("could not serialize `payload`")?;
-				let payload = http_common::jws_base64_encode(&payload);
-				payload
-			}
-			else {
-				String::new()
-			};
-
-		let signature = {
-			let alg = self.jws_alg();
-
-			let hash = hash!(self.crv, &protected, &payload, {
-				super::EcCurve::P256 => sha2::Sha256,
-				super::EcCurve::P384 => sha2::Sha384,
-				super::EcCurve::P521 => sha2::Sha512,
-			});
-
-			let signature = log2::report_operation("azure/key_vault/key/signature", &self.kid, log2::ScopedObjectOperation::Create { value: "" }, async {
-				let url = format!("{}/sign?api-version=7.1", self.kid);
-				let authorization = self.account.key_vault_authorization().await?;
-
-				let KeyVaultSignResponse { value: signature } =
-					self.account.client.request(
-						hyper::Method::POST,
-						&url,
-						authorization,
-						Some(&KeyVaultSignRequest {
-							alg,
-							value: &hash,
-						}),
-					).await?;
-				Ok::<_, anyhow::Error>(signature)
-			}).await?;
-
-			signature
-		};
-
-		let body = JwsRequest {
-			payload: &payload,
-			protected: &protected,
-			signature: &signature,
-		};
-		let body = serde_json::to_vec(&body).expect("could not serialize JWS request body");
-		Ok(body)
-	}
-}
-
-#[derive(serde::Serialize)]
-pub struct Jwk<'a> {
-	crv: super::EcCurve,
-	kty: &'a str,
-	x: &'a str,
-	y: &'a str,
-}
-
-impl Jwk<'_> {
-	pub fn thumbprint(&self) -> String {
-		let jwk = serde_json::to_vec(self).expect("could not compute JWK thumbprint");
-		let mut hasher: sha2::Sha256 = sha2::Digest::new();
-		sha2::Digest::update(&mut hasher, &jwk);
-		let hash = sha2::Digest::finalize(hasher);
-		http_common::jws_base64_encode(&hash)
+			let KeyVaultSignResponse { value: signature } =
+				self.account.client.request(
+					hyper::Method::POST,
+					url,
+					authorization,
+					Some(&KeyVaultSignRequest {
+						alg,
+						value: digest,
+					}),
+				).await?;
+			Ok::<_, anyhow::Error>(signature)
+		}))
 	}
 }
 

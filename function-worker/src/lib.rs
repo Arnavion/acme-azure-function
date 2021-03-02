@@ -2,9 +2,11 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
 	clippy::default_trait_access,
+	clippy::let_underscore_drop,
 	clippy::let_unit_value,
 	clippy::missing_errors_doc,
 	clippy::shadow_unrelated,
+	clippy::too_many_lines,
 	clippy::type_complexity,
 )]
 
@@ -14,23 +16,24 @@ use anyhow::Context;
 macro_rules! run {
 	($($name:literal => $f:expr ,)*) => {
 		fn main() -> anyhow::Result<()> {
-			let () =
+			let runtime =
 				$crate::_reexports::tokio::runtime::Builder::new_current_thread()
 				.enable_io()
 				.enable_time()
-				.build()?
-				.block_on($crate::_run(|req, settings| async move {
-					let path = req.uri().path();
-					if let Some(path) = path.strip_prefix('/') {
-						Ok(match path {
-							$($name => Some($f(settings).await?) ,)*
-							_ => None,
-						})
-					}
-					else {
-						Ok(None)
-					}
-				}))?;
+				.build()?;
+			let local_set = $crate::_reexports::tokio::task::LocalSet::new();
+			let () = local_set.block_on(&runtime, $crate::_run(|req, settings| async move {
+				let path = req.uri().path();
+				if let Some(path) = path.strip_prefix('/') {
+					Ok(match path {
+						$($name => Some($f(settings).await?) ,)*
+						_ => None,
+					})
+				}
+				else {
+					Ok(None)
+				}
+			}))?;
 			Ok(())
 		}
 	};
@@ -48,7 +51,7 @@ pub async fn _run<TSettings, TOutput>(
 where
 	TSettings: serde::de::DeserializeOwned + 'static,
 	std::sync::Arc<TSettings>: Send,
-	TOutput: std::future::Future<Output = anyhow::Result<Option<()>>> + Send + 'static,
+	TOutput: std::future::Future<Output = anyhow::Result<Option<()>>> + 'static,
 {
 	{
 		let logger = GlobalLogger;
@@ -60,14 +63,14 @@ where
 		let settings = std::env::var("SECRET_SETTINGS").context("could not read SECRET_SETTINGS env var")?;
 		let LoggerSettings::<TSettings> {
 			azure_log_analytics_workspace_id,
-			azure_log_analytics_workspace_key,
+			azure_log_analytics_workspace_signer,
 			rest,
 		} = serde_json::from_str(&settings).context("could not read SECRET_SETTINGS env var")?;
 
 		let log_sender =
 			azure::LogAnalyticsLogSender::new(
 				azure_log_analytics_workspace_id,
-				azure_log_analytics_workspace_key,
+				azure_log_analytics_workspace_signer,
 				concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 			).context("could not create LogAnalytics log sender")?;
 
@@ -82,6 +85,7 @@ where
 
 	let server =
 		hyper::Server::try_bind(&([127, 0, 0, 1], port).into())?
+		.executor(LocalSetExecutor)
 		.serve(hyper::service::make_service_fn(|_| {
 			let log_sender = log_sender.clone();
 			let settings = settings.clone();
@@ -100,10 +104,10 @@ where
 						let records = logger.with(log2::TaskLocalLogger::take_records);
 
 						if !records.is_empty() {
-							static LOG_TYPE: once_cell::sync::Lazy<hyper::header::HeaderValue> =
-								once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("FunctionAppLogs"));
+							static LOG_TYPE: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
+								once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("FunctionAppLogs"));
 
-							log_sender.send_logs(LOG_TYPE.clone(), &records).await?;
+							log_sender.send_logs(LOG_TYPE.clone(), records).await?;
 						}
 
 						match r {
@@ -119,10 +123,13 @@ where
 				let settings = settings.clone();
 
 				async move {
-					let function_invocation_id = req.headers_mut().remove("x-azure-functions-invocationid");
+					static X_AZURE_FUNCTIONS_INVOCATIONID: once_cell2::race::LazyBox<hyper::header::HeaderName> =
+						once_cell2::race::LazyBox::new(|| hyper::header::HeaderName::from_static("x-azure-functions-invocationid"));
+
+					let function_invocation_id = req.headers_mut().remove(&*X_AZURE_FUNCTIONS_INVOCATIONID);
 
 					let res = log2::with_task_local_logger(function_invocation_id, log_sender, async move {
-						log2::report_state("function_invocation", "", &format!("{:?}", req));
+						log2::report_state("function_invocation", "", format_args!("{:?}", req));
 
 						let res: hyper::Response<hyper::Body> =
 							if req.method() == hyper::Method::POST {
@@ -153,13 +160,16 @@ where
 								}
 							}
 							else {
+								static ALLOW_POST: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
+									once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("POST"));
+
 								let mut res = hyper::Response::new(Default::default());
 								*res.status_mut() = hyper::StatusCode::METHOD_NOT_ALLOWED;
 								res.headers_mut().insert(hyper::header::ALLOW, ALLOW_POST.clone());
 								res
 							};
 
-						log2::report_state("function_invocation", "", &format!("{:?}", res));
+						log2::report_state("function_invocation", "", format_args!("{:?}", res));
 
 						res
 					}).await;
@@ -178,28 +188,28 @@ struct LoggerSettings<TSettings> {
 	azure_log_analytics_workspace_id: String,
 
 	/// The Azure Log Analytics workspace's shared key
-	#[serde(deserialize_with = "deserialize_base64")]
-	azure_log_analytics_workspace_key: Vec<u8>,
+	#[serde(deserialize_with = "deserialize_signer")]
+	#[serde(rename = "azure_log_analytics_workspace_key")]
+	azure_log_analytics_workspace_signer: hmac::Hmac<sha2::Sha256>,
 
 	#[serde(flatten)]
 	rest: TSettings,
 }
 
-static ALLOW_POST: once_cell::sync::Lazy<hyper::header::HeaderValue> =
-	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("POST"));
-
-fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error> where D: serde::Deserializer<'de> {
+fn deserialize_signer<'de, D>(deserializer: D) -> Result<hmac::Hmac<sha2::Sha256>, D::Error> where D: serde::Deserializer<'de> {
 	struct Visitor;
 
 	impl serde::de::Visitor<'_> for Visitor {
-		type Value = Vec<u8>;
+		type Value = hmac::Hmac<sha2::Sha256>;
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 			f.write_str("base64-encoded string")
 		}
 
 		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
-			base64::decode(s).map_err(serde::de::Error::custom)
+			let key = base64::decode(s).map_err(serde::de::Error::custom)?;
+			let signer = hmac::NewMac::new_varkey(&key).expect("cannot fail to create hmac::Hmac<sha2::Sha256>");
+			Ok(signer)
 		}
 	}
 
@@ -225,5 +235,14 @@ impl log::Log for GlobalLogger {
 	}
 
 	fn flush(&self) {
+	}
+}
+
+#[derive(Clone, Copy)]
+struct LocalSetExecutor;
+
+impl<Fut> hyper::rt::Executor<Fut> for LocalSetExecutor where Fut: std::future::Future + 'static {
+	fn execute(&self, fut: Fut) {
+		let _ = tokio::task::spawn_local(fut);
 	}
 }

@@ -16,21 +16,20 @@ chrono = { version = "0.4", default-features = false, features = [
 	"clock", # for chrono::Utc::now()
 ] }
 futures-util = { version = "0.3", default-features = false }
+hmac = { version = "0.10", default-features = false }
 hyper = { version = "0.14", default-features = false, features = [
 	"http1",
 	"server",
 	"tcp", # for hyper::Server::try_bind
 ] }
 log = { version = "0.4", default-features = false }
-once_cell = { version = "1", default-features = false, features = [
-	"std", # for once_cell::sync
-] }
 serde = { version = "1", default-features = false, features = [
 	"derive",
 ] }
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
+sha2 = { version = "0.9", default-features = false }
 tokio = { version = "1", default-features = false, features = [
 	"rt",
 	"time",
@@ -41,3 +40,4 @@ azure = { path = "../azure", features = [
 ] }
 http-common = { path = "../http-common" }
 log2 = { path = "../log2" }
+once_cell2 = { path = "../once_cell2" }

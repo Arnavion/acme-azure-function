@@ -8,15 +8,13 @@
 	clippy::too_many_lines,
 )]
 
-mod proto;
-
 use anyhow::Context;
 
 function_worker::run! {
-	"acme" => acme_main,
+	"renew-cert" => renew_cert_main,
 }
 
-async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
+async fn renew_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
 		settings.azure_client_id.clone(),
 		settings.azure_client_secret.clone(),
@@ -29,8 +27,6 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 	).context("could not initialize Azure API client")?;
 
-	let log_id = format!("{}/{}", &settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name);
-
 	let need_new_certificate = {
 		let certificate = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name).await?;
 		let need_new_certificate =
@@ -38,7 +34,11 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 		need_new_certificate
 	};
 	if !need_new_certificate {
-		log2::report_state("azure/key_vault/certificate", &log_id, "does not need to be renewed");
+		log2::report_state(
+			"azure/key_vault/certificate",
+			(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
+			"does not need to be renewed",
+		);
 		return Ok(());
 	}
 
@@ -60,8 +60,8 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 		}
 	};
 
-	let mut acme_account = proto::Account::new(
-		&settings.acme_directory_url,
+	let mut acme_account = acme::Account::new(
+		settings.acme_directory_url.clone(),
 		&settings.acme_contact_url,
 		&account_key,
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
@@ -74,7 +74,7 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let certificates = {
 		let certificate = loop {
 			match acme_order {
-				proto::Order::Pending(pending) => {
+				acme::Order::Pending(pending) => {
 					let () =
 						azure_account.dns_txt_record_create(
 							&settings.top_level_domain_name,
@@ -91,10 +91,10 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 							"_acme-challenge",
 						).await?;
 
-					acme_order = proto::Order::Ready(new_acme_order?);
+					acme_order = acme::Order::Ready(new_acme_order?);
 				},
 
-				proto::Order::Ready(ready) => {
+				acme::Order::Ready(ready) => {
 					let csr =
 						azure_account.key_vault_csr_create(
 							&settings.azure_key_vault_name,
@@ -102,11 +102,10 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 							&domain_name,
 							settings.azure_key_vault_certificate_key_type,
 						).await?;
-
-					acme_order = proto::Order::Valid(acme_account.finalize_order(ready, &csr).await?);
+					acme_order = acme::Order::Valid(acme_account.finalize_order(ready, csr).await?);
 				},
 
-				proto::Order::Valid(valid) =>
+				acme::Order::Valid(valid) =>
 					break acme_account.download_certificate(valid).await?,
 			}
 		};
@@ -146,7 +145,11 @@ async fn acme_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 			&certificates,
 		).await?;
 
-	log2::report_state("azure/key_vault/certificate", &log_id, "renewed");
+	log2::report_state(
+		"azure/key_vault/certificate",
+		(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
+		"renewed",
+	);
 
 	Ok(())
 }
@@ -157,7 +160,8 @@ struct Settings {
 	azure_subscription_id: String,
 
 	/// The directory URL of the ACME server
-	acme_directory_url: String,
+	#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
+	acme_directory_url: hyper::Uri,
 
 	/// The contact URL of the ACME account
 	acme_contact_url: String,

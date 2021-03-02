@@ -1,47 +1,67 @@
+#![deny(rust_2018_idioms, warnings)]
+#![deny(clippy::all, clippy::pedantic)]
+#![allow(
+	clippy::let_unit_value,
+	clippy::shadow_unrelated,
+)]
+
+mod object_id;
+pub use object_id::ObjectId;
+
 pub fn report_error(err: &anyhow::Error) {
-	report_inner(Report::Error { err });
+	report_inner::<&str, &str>(Report::Error { err });
 }
 
-pub fn report_message(message: &str) {
-	report_inner(Report::Message { message });
+pub fn report_message<D>(message: D) where D: Copy + std::fmt::Display + serde::Serialize {
+	report_inner::<&str, _>(Report::Message { message });
 }
 
-pub async fn report_operation<F>(object_type: &str, object_id: &str, operation: ScopedObjectOperation<'_>, f: F) -> F::Output
+pub async fn report_operation<IID, D, F, ID>(object_type: &str, object_id: IID, operation: ScopedObjectOperation<D>, f: F) -> F::Output
 where
+	IID: Into<ObjectId<ID>>,
+	ObjectId<ID>: Copy + std::fmt::Display,
+	D: Copy + std::fmt::Display + serde::Serialize,
 	F: std::future::Future,
 	F::Output: std::fmt::Debug,
 {
+	let object_id = object_id.into();
+
 	match operation {
 		ScopedObjectOperation::Create { value } => {
-			report_inner(Report::ObjectOperation { r#type: object_type, id: object_id, operation: ObjectOperation::CreateStart { value } });
+			report_inner::<_, D>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateStart { value } });
 			let result = f.await;
-			report_inner(Report::ObjectOperation { r#type: object_type, id: object_id, operation: ObjectOperation::CreateEnd });
+			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateEnd });
 			result
 		},
 
 		ScopedObjectOperation::Delete => {
-			report_inner(Report::ObjectOperation { r#type: object_type, id: object_id, operation: ObjectOperation::DeleteStart });
+			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteStart });
 			let result = f.await;
-			report_inner(Report::ObjectOperation { r#type: object_type, id: object_id, operation: ObjectOperation::DeleteEnd });
+			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteEnd });
 			result
 		},
 
 		ScopedObjectOperation::Get => {
-			report_inner(Report::ObjectOperation { r#type: object_type, id: object_id, operation: ObjectOperation::GetStart });
+			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetStart });
 			let result = f.await;
-			report_inner(Report::ObjectOperation { r#type: object_type, id: object_id, operation: ObjectOperation::GetEnd { value: &format!("{:?}", result) } });
+			report_inner(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetEnd { value: format_args!("{:?}", result) } });
 			result
 		},
 	}
 }
 
-pub fn report_state(r#type: &str, id: &str, state: &str) {
-	report_inner(Report::ObjectState { r#type, id, state });
+pub fn report_state<IID, D, ID>(object_type: &str, object_id: IID, state: D)
+where
+	IID: Into<ObjectId<ID>>,
+	ObjectId<ID>: Copy + std::fmt::Display,
+	D: Copy + std::fmt::Display + serde::Serialize,
+{
+	report_inner(Report::ObjectState { object_type, object_id: object_id.into(), state });
 }
 
 #[derive(Clone, Copy)]
-pub enum ScopedObjectOperation<'a> {
-	Create { value: &'a str },
+pub enum ScopedObjectOperation<D = &'static str> {
+	Create { value: D },
 	Delete,
 	Get,
 }
@@ -120,8 +140,8 @@ impl TaskLocalLogger {
 	}
 }
 
-pub static TIME_GENERATED_FIELD: once_cell::sync::Lazy<hyper::header::HeaderValue> =
-	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("TimeCollected"));
+pub static TIME_GENERATED_FIELD: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
+	once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("TimeCollected"));
 
 #[derive(serde::Deserialize)]
 pub struct Secret<T>(pub T);
@@ -148,7 +168,11 @@ enum ScopeResult<T, F> {
 	ErrReady(T, anyhow::Error),
 }
 
-fn report_inner(report: Report<'_>) {
+fn report_inner<ID, D>(report: Report<'_, ID, D>)
+where
+	for<'a> Record<'a, ID, D>: serde::Serialize,
+	for<'a> Report<'a, ID, D>: Copy + std::fmt::Debug,
+{
 	let timestamp = chrono::Utc::now();
 
 	let _: Result<(), _> = LOGGER.try_with(|TaskLocalLogger { inner }| {
@@ -160,13 +184,17 @@ fn report_inner(report: Report<'_>) {
 			records.push(b',');
 		}
 
-		let record = serde_json::to_vec(&Record {
-			timestamp,
-			sequence_number: *sequence_number,
-			function_invocation_id: function_invocation_id.as_deref(),
-			report,
-		}).expect("could not serialize log record");
-		records.extend_from_slice(&record);
+		let mut serializer = serde_json::Serializer::new(records);
+		let () =
+			serde::Serialize::serialize(
+				&Record {
+					timestamp,
+					function_invocation_id: function_invocation_id.as_deref(),
+					sequence_number: *sequence_number,
+					report,
+				},
+				&mut serializer,
+			).expect("could not serialize log record");
 	});
 
 	log::log!(
@@ -177,56 +205,25 @@ fn report_inner(report: Report<'_>) {
 	);
 }
 
-struct Record<'a> {
+struct Record<'a, ID, D> {
 	pub timestamp: chrono::DateTime<chrono::Utc>,
-	pub sequence_number: usize,
 	pub function_invocation_id: Option<&'a str>,
-	pub report: Report<'a>,
+	pub sequence_number: usize,
+	pub report: Report<'a, ID, D>,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Report<'a> {
-	Error {
-		err: &'a anyhow::Error,
-	},
-
-	Message {
-		message: &'a str,
-	},
-
-	ObjectOperation {
-		r#type: &'a str,
-		id: &'a str,
-		operation: ObjectOperation<'a>,
-	},
-
-	ObjectState {
-		r#type: &'a str,
-		id: &'a str,
-		state: &'a str,
-	},
-}
-
-#[derive(Clone, Copy, Debug)]
-enum ObjectOperation<'a> {
-	CreateStart { value: &'a str },
-	CreateEnd,
-
-	DeleteStart,
-	DeleteEnd,
-
-	GetStart,
-	GetEnd { value: &'a str },
-}
-
-impl serde::Serialize for Record<'_> {
+impl<ID, D> serde::Serialize for Record<'_, ID, D>
+where
+	ObjectId<ID>: serde::Serialize,
+	D: std::fmt::Display + serde::Serialize,
+{
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
 		use serde::ser::SerializeStruct;
 
 		let Record {
 			timestamp,
-			sequence_number,
 			function_invocation_id,
+			sequence_number,
 			report,
 		} = self;
 
@@ -241,7 +238,7 @@ impl serde::Serialize for Record<'_> {
 		match report {
 			Report::Error { err } => {
 				serializer.serialize_field("Level", &SerializeWith(log::Level::Error))?;
-				serializer.serialize_field("Exception", &format!("{:?}", err))?;
+				serializer.serialize_field("Exception", &format_args!("{:?}", err))?;
 			},
 
 			Report::Message { message } => {
@@ -249,10 +246,10 @@ impl serde::Serialize for Record<'_> {
 				serializer.serialize_field("Message", message)?;
 			},
 
-			Report::ObjectOperation { r#type, id, operation } => {
+			Report::ObjectOperation { object_type, object_id, operation } => {
 				serializer.serialize_field("Level", &SerializeWith(log::Level::Info))?;
-				serializer.serialize_field("ObjectType", r#type)?;
-				serializer.serialize_field("ObjectId", id)?;
+				serializer.serialize_field("ObjectType", object_type)?;
+				serializer.serialize_field("ObjectId", object_id)?;
 				match operation {
 					ObjectOperation::CreateStart { value } => {
 						serializer.serialize_field("ObjectOperation", "CreateStart")?;
@@ -282,15 +279,128 @@ impl serde::Serialize for Record<'_> {
 				}
 			},
 
-			Report::ObjectState { r#type, id, state } => {
+			Report::ObjectState { object_type, object_id, state } => {
 				serializer.serialize_field("Level", &SerializeWith(log::Level::Info))?;
-				serializer.serialize_field("ObjectType", r#type)?;
-				serializer.serialize_field("ObjectId", id)?;
+				serializer.serialize_field("ObjectType", object_type)?;
+				serializer.serialize_field("ObjectId", object_id)?;
 				serializer.serialize_field("ObjectState", state)?;
 			},
 		}
 
 		serializer.end()
+	}
+}
+
+enum Report<'a, ID, D> {
+	Error {
+		err: &'a anyhow::Error,
+	},
+
+	Message {
+		message: D,
+	},
+
+	ObjectOperation {
+		object_type: &'a str,
+		object_id: ObjectId<ID>,
+		operation: ObjectOperation<D>,
+	},
+
+	ObjectState {
+		object_type: &'a str,
+		object_id: ObjectId<ID>,
+		state: D,
+	},
+}
+
+impl<ID, D> Clone for Report<'_, ID, D> where Self: Copy {
+	fn clone(&self) -> Self {
+		*self
+	}
+}
+
+impl<ID, D> Copy for Report<'_, ID, D>
+where
+	ObjectId<ID>: Copy,
+	D: Copy,
+{
+}
+
+impl<ID, D> std::fmt::Debug for Report<'_, ID, D>
+where
+	ObjectId<ID>: std::fmt::Display,
+	D: std::fmt::Display,
+{
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Report::Error { err } =>
+				f.debug_struct("Error")
+				.field("err", err)
+				.finish(),
+
+			Report::Message { message } =>
+				f.debug_struct("Message")
+				.field("message", &format_args!("{}", message))
+				.finish(),
+
+			Report::ObjectOperation { object_type, object_id, operation } =>
+				f.debug_struct("ObjectOperation")
+				.field("object_type", &format_args!("{}", object_type))
+				.field("object_id", &format_args!("{}", object_id))
+				.field("operation", operation)
+				.finish(),
+
+			Report::ObjectState { object_type, object_id, state } =>
+				f.debug_struct("ObjectState")
+				.field("object_type", &format_args!("{}", object_type))
+				.field("object_id", &format_args!("{}", object_id))
+				.field("state", &format_args!("{}", state))
+				.finish(),
+		}
+	}
+}
+
+#[derive(Clone, Copy)]
+enum ObjectOperation<D> {
+	CreateStart { value: D },
+	CreateEnd,
+
+	DeleteStart,
+	DeleteEnd,
+
+	GetStart,
+	GetEnd { value: D },
+}
+
+impl<D> std::fmt::Debug for ObjectOperation<D> where D: std::fmt::Display {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			ObjectOperation::CreateStart { value } =>
+				f.debug_struct("CreateStart")
+				.field("value", &format_args!("{}", value))
+				.finish(),
+
+			ObjectOperation::CreateEnd =>
+				f.debug_struct("CreateEnd")
+				.finish(),
+
+			ObjectOperation::DeleteStart =>
+				f.debug_struct("DeleteStart")
+				.finish(),
+
+			ObjectOperation::DeleteEnd =>
+				f.debug_struct("DeleteEnd")
+				.finish(),
+
+			ObjectOperation::GetStart =>
+				f.debug_struct("GetStart")
+				.finish(),
+
+			ObjectOperation::GetEnd { value } =>
+				f.debug_struct("GetEnd")
+				.field("value", &format_args!("{}", value))
+				.finish(),
+		}
 	}
 }
 

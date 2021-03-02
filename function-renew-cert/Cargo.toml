@@ -1,5 +1,5 @@
 [package]
-name = "acme"
+name = "function-renew-cert"
 version = "0.1.0"
 license = "Apache-2.0"
 authors = ["Arnavion <me@arnavion.dev>"]
@@ -14,6 +14,9 @@ anyhow = { version = "1", default-features = false, features = [
 base64 = { version = "0.13", default-features = false, features = [
 	"std", # for base64::read, base64::write
 ] }
+chrono = { version = "0.4", default-features = false, features = [
+	"clock", # for chrono::Utc::now()
+] }
 hyper = { version = "0.14", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
@@ -21,13 +24,18 @@ serde = { version = "1", default-features = false, features = [
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
-sha2 = { version = "0.9", default-features = false, features = [
-	"std", # for sha2::Sha256: std::io::Write
-] }
+sha2 = { version = "0.9", default-features = false }
 tokio = { version = "1", default-features = false, features = [
 	"time",
 ] }
 
+acme = { path = "../acme" }
+azure = { path = "../azure", features = [
+	"dns",
+	"key_vault_cert",
+	"key_vault_key",
+] }
+function-worker = { path = "../function-worker" }
 http-common = { path = "../http-common" }
 log2 = { path = "../log2" }
 once_cell2 = { path = "../once_cell2" }

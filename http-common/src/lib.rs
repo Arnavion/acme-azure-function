@@ -3,6 +3,7 @@
 #![allow(
 	clippy::default_trait_access,
 	clippy::let_and_return,
+	clippy::let_unit_value,
 	clippy::missing_errors_doc,
 	clippy::must_use_candidate,
 	clippy::similar_names,
@@ -10,8 +11,8 @@
 
 use anyhow::Context;
 
-pub static APPLICATION_JSON: once_cell::sync::Lazy<hyper::header::HeaderValue> =
-	once_cell::sync::Lazy::new(|| hyper::header::HeaderValue::from_static("application/json"));
+pub static APPLICATION_JSON: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
+	once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("application/json"));
 
 pub struct Client {
 	inner: hyper::Client<hyper_rustls::HttpsConnector<hyper::client::connect::HttpConnector>, hyper::Body>,
@@ -46,16 +47,18 @@ impl Client {
 		})
 	}
 
-	pub async fn request<T, B>(
+	pub async fn request<U, B, T>(
 		&self,
 		method: hyper::Method,
-		url: &str,
+		url: U,
 		authorization: hyper::header::HeaderValue,
 		body: Option<B>,
 	) -> anyhow::Result<T>
 	where
-		T: FromResponse,
+		U: std::convert::TryInto<hyper::Uri>,
+		Result<hyper::Uri, U::Error>: anyhow::Context<hyper::Uri, U::Error>,
 		B: serde::Serialize,
+		T: FromResponse,
 	{
 		let mut req =
 			if let Some(body) = body {
@@ -67,7 +70,7 @@ impl Client {
 				hyper::Request::new(Default::default())
 			};
 		*req.method_mut() = method;
-		*req.uri_mut() = url.parse().with_context(|| format!("could not parse request URL {:?}", url))?;
+		*req.uri_mut() = url.try_into().context("could not parse request URL")?;
 		req.headers_mut().insert(hyper::header::AUTHORIZATION, authorization);
 
 		let value = self.request_inner(req).await?;
@@ -119,7 +122,7 @@ pub trait FromResponse: Sized {
 
 pub struct ResponseWithLocation<T> {
 	pub body: T,
-	pub location: String,
+	pub location: hyper::Uri,
 }
 
 impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
@@ -146,12 +149,12 @@ pub fn is_json(content_type: &hyper::header::HeaderValue) -> bool {
 	content_type == "application/json" || content_type.starts_with("application/json;")
 }
 
-pub fn get_location(headers: &hyper::HeaderMap) -> anyhow::Result<String> {
+pub fn get_location(headers: &hyper::HeaderMap) -> anyhow::Result<hyper::Uri> {
 	let location =
 		headers
 		.get(hyper::header::LOCATION).context("missing location header")?
 		.to_str().context("could not parse location header")?
-		.to_owned();
+		.parse().context("could not parse location header")?;
 	Ok(location)
 }
 
@@ -192,7 +195,27 @@ pub fn get_retry_after(
 	Ok(retry_after.clamp(min, max))
 }
 
-pub fn jws_base64_encode(s: &[u8]) -> String {
-	let config = base64::Config::new(base64::CharacterSet::UrlSafe, false);
-	base64::encode_config(s, config)
+pub fn deserialize_hyper_uri<'de, D>(deserializer: D) -> Result<hyper::Uri, D::Error> where D: serde::Deserializer<'de> {
+	struct Visitor;
+
+	impl serde::de::Visitor<'_> for Visitor {
+		type Value = hyper::Uri;
+
+		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+			f.write_str("hyper::Uri")
+		}
+
+		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+			std::convert::TryInto::try_into(s).map_err(serde::de::Error::custom)
+		}
+
+		fn visit_string<E>(self, s: String) -> Result<Self::Value, E> where E: serde::de::Error {
+			std::convert::TryInto::try_into(s).map_err(serde::de::Error::custom)
+		}
+	}
+
+	deserializer.deserialize_string(Visitor)
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct DeserializableUri(#[serde(deserialize_with = "deserialize_hyper_uri")] pub hyper::Uri);

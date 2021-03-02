@@ -5,18 +5,19 @@ set -euo pipefail
 target="$1"
 
 func_name="$2"
+func_dir_name="$3"
 
-azure_resource_group_name="$3"
+azure_resource_group_name="$4"
 
-azure_client_id="$4"
-azure_client_secret="$5"
+azure_client_id="$5"
+azure_client_secret="$6"
 
-azure_storage_account_connection_string="$6"
-azure_function_app_name="$7"
+azure_storage_account_connection_string="$7"
+azure_function_app_name="$8"
 
-timer_trigger_schedule="$8"
+timer_trigger_schedule="$9"
 
-secret_settings="$9"
+secret_settings="${10}"
 
 case "$target" in
     'debug-http')
@@ -76,8 +77,8 @@ if [[ "$target" == debug* ]]; then
     )"
 fi
 
-rm -rf "./$func_name/dist"
-mkdir -p "./$func_name/dist/$func_name"
+rm -rf "./$func_dir_name/dist"
+mkdir -p "./$func_dir_name/dist/$func_name"
 
 case "$target" in
     'debug-http')
@@ -99,7 +100,7 @@ case "$target" in
         ;;
 esac
 
->"./$func_name/dist/host.json" jq --null-input --sort-keys \
+>"./$func_dir_name/dist/host.json" jq --null-input --sort-keys \
     --argjson 'extensions' "$extensions" \
     '{
         "version": "2.0",
@@ -111,7 +112,7 @@ esac
         "extensions": $extensions,
     }'
 
->"./$func_name/dist/$func_name/function.json" jq --null-input --sort-keys \
+>"./$func_dir_name/dist/$func_name/function.json" jq --null-input --sort-keys \
     --argjson binding "$binding" \
     '{
         "bindings": [$binding]
@@ -119,7 +120,7 @@ esac
 
 case "$target" in
     'debug-http')
-        >"./$func_name/dist/local.settings.json" jq --null-input --sort-keys \
+        >"./$func_dir_name/dist/local.settings.json" jq --null-input --sort-keys \
             --arg SECRET_SETTINGS "$secret_settings" \
             '{
                 "IsEncrypted": false,
@@ -131,7 +132,7 @@ case "$target" in
         ;;
 
     'debug-timer')
-        >"./$func_name/dist/local.settings.json" jq --null-input --sort-keys \
+        >"./$func_dir_name/dist/local.settings.json" jq --null-input --sort-keys \
             --arg AZURE_STORAGE_ACCOUNT_CONNECTION_STRING "$azure_storage_account_connection_string" \
             --arg SECRET_SETTINGS "$secret_settings" \
             '{
@@ -145,7 +146,7 @@ case "$target" in
         ;;
 
     'publish')
-        >"./$func_name/dist/local.settings.json" jq --null-input --sort-keys \
+        >"./$func_dir_name/dist/local.settings.json" jq --null-input --sort-keys \
             --arg AZURE_STORAGE_ACCOUNT_CONNECTION_STRING "$azure_storage_account_connection_string" \
             '{
                 "IsEncrypted": false,
@@ -169,7 +170,7 @@ case "$target" in
             -w "$PWD" \
             'azure-function-build-rust' \
             sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl"'
-        cp -f "./target/x86_64-unknown-linux-musl/debug/$func_name" "./$func_name/dist/main"
+        cp -f "./target/x86_64-unknown-linux-musl/debug/$func_dir_name" "./$func_dir_name/dist/main"
 
         docker run \
             -it \
@@ -179,7 +180,7 @@ case "$target" in
             -u "$(id -u)" \
             -w "$PWD" \
             'azure-function-build-func' \
-            sh -c "cd './$func_name/dist/' && func start -p 7071"
+            sh -c "cd './$func_dir_name/dist/' && func start -p 7071"
         ;;
 
     'publish')
@@ -193,7 +194,7 @@ case "$target" in
             -w "$PWD" \
             'azure-function-build-rust' \
             sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl --release"'
-        cp -f "./target/x86_64-unknown-linux-musl/release/$func_name" "./$func_name/dist/main"
+        cp -f "./target/x86_64-unknown-linux-musl/release/$func_dir_name" "./$func_dir_name/dist/main"
 
         [ -d ~/.azure ]
 
@@ -212,7 +213,7 @@ case "$target" in
                     --resource-group '$azure_resource_group_name' --name '$azure_function_app_name' \
                     --settings 'SECRET_SETTINGS=$secret_settings'
 
-                cd './$func_name/dist/'
+                cd './$func_dir_name/dist/'
 
                 func azure functionapp publish '$azure_function_app_name'
             "

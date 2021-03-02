@@ -7,10 +7,10 @@
 use anyhow::Context;
 
 function_worker::run! {
-	"update-cdn-cert" => update_cdn_cert_main,
+	"deploy-cert-to-cdn" => deploy_cert_to_cdn_main,
 }
 
-async fn update_cdn_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
+async fn deploy_cert_to_cdn_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
 		settings.azure_client_id.clone(),
 		settings.azure_client_secret.clone(),

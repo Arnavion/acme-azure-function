@@ -37,7 +37,6 @@ pub use key_vault::{
 pub use key_vault::{
 	EcCurve,
 	EcKty,
-	Jwk,
 	Key as KeyVaultKey,
 };
 
@@ -45,7 +44,6 @@ pub use key_vault::{
 mod log_analytics;
 #[cfg(feature = "log_analytics")]
 pub use log_analytics::{
-	LogRecord as LogAnalyticsLogRecord,
 	LogSender as LogAnalyticsLogSender,
 };
 
@@ -115,7 +113,7 @@ impl<'a> Account<'a> {
 			None => {
 				const RESOURCE: &str = "https://management.azure.com";
 
-				let log2::Secret(authorization) = log2::report_operation("authorization", RESOURCE, log2::ScopedObjectOperation::Get, async {
+				let log2::Secret(authorization) = log2::report_operation("azure/authorization", RESOURCE, <log2::ScopedObjectOperation>::Get, async {
 					let authorization =
 						get_authorization(&self.client, &self.auth, RESOURCE).await
 						.context("could not get Management API authorization")?;
@@ -181,26 +179,28 @@ async fn get_authorization(
 
 	let req = match auth {
 		Auth::ManagedIdentity { endpoint, secret } => {
+			static SECRET: once_cell2::race::LazyBox<hyper::header::HeaderName> =
+				once_cell2::race::LazyBox::new(|| hyper::header::HeaderName::from_static("secret"));
+
 			let mut req = hyper::Request::new(Default::default());
 			*req.method_mut() = hyper::Method::GET;
 			*req.uri_mut() =
 				format!("{}?resource={}&api-version=2017-09-01", endpoint, resource)
 				.parse().context("could not construct authorization request URI")?;
-			req.headers_mut().insert("secret", secret.clone());
+			req.headers_mut().insert(SECRET.clone(), secret.clone());
 			req
 		},
 
 		#[cfg(debug_assertions)]
 		Auth::ServicePrincipal { client_id, client_secret, tenant_id } => {
-			let body = {
-				let mut body = form_urlencoded::Serializer::new(String::new());
-				body.append_pair("grant_type", "client_credentials");
-				body.append_pair("client_id", client_id);
-				body.append_pair("client_secret", client_secret);
-				body.append_pair("resource", resource);
-				body.finish()
-			};
-			let mut req = hyper::Request::new(body.into_bytes().into());
+			let body =
+				form_urlencoded::Serializer::new(String::new())
+				.append_pair("grant_type", "client_credentials")
+				.append_pair("client_id", client_id)
+				.append_pair("client_secret", client_secret)
+				.append_pair("resource", resource)
+				.finish();
+			let mut req = hyper::Request::new(body.into());
 			*req.method_mut() = hyper::Method::POST;
 			*req.uri_mut() =
 				format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id)

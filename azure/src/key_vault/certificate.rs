@@ -1,5 +1,3 @@
-use anyhow::Context;
-
 impl<'a> crate::Account<'a> {
 	pub async fn key_vault_csr_create(
 		&self,
@@ -7,7 +5,7 @@ impl<'a> crate::Account<'a> {
 		certificate_name: &str,
 		common_name: &str,
 		key_type: CreateCsrKeyType,
-	) -> anyhow::Result<Vec<u8>> {
+	) -> anyhow::Result<String> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
 			policy: RequestPolicy<'a>,
@@ -70,8 +68,8 @@ impl<'a> crate::Account<'a> {
 		let csr =
 			log2::report_operation(
 				"azure/key_vault/csr",
-				&format!("{}/{}", key_vault_name, certificate_name),
-				log2::ScopedObjectOperation::Create { value: &format!("{:?}", (common_name, key_type)) },
+				(key_vault_name, certificate_name),
+				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (common_name, key_type)) },
 				async {
 					let key_vault_request_parameters =
 						self.key_vault_request_parameters(
@@ -83,7 +81,7 @@ impl<'a> crate::Account<'a> {
 					let Response { csr } =
 						self.client.request(
 							hyper::Method::POST,
-							&url,
+							url,
 							authorization,
 							Some(&Request {
 								policy: RequestPolicy {
@@ -116,7 +114,6 @@ impl<'a> crate::Account<'a> {
 								},
 							}),
 						).await?;
-					let csr = base64::decode(&csr).context("could not parse CSR from base64")?;
 					Ok::<_, anyhow::Error>(csr)
 				},
 			).await?;
@@ -171,29 +168,23 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		let certificate =
-			log2::report_operation(
-				"azure/key_vault/certificate",
-				&format!("{}/{}", key_vault_name, certificate_name),
-				log2::ScopedObjectOperation::Get,
-				async {
-					let key_vault_request_parameters =
-						self.key_vault_request_parameters(
-							key_vault_name,
-							format_args!("/certificates/{}?api-version=7.1", certificate_name),
-						);
-					let (url, authorization) = key_vault_request_parameters.await?;
+		let certificate = log2::report_operation( "azure/key_vault/certificate", (key_vault_name, certificate_name), <log2::ScopedObjectOperation>::Get, async {
+			let key_vault_request_parameters =
+				self.key_vault_request_parameters(
+					key_vault_name,
+					format_args!("/certificates/{}?api-version=7.1", certificate_name),
+				);
+			let (url, authorization) = key_vault_request_parameters.await?;
 
-					let Response(certificate) =
-						self.client.request(
-							hyper::Method::GET,
-							&url,
-							authorization,
-							None::<&()>,
-						).await?;
-					Ok::<_, anyhow::Error>(certificate)
-				},
-			).await?;
+			let Response(certificate) =
+				self.client.request(
+					hyper::Method::GET,
+					url,
+					authorization,
+					None::<&()>,
+				).await?;
+			Ok::<_, anyhow::Error>(certificate)
+		}).await?;
 
 		Ok(certificate)
 	}
@@ -227,8 +218,8 @@ impl<'a> crate::Account<'a> {
 		let () =
 			log2::report_operation(
 				"azure/key_vault/certificate",
-				&format!("{}/{}", key_vault_name, certificate_name),
-				log2::ScopedObjectOperation::Create { value: &format!("{:?}", certificates) },
+				(key_vault_name, certificate_name),
+				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", certificates) },
 				async {
 					let key_vault_request_parameters =
 						self.key_vault_request_parameters(
@@ -240,7 +231,7 @@ impl<'a> crate::Account<'a> {
 					let _: Response =
 						self.client.request(
 							hyper::Method::POST,
-							&url,
+							url,
 							authorization,
 							Some(&Request {
 								x5c: certificates,

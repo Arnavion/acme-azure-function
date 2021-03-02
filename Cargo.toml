@@ -1,10 +1,11 @@
 [workspace]
 members = [
+	"acme",
 	"azure",
 	"function-worker",
 	"http-common",
 	"log2",
 
-	"acme",
-	"update-cdn-cert",
+	"function-deploy-cert-to-cdn",
+	"function-renew-cert",
 ]

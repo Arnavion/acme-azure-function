@@ -40,7 +40,7 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		let () = log2::report_operation("azure/dns/txtrecord", &format!("{}/{}", dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
+		let () = log2::report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
 			let management_request_parameters =
 				self.management_request_parameters(format_args!(
 					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
@@ -52,7 +52,7 @@ impl<'a> crate::Account<'a> {
 			let _: Response =
 				self.client.request(
 					hyper::Method::PUT,
-					&url,
+					url,
 					authorization,
 					Some(&Request {
 						properties: RequestProperties {
@@ -94,7 +94,7 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		let () = log2::report_operation("azure/dns/txtrecord", &format!("{}/{}", dns_zone_name, name), log2::ScopedObjectOperation::Delete, async {
+		let () = log2::report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
 			let management_request_parameters =
 				self.management_request_parameters(format_args!(
 					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
@@ -106,7 +106,7 @@ impl<'a> crate::Account<'a> {
 			let _: Response =
 				self.client.request(
 					hyper::Method::DELETE,
-					&url,
+					url,
 					authorization,
 					None::<&()>,
 				).await?;

@@ -1,5 +1,5 @@
 [package]
-name = "update-cdn-cert"
+name = "function-deploy-cert-to-cdn"
 version = "0.1.0"
 license = "Apache-2.0"
 authors = ["Arnavion <me@arnavion.dev>"]

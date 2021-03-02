@@ -15,9 +15,6 @@ chrono = { version = "0.4", default-features = false, features = [
 futures-util = { version = "0.3", default-features = false }
 hyper = { version = "0.14", default-features = false }
 log = { version = "0.4", default-features = false }
-once_cell = { version = "1", default-features = false, features = [
-	"std", # for once_cell::sync
-] }
 serde = { version = "1", default-features = false, features = [
 	"derive",
 ] }
@@ -28,3 +25,5 @@ tokio = { version = "1", default-features = false, features = [
 	"rt",
 	"sync",
 ] }
+
+once_cell2 = { path = "../once_cell2" }

@@ -5,13 +5,11 @@ name = "acme"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "azure",
- "chrono",
- "function-worker",
+ "base64",
  "http-common",
  "hyper",
  "log2",
- "once_cell",
+ "once_cell2",
  "serde",
  "serde_json",
  "sha2",
@@ -34,15 +32,18 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 name = "azure"
 version = "0.1.0"
 dependencies = [
+ "acme",
  "anyhow",
  "base64",
  "chrono",
  "form_urlencoded",
+ "futures-util",
  "hmac",
  "http-common",
  "hyper",
  "log",
  "log2",
+ "once_cell2",
  "serde",
  "serde_json",
  "sha2",
@@ -151,6 +152,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "function-deploy-cert-to-cdn"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "azure",
+ "function-worker",
+ "futures-util",
+ "log2",
+ "serde",
+]
+
+[[package]]
+name = "function-renew-cert"
+version = "0.1.0"
+dependencies = [
+ "acme",
+ "anyhow",
+ "azure",
+ "base64",
+ "chrono",
+ "function-worker",
+ "http-common",
+ "hyper",
+ "log2",
+ "once_cell2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "function-worker"
 version = "0.1.0"
 dependencies = [
@@ -159,13 +192,15 @@ dependencies = [
  "base64",
  "chrono",
  "futures-util",
+ "hmac",
  "http-common",
  "hyper",
  "log",
  "log2",
- "once_cell",
+ "once_cell2",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 
@@ -264,13 +299,12 @@ name = "http-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
  "chrono",
  "ct-logs",
  "http",
  "hyper",
  "hyper-rustls",
- "once_cell",
+ "once_cell2",
  "rustls",
  "serde",
  "serde_json",
@@ -374,7 +408,7 @@ dependencies = [
  "futures-util",
  "hyper",
  "log",
- "once_cell",
+ "once_cell2",
  "serde",
  "serde_json",
  "tokio",
@@ -442,6 +476,13 @@ name = "once_cell"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10acf907b94fc1b1a152d08ef97e7759650268cf986bf127f387e602b02c7e5a"
+
+[[package]]
+name = "once_cell2"
+version = "0.1.0"
+dependencies = [
+ "once_cell",
+]
 
 [[package]]
 name = "opaque-debug"
@@ -717,18 +758,6 @@ name = "untrusted"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
-
-[[package]]
-name = "update-cdn-cert"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "azure",
- "function-worker",
- "futures-util",
- "log2",
- "serde",
-]
 
 [[package]]
 name = "version_check"

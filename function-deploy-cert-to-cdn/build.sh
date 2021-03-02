@@ -4,7 +4,8 @@ set -euo pipefail
 
 ./scripts/build.common.sh \
     "$1" \
-    'update-cdn-cert' \
+    'deploy-cert-to-cdn' \
+    'function-deploy-cert-to-cdn' \
     "$AZURE_CDN_RESOURCE_GROUP_NAME" \
     "$AZURE_CDN_CLIENT_ID" \
     "$AZURE_CDN_CLIENT_SECRET" \

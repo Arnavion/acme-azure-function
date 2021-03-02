@@ -248,16 +248,16 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Build the Function app and run it in the Functions host.
 
     ```sh
-    ./update-cdn-cert/build.sh debug
+    ./function-deploy-cert-to-cdn/build.sh debug
 
-    curl -D - 'http://localhost:7071/update-cdn-cert'
+    curl -D - 'http://localhost:7071/deploy-cert-to-cdn'
     ```
 
 
 # Deploy to Azure
 
 ```sh
-./update-cdn-cert/build.sh publish
+./function-deploy-cert-to-cdn/build.sh publish
 ```
 
 
