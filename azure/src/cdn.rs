@@ -4,7 +4,7 @@ impl<'a> crate::Account<'a> {
 		cdn_profile_name: &str,
 		cdn_endpoint_name: &str,
 		cdn_custom_domain_name: &str,
-	) -> anyhow::Result<Option<CustomDomainSecret>> {
+	) -> anyhow::Result<Option<CustomDomainSecret<'static>>> {
 		#[derive(serde::Deserialize)]
 		struct Response {
 			properties: CustomDomainProperties,
@@ -38,26 +38,27 @@ impl<'a> crate::Account<'a> {
 				async {
 					let management_request_parameters =
 						self.management_request_parameters(format_args!(
-							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2018-04-02",
+							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2019-12-31",
 							cdn_profile_name,
 							cdn_endpoint_name,
 							cdn_custom_domain_name,
 						));
 					let (url, authorization) = management_request_parameters.await?;
 
-					let response: Response =
+					let Response { properties: CustomDomainProperties { custom_https_parameters } } =
 						self.client.request(
 							hyper::Method::GET,
 							url,
 							authorization,
 							None::<&()>,
 						).await?;
-					let secret =
-						response.properties.custom_https_parameters
-						.map(|custom_https_parameters| CustomDomainSecret {
-							name: custom_https_parameters.certificate_source_parameters.secret_name.into_owned(),
-							version: custom_https_parameters.certificate_source_parameters.secret_version.into_owned(),
-						});
+					let secret = custom_https_parameters.map(|custom_https_parameters| match custom_https_parameters {
+						CustomDomainPropertiesCustomHttpsParameters::KeyVault { certificate_source_parameters, .. } =>
+							CustomDomainSecret::KeyVault(certificate_source_parameters.secret.into_owned()),
+
+						CustomDomainPropertiesCustomHttpsParameters::Cdn =>
+							CustomDomainSecret::Cdn,
+					});
 					Ok::<_, anyhow::Error>(secret)
 				},
 			).await?;
@@ -70,9 +71,7 @@ impl<'a> crate::Account<'a> {
 		cdn_profile_name: &str,
 		cdn_endpoint_name: &str,
 		cdn_custom_domain_name: &str,
-		key_vault_name: &str,
-		key_vault_secret_name: &str,
-		key_vault_secret_version: &str,
+		custom_domain_key_vault_secret: &CustomDomainKeyVaultSecret<'_>,
 	) -> anyhow::Result<()> {
 		#[derive(Debug)]
 		enum Response {
@@ -108,11 +107,11 @@ impl<'a> crate::Account<'a> {
 			log2::report_operation(
 				"azure/cdn/custom_domain/secret",
 				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
-				log2::ScopedObjectOperation::Create { value: log2::ObjectId((key_vault_secret_name, key_vault_secret_version)) },
+				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", custom_domain_key_vault_secret) },
 				async {
 					let management_request_parameters =
 						self.management_request_parameters(format_args!(
-							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2018-04-02",
+							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2019-12-31",
 							cdn_profile_name,
 							cdn_endpoint_name,
 							cdn_custom_domain_name,
@@ -124,17 +123,12 @@ impl<'a> crate::Account<'a> {
 							hyper::Method::POST,
 							url,
 							authorization.clone(),
-							Some(&CustomDomainPropertiesCustomHttpsParameters {
-								certificate_source: "AzureKeyVault".into(),
+							Some(&CustomDomainPropertiesCustomHttpsParameters::KeyVault {
 								certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters {
 									delete_rule: "NoAction".into(),
-									key_vault_name: key_vault_name.into(),
 									odata_type: "#Microsoft.Azure.Cdn.Models.KeyVaultCertificateSourceParameters".into(),
-									resource_group: self.resource_group_name.into(),
-									secret_name: key_vault_secret_name.into(),
-									secret_version: key_vault_secret_version.into(),
-									subscription_id: self.subscription_id.into(),
 									update_rule: "NoAction".into(),
+									secret: std::borrow::Cow::Borrowed(custom_domain_key_vault_secret),
 								},
 								protocol_type: "ServerNameIndication".into(),
 							}),
@@ -170,21 +164,49 @@ impl<'a> crate::Account<'a> {
 }
 
 #[derive(Debug)]
-pub struct CustomDomainSecret {
-	pub name: String,
-	pub version: String,
+pub enum CustomDomainSecret<'a> {
+	KeyVault(CustomDomainKeyVaultSecret<'a>),
+	Cdn,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct CustomDomainKeyVaultSecret<'a> {
+	#[serde(rename = "subscriptionId")]
+	pub subscription_id: std::borrow::Cow<'a, str>,
+
+	// This field doesn't serve any purpose because the KeyVault name is globally unique.
+	// The CDN does in fact look up the KeyVault by its name, because specifying the wrong resource group
+	// or even a non-existent resource group here still works. The only thing that doesn't work is
+	// if this field is not serialized at all, or is the empty string, because the API fails the request.
+	//
+	// So it would be possible to not expose this as a struct field and instead just serialize a dummy value.
+	// But for the sake of clarity and forward-compatibility, set it to the correct value anyway.
+	#[serde(rename = "resourceGroupName")]
+	pub resource_group: std::borrow::Cow<'a, str>,
+
+	#[serde(rename = "vaultName")]
+	pub key_vault_name: std::borrow::Cow<'a, str>,
+
+	#[serde(rename = "secretName")]
+	pub secret_name: std::borrow::Cow<'a, str>,
+
+	#[serde(rename = "secretVersion")]
+	pub secret_version: std::borrow::Cow<'a, str>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct CustomDomainPropertiesCustomHttpsParameters<'a> {
-	#[serde(rename = "certificateSource")]
-	certificate_source: std::borrow::Cow<'a, str>,
+#[serde(tag = "certificateSource")]
+enum CustomDomainPropertiesCustomHttpsParameters<'a> {
+	#[serde(rename = "AzureKeyVault")]
+	KeyVault {
+		#[serde(rename = "certificateSourceParameters")]
+		certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters<'a>,
 
-	#[serde(rename = "certificateSourceParameters")]
-	certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters<'a>,
+		#[serde(rename = "protocolType")]
+		protocol_type: std::borrow::Cow<'a, str>,
+	},
 
-	#[serde(rename = "protocolType")]
-	protocol_type: std::borrow::Cow<'a, str>,
+	Cdn,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -192,24 +214,12 @@ struct CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters<'a
 	#[serde(rename = "deleteRule")]
 	delete_rule: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "vaultName")]
-	key_vault_name: std::borrow::Cow<'a, str>,
-
 	#[serde(rename = "@odata.type")]
 	odata_type: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "resourceGroupName")]
-	resource_group: std::borrow::Cow<'a, str>,
-
-	#[serde(rename = "secretName")]
-	secret_name: std::borrow::Cow<'a, str>,
-
-	#[serde(rename = "secretVersion")]
-	secret_version: std::borrow::Cow<'a, str>,
-
-	#[serde(rename = "subscriptionId")]
-	subscription_id: std::borrow::Cow<'a, str>,
-
 	#[serde(rename = "updateRule")]
 	update_rule: std::borrow::Cow<'a, str>,
+
+	#[serde(flatten)]
+	secret: std::borrow::Cow<'a, CustomDomainKeyVaultSecret<'a>>,
 }

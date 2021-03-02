@@ -21,7 +21,10 @@ use anyhow::Context;
 #[cfg(feature = "cdn")]
 mod cdn;
 #[cfg(feature = "cdn")]
-pub use cdn::CustomDomainSecret as CdnCustomDomainSecret;
+pub use cdn::{
+	CustomDomainSecret as CdnCustomDomainSecret,
+	CustomDomainKeyVaultSecret as CdnCustomDomainKeyVaultSecret,
+};
 
 #[cfg(feature = "dns")]
 mod dns;
