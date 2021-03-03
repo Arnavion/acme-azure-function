@@ -6,7 +6,10 @@ This Function provisions a wildcard TLS certificate for a domain and stores it i
 Build-time tools:
 
 - `azure-cli`
+- `curl`
 - `docker`
+- `jq`
+- `openssl`
 
 This Function is implemented in Rust and runs as [a custom handler.](https://docs.microsoft.com/en-us/azure/azure-functions/functions-custom-handlers)
 
@@ -169,6 +172,12 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 
     ```sh
     echo "Create NS record for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to $(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query 'nameServers[0]' --output tsv)"
+    ```
+
+1. Prepare the Log Analytics table schema.
+
+    ```sh
+    ./scripts/prepare-loganalytics-table-schema.sh
     ```
 
 

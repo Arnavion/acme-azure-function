@@ -6,7 +6,10 @@ This Function monitors an Azure CDN endpoint's custom domain configured to use a
 Build-time tools:
 
 - `azure-cli`
+- `curl`
 - `docker`
+- `jq`
+- `openssl`
 
 This Function is implemented in Rust and runs as [a custom handler.](https://docs.microsoft.com/en-us/azure/azure-functions/functions-custom-handlers)
 
@@ -206,6 +209,12 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
                 --query id --output tsv
         )" \
         --logs '[{ "category": "FunctionAppLogs", "enabled": true }]'
+    ```
+
+1. Prepare the Log Analytics table schema.
+
+    ```sh
+    ./scripts/prepare-loganalytics-table-schema.sh
     ```
 
 
