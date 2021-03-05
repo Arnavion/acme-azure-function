@@ -11,10 +11,10 @@ publish = false
 anyhow = { version = "1", default-features = false, features = [
 	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
 ] }
+futures-util = { version = "0.3", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
 ] }
-futures-util = { version = "0.3", default-features = false }
 
 azure = { path = "../azure", features = [
 	"cdn",

@@ -23,7 +23,7 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 	).context("could not initialize Azure API client")?;
 
-	let (expected_cdn_custom_domain_secret_version, actual_cdn_custom_domain_secret) = {
+	let (expected_cdn_custom_domain_secret, actual_cdn_custom_domain_secret) = {
 		let certificate_f = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name);
 		futures_util::pin_mut!(certificate_f);
 
@@ -34,46 +34,34 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 		);
 		futures_util::pin_mut!(secret_f);
 
-		let result =
-			futures_util::future::try_select(certificate_f, secret_f).await
-			.map_err(|err| err.factor_first().0)?;
-		match result {
+		let result = futures_util::future::select(certificate_f, secret_f).await;
+		let result = match result {
 			futures_util::future::Either::Left((certificate, secret_f)) => {
-				let certificate_version =
-					if let Some(certificate) = certificate {
-						certificate.version
-					}
-					else {
-						log2::report_message("Nothing to do.");
-						return Ok(());
-					};
-
-				(certificate_version, secret_f.await?)
+				let certificate = certificate?;
+				futures_util::future::OptionFuture::from(certificate.map(|certificate| async {
+					let secret = secret_f.await?;
+					Ok::<_, anyhow::Error>((certificate.version, secret))
+				})).await.transpose()?
 			},
-
 			futures_util::future::Either::Right((secret, certificate_f)) => {
+				let secret = secret?;
 				let certificate = certificate_f.await?;
-
-				let certificate_version =
-					if let Some(certificate) = certificate {
-						certificate.version
-					}
-					else {
-						log2::report_message("Nothing to do.");
-						return Ok(());
-					};
-
-				(certificate_version, secret)
+				certificate.map(|certificate| (certificate.version, secret))
 			},
+		};
+		if let Some((expected_cdn_custom_domain_secret_version, actual_cdn_custom_domain_secret)) = result {
+			(azure::CdnCustomDomainKeyVaultSecret {
+				subscription_id: (&*settings.azure_subscription_id).into(),
+				resource_group: (&*settings.azure_key_vault_resource_group_name).into(),
+				key_vault_name: (&*settings.azure_key_vault_name).into(),
+				secret_name: (&*settings.azure_key_vault_certificate_name).into(),
+				secret_version: expected_cdn_custom_domain_secret_version.into(),
+			}, actual_cdn_custom_domain_secret)
 		}
-	};
-
-	let expected_cdn_custom_domain_secret = azure::CdnCustomDomainKeyVaultSecret {
-		subscription_id: (&*settings.azure_subscription_id).into(),
-		resource_group: (&*settings.azure_key_vault_resource_group_name).into(),
-		key_vault_name: (&*settings.azure_key_vault_name).into(),
-		secret_name: (&*settings.azure_key_vault_certificate_name).into(),
-		secret_version: expected_cdn_custom_domain_secret_version.into(),
+		else {
+			log2::report_message("Nothing to do.");
+			return Ok(());
+		}
 	};
 
 	match actual_cdn_custom_domain_secret {
