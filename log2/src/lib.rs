@@ -157,7 +157,7 @@ tokio::task_local! {
 }
 
 struct TaskLocalLoggerInner {
-	function_invocation_id: Option<std::sync::Arc<str>>,
+	function_invocation_id: Option<std::rc::Rc<str>>,
 	sequence_number: usize,
 	records: Vec<u8>,
 }

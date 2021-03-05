@@ -46,11 +46,10 @@ pub mod _reexports {
 
 #[doc(hidden)]
 pub async fn _run<TSettings, TOutput>(
-	run_function: fn(req: hyper::Request<hyper::Body>, settings: std::sync::Arc<TSettings>) -> TOutput,
+	run_function: fn(req: hyper::Request<hyper::Body>, settings: std::rc::Rc<TSettings>) -> TOutput,
 ) -> anyhow::Result<()>
 where
 	TSettings: serde::de::DeserializeOwned + 'static,
-	std::sync::Arc<TSettings>: Send,
 	TOutput: std::future::Future<Output = anyhow::Result<Option<()>>> + 'static,
 {
 	{
@@ -74,7 +73,7 @@ where
 				concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
 			).context("could not create LogAnalytics log sender")?;
 
-		(std::sync::Arc::new(log_sender), std::sync::Arc::new(rest))
+		(std::rc::Rc::new(log_sender), std::rc::Rc::new(rest))
 	};
 
 	let port = match std::env::var("FUNCTIONS_CUSTOMHANDLER_PORT") {

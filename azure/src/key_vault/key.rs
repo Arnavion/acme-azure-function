@@ -136,7 +136,7 @@ impl acme::AccountKey for Key<'_> {
 		&'a self,
 		alg: &'static str,
 		digest: &'a str,
-	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + Send + 'a>> {
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>> {
 		#[derive(serde::Serialize)]
 		struct KeyVaultSignRequest<'a> {
 			alg: &'a str,

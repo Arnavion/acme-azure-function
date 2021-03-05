@@ -10,7 +10,7 @@ function_worker::run! {
 	"deploy-cert-to-cdn" => deploy_cert_to_cdn_main,
 }
 
-async fn deploy_cert_to_cdn_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
+async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
 		settings.azure_client_id.clone(),
 		settings.azure_client_secret.clone(),

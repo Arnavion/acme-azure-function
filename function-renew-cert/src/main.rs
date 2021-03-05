@@ -14,7 +14,7 @@ function_worker::run! {
 	"renew-cert" => renew_cert_main,
 }
 
-async fn renew_cert_main(settings: std::sync::Arc<Settings>) -> anyhow::Result<()> {
+async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> {
 	let azure_auth = azure::Auth::from_env(
 		settings.azure_client_id.clone(),
 		settings.azure_client_secret.clone(),
