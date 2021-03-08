@@ -11,26 +11,20 @@ function_worker::run! {
 }
 
 async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> {
-	let azure_auth = azure::Auth::from_env(
-		settings.azure_client_id.clone(),
-		settings.azure_client_secret.clone(),
-		settings.azure_tenant_id.clone(),
-	)?;
-
 	let user_agent: hyper::header::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
-		&azure_auth,
+		&settings.azure_auth,
 		user_agent.clone(),
 	).context("could not initialize Azure KeyVault API client")?;
 
 	let azure_management_client = azure::management::Client::new(
 		&settings.azure_subscription_id,
 		&settings.azure_cdn_resource_group_name,
-		&azure_auth,
+		&settings.azure_auth,
 		user_agent,
 	).context("could not initialize Azure Management API client")?;
 
@@ -126,18 +120,11 @@ struct Settings {
 	/// The new certificate will be uploaded here, and used for the custom domain.
 	azure_key_vault_certificate_name: String,
 
-	/// The application ID of the service principal that this Function should use to access Azure resources.
+	/// The Azure authentication credentials.
 	///
-	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
-	azure_client_id: Option<String>,
-
-	/// The password of the service principal that this Function should use to access Azure resources.
-	///
-	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
-	azure_client_secret: Option<String>,
-
-	/// The tenant ID of the service principal that this Function should use to access Azure resources.
-	///
-	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
-	azure_tenant_id: Option<String>,
+	/// Defaults to parsing `azure::Auth::ManagedIdentity` from the environment.
+	/// If not found, then debug builds fall back to parsing a service principal from this JSON object's
+	/// `{ azure_client_id: String, azure_client_secret: String, azure_tenant_id: String }` properties.
+	#[serde(flatten)]
+	azure_auth: azure::Auth,
 }

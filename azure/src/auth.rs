@@ -15,28 +15,12 @@ pub enum Auth {
 }
 
 impl Auth {
-	pub fn from_env(
-		#[cfg_attr(not(debug_assertions), allow(unused_variables))]
-		client_id: Option<String>,
-		#[cfg_attr(not(debug_assertions), allow(unused_variables))]
-		client_secret: Option<String>,
-		#[cfg_attr(not(debug_assertions), allow(unused_variables))]
-		tenant_id: Option<String>,
-	) -> anyhow::Result<Self> {
-		if let (Ok(endpoint), Ok(secret)) = (std::env::var("MSI_ENDPOINT"), std::env::var("MSI_SECRET")) {
-			let secret = std::convert::TryInto::try_into(&secret).context("could not parse MSI_SECRET as HeaderValue")?;
-			return Ok(Auth::ManagedIdentity { endpoint, secret });
-		}
-
-		#[cfg(debug_assertions)]
-		if let (Some(client_id), Some(client_secret), Some(tenant_id)) = (client_id, client_secret, tenant_id) {
-			return Ok(Auth::ServicePrincipal { client_id, client_secret, tenant_id });
-		}
-
-		Err(anyhow::anyhow!("found neither MSI_ENDPOINT+MSI_SECRET nor client_id+client_secret+tenant_id"))
-	}
-
 	pub(crate) async fn get_authorization(&self, client: &http_common::Client, resource: &str) -> anyhow::Result<hyper::header::HeaderValue> {
+		// TODO: Workaround for https://github.com/rust-lang/rust/issues/55779 when running
+		// `cargo build --manifest-path ./azure/Cargo.toml --features dns`
+		#[allow(unused_extern_crates)]
+		extern crate serde;
+
 		#[derive(serde::Deserialize)]
 		struct Response {
 			access_token: String,
@@ -99,5 +83,51 @@ impl Auth {
 			Ok::<_, anyhow::Error>(log2::Secret(header_value))
 		}).await?;
 		Ok(authorization)
+	}
+}
+
+impl<'de> serde::Deserialize<'de> for Auth {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
+		if let (Ok(endpoint), Ok(secret)) = (std::env::var("MSI_ENDPOINT"), std::env::var("MSI_SECRET")) {
+			let _ = deserializer;
+			let secret =
+				std::convert::TryInto::try_into(secret)
+				.map_err(|err| serde::de::Error::custom(format!("could not parse MSI_SECRET as HeaderValue: {}", err)))?;
+			return Ok(Auth::ManagedIdentity {
+				endpoint,
+				secret,
+			});
+		}
+
+		#[cfg(debug_assertions)]
+		{
+			#[derive(serde::Deserialize)]
+			struct AuthInner {
+				/// The application ID of the service principal that this Function should use to access Azure resources.
+				///
+				/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
+				azure_client_id: String,
+
+				/// The password of the service principal that this Function should use to access Azure resources.
+				///
+				/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
+				azure_client_secret: String,
+
+				/// The tenant ID of the service principal that this Function should use to access Azure resources.
+				///
+				/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
+				azure_tenant_id: String,
+			}
+
+			let AuthInner { azure_client_id, azure_client_secret, azure_tenant_id } = serde::Deserialize::deserialize(deserializer)?;
+			Ok(Auth::ServicePrincipal {
+				client_id: azure_client_id,
+				client_secret: azure_client_secret,
+				tenant_id: azure_tenant_id,
+			})
+		}
+
+		#[cfg(not(debug_assertions))]
+		Err(serde::de::Error::custom("did not find MSI_ENDPOINT and MSI_SECRET env vars"))
 	}
 }

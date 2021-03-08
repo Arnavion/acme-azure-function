@@ -15,19 +15,13 @@ function_worker::run! {
 }
 
 async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> {
-	let azure_auth = azure::Auth::from_env(
-		settings.azure_client_id.clone(),
-		settings.azure_client_secret.clone(),
-		settings.azure_tenant_id.clone(),
-	)?;
-
 	let user_agent: hyper::header::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
-		&azure_auth,
+		&settings.azure_auth,
 		user_agent.clone(),
 	).context("could not initialize Azure KeyVault API client")?;
 
@@ -78,7 +72,7 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 		let azure_management_client = azure::management::Client::new(
 			&settings.azure_subscription_id,
 			&settings.azure_resource_group_name,
-			&azure_auth,
+			&settings.azure_auth,
 			user_agent,
 		).context("could not initialize Azure Management API client")?;
 
@@ -206,20 +200,13 @@ struct Settings {
 	/// The domain name to request the TLS certificate for
 	top_level_domain_name: String,
 
-	/// The application ID of the service principal that this Function should use to access Azure resources.
+	/// The Azure authentication credentials.
 	///
-	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
-	azure_client_id: Option<String>,
-
-	/// The password of the service principal that this Function should use to access Azure resources.
-	///
-	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
-	azure_client_secret: Option<String>,
-
-	/// The tenant ID of the service principal that this Function should use to access Azure resources.
-	///
-	/// Only needed for local testing; the final released Function should be set to use the Function app MSI.
-	azure_tenant_id: Option<String>,
+	/// Defaults to parsing `azure::Auth::ManagedIdentity` from the environment.
+	/// If not found, then debug builds fall back to parsing a service principal from this JSON object's
+	/// `{ azure_client_id: String, azure_client_secret: String, azure_tenant_id: String }` properties.
+	#[serde(flatten)]
+	azure_auth: azure::Auth,
 }
 
 fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, azure::key_vault::EcCurve), D::Error>
