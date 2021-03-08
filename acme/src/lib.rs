@@ -165,9 +165,9 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		};
 
 		let result = Account {
-			client,
 			account_key,
 			account_url,
+			client,
 			nonce,
 			new_order_url,
 		};
