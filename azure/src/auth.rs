@@ -66,8 +66,8 @@ impl Auth {
 					let mut req = hyper::Request::new(Default::default());
 					*req.method_mut() = hyper::Method::GET;
 					*req.uri_mut() =
-						format!("{}?resource={}&api-version=2017-09-01", endpoint, resource)
-						.parse().context("could not construct authorization request URI")?;
+						std::convert::TryInto::try_into(format!("{}?resource={}&api-version=2017-09-01", endpoint, resource))
+						.context("could not construct authorization request URI")?;
 					req.headers_mut().insert(SECRET.clone(), secret.clone());
 					req
 				},
@@ -84,8 +84,8 @@ impl Auth {
 					let mut req = hyper::Request::new(body.into());
 					*req.method_mut() = hyper::Method::POST;
 					*req.uri_mut() =
-						format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id)
-						.parse().context("could not construct authorization request URI")?;
+						std::convert::TryInto::try_into(format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id))
+						.context("could not construct authorization request URI")?;
 					req
 				},
 			};
@@ -93,8 +93,9 @@ impl Auth {
 			let Response { access_token, token_type } =
 				client.request_inner(req).await.context("could not get authorization")?;
 
-			let header_value = format!("{} {}", token_type, access_token);
-			let header_value: hyper::header::HeaderValue = header_value.parse().context("could not parse token as HeaderValue")?;
+			let header_value =
+				std::convert::TryInto::try_into(format!("{} {}", token_type, access_token))
+				.context("could not parse token as HeaderValue")?;
 			Ok::<_, anyhow::Error>(log2::Secret(header_value))
 		}).await?;
 		Ok(authorization)

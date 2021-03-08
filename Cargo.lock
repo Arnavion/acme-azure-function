@@ -159,6 +159,7 @@ dependencies = [
  "azure",
  "function-worker",
  "futures-util",
+ "hyper",
  "log2",
  "serde",
 ]

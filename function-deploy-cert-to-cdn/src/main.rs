@@ -17,17 +17,21 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 		settings.azure_tenant_id.clone(),
 	)?;
 
+	let user_agent: hyper::header::HeaderValue =
+		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
+		.parse().expect("hard-coded user agent is valid HeaderValue");
+
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
 		&azure_auth,
-		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+		user_agent.clone(),
 	).context("could not initialize Azure KeyVault API client")?;
 
 	let azure_management_client = azure::management::Client::new(
 		&settings.azure_subscription_id,
 		&settings.azure_cdn_resource_group_name,
 		&azure_auth,
-		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+		user_agent,
 	).context("could not initialize Azure Management API client")?;
 
 	let (expected_cdn_custom_domain_secret, actual_cdn_custom_domain_secret) = {

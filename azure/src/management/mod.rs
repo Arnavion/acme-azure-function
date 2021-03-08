@@ -20,7 +20,7 @@ impl<'a> Client<'a> {
 		subscription_id: &'a str,
 		resource_group_name: &'a str,
 		auth: &'a crate::Auth,
-		user_agent: &str,
+		user_agent: hyper::header::HeaderValue,
 	) -> anyhow::Result<Self> {
 		Ok(Client {
 			subscription_id,

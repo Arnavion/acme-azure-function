@@ -10,10 +10,10 @@ pub struct LogSender {
 }
 
 impl LogSender {
-	pub fn new(customer_id: String, signer: hmac::Hmac<sha2::Sha256>, user_agent: &str) -> anyhow::Result<Self> {
+	pub fn new(customer_id: String, signer: hmac::Hmac<sha2::Sha256>, user_agent: hyper::header::HeaderValue) -> anyhow::Result<Self> {
 		let uri =
-			format!("https://{}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01", customer_id)
-			.parse().context("could not construct Log Analytics Data Collector API URI")?;
+			std::convert::TryInto::try_into(format!("https://{}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01", customer_id))
+			.context("could not construct Log Analytics Data Collector API URI")?;
 
 		let authorization_prefix = format!("SharedKey {}:", customer_id);
 
@@ -84,7 +84,7 @@ impl LogSender {
 				chrono::format::Item::Numeric(chrono::format::Numeric::Second, chrono::format::Pad::Zero),
 				chrono::format::Item::Literal(" GMT"),
 			].iter());
-			x_ms_date.to_string().parse().context("could not create authorization header")?
+			std::convert::TryInto::try_into(x_ms_date.to_string()).context("could not create authorization header")?
 		};
 
 		let signature = {
@@ -98,8 +98,9 @@ impl LogSender {
 			let signature = base64::encode(&signature);
 			signature
 		};
-		let authorization = format!("{}{}", self.authorization_prefix, signature);
-		let authorization = authorization.parse().context("could not create authorization header")?;
+		let authorization =
+			std::convert::TryInto::try_into(format!("{}{}", self.authorization_prefix, signature))
+			.context("could not create authorization header")?;
 
 		let mut req = hyper::Request::new(hyper::Body::wrap_stream(body));
 		*req.uri_mut() = self.uri.clone();

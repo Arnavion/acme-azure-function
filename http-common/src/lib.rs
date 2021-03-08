@@ -20,7 +20,7 @@ pub struct Client {
 }
 
 impl Client {
-	pub fn new(user_agent: &str) -> anyhow::Result<Self> {
+	pub fn new(user_agent: hyper::header::HeaderValue) -> anyhow::Result<Self> {
 		// Use this long form instead of just `hyper_rustls::HttpsConnector::with_webpki_roots()`
 		// because otherwise it tries to initiate HTTP/2 connections with some hosts.
 		//
@@ -38,8 +38,6 @@ impl Client {
 		};
 
 		let inner = hyper::Client::builder().build(connector);
-
-		let user_agent: hyper::header::HeaderValue = user_agent.parse().context("could not parse user_agent as HeaderValue")?;
 
 		Ok(Client {
 			inner,
@@ -151,10 +149,11 @@ pub fn is_json(content_type: &hyper::header::HeaderValue) -> bool {
 
 pub fn get_location(headers: &hyper::HeaderMap) -> anyhow::Result<hyper::Uri> {
 	let location =
-		headers
-		.get(hyper::header::LOCATION).context("missing location header")?
-		.to_str().context("could not parse location header")?
-		.parse().context("could not parse location header")?;
+		std::convert::TryInto::try_into(
+			headers
+			.get(hyper::header::LOCATION).context("missing location header")?
+			.as_bytes(),
+		).context("could not parse location header")?;
 	Ok(location)
 }
 

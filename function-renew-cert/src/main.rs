@@ -21,10 +21,14 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 		settings.azure_tenant_id.clone(),
 	)?;
 
+	let user_agent: hyper::header::HeaderValue =
+		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
+		.parse().expect("hard-coded user agent is valid HeaderValue");
+
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
 		&azure_auth,
-		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+		user_agent.clone(),
 	).context("could not initialize Azure KeyVault API client")?;
 
 	let need_new_certificate = {
@@ -63,7 +67,7 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 		settings.acme_directory_url.clone(),
 		&settings.acme_contact_url,
 		&account_key,
-		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+		user_agent.clone(),
 	).await.context("could not initialize ACME API client")?;
 
 	let domain_name = format!("*.{}", settings.top_level_domain_name);
@@ -75,7 +79,7 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 			&settings.azure_subscription_id,
 			&settings.azure_resource_group_name,
 			&azure_auth,
-			concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+			user_agent,
 		).context("could not initialize Azure Management API client")?;
 
 		let certificate = loop {

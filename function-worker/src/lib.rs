@@ -70,7 +70,8 @@ where
 			azure::log_analytics::LogSender::new(
 				azure_log_analytics_workspace_id,
 				azure_log_analytics_workspace_signer,
-				concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+				concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
+					.parse().expect("hard-coded user agent is valid HeaderValue"),
 			).context("could not create LogAnalytics log sender")?;
 
 		(std::rc::Rc::new(log_sender), std::rc::Rc::new(rest))

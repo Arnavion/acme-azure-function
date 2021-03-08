@@ -22,7 +22,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		acme_directory_url: hyper::Uri,
 		acme_contact_url: &str,
 		account_key: &'a K,
-		user_agent: &str,
+		user_agent: hyper::header::HeaderValue,
 	) -> anyhow::Result<Account<'a, K>> {
 		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
 

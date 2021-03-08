@@ -22,7 +22,7 @@ impl<'a> Client<'a> {
 	pub fn new(
 		key_vault_name: &'a str,
 		auth: &'a crate::Auth,
-		user_agent: &str,
+		user_agent: hyper::header::HeaderValue,
 	) -> anyhow::Result<Self> {
 		Ok(Client {
 			key_vault_name,
