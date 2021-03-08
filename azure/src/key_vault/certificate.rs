@@ -1,11 +1,5 @@
-impl<'a> crate::Account<'a> {
-	pub async fn key_vault_csr_create(
-		&self,
-		key_vault_name: &str,
-		certificate_name: &str,
-		common_name: &str,
-		key_type: CreateCsrKeyType,
-	) -> anyhow::Result<String> {
+impl<'a> super::Client<'a> {
+	pub async fn csr_create(&self, certificate_name: &str, common_name: &str, key_type: CreateCsrKeyType) -> anyhow::Result<String> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
 			policy: RequestPolicy<'a>,
@@ -68,15 +62,10 @@ impl<'a> crate::Account<'a> {
 		let csr =
 			log2::report_operation(
 				"azure/key_vault/csr",
-				(key_vault_name, certificate_name),
+				(self.key_vault_name, certificate_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (common_name, key_type)) },
 				async {
-					let key_vault_request_parameters =
-						self.key_vault_request_parameters(
-							key_vault_name,
-							format_args!("/certificates/{}/create?api-version=7.1", certificate_name),
-						);
-					let (url, authorization) = key_vault_request_parameters.await?;
+					let (url, authorization) = self.request_parameters(format_args!("/certificates/{}/create?api-version=7.1", certificate_name)).await?;
 
 					let Response { csr } =
 						self.client.request(
@@ -121,11 +110,7 @@ impl<'a> crate::Account<'a> {
 		Ok(csr)
 	}
 
-	pub async fn key_vault_certificate_get(
-		&self,
-		key_vault_name: &str,
-		certificate_name: &str,
-	) -> anyhow::Result<Option<Certificate>> {
+	pub async fn certificate_get(&self, certificate_name: &str) -> anyhow::Result<Option<Certificate>> {
 		struct Response(Option<Certificate>);
 
 		impl http_common::FromResponse for Response {
@@ -168,13 +153,8 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		let certificate = log2::report_operation( "azure/key_vault/certificate", (key_vault_name, certificate_name), <log2::ScopedObjectOperation>::Get, async {
-			let key_vault_request_parameters =
-				self.key_vault_request_parameters(
-					key_vault_name,
-					format_args!("/certificates/{}?api-version=7.1", certificate_name),
-				);
-			let (url, authorization) = key_vault_request_parameters.await?;
+		let certificate = log2::report_operation( "azure/key_vault/certificate", (self.key_vault_name, certificate_name), <log2::ScopedObjectOperation>::Get, async {
+			let (url, authorization) = self.request_parameters(format_args!("/certificates/{}?api-version=7.1", certificate_name)).await?;
 
 			let Response(certificate) =
 				self.client.request(
@@ -189,12 +169,7 @@ impl<'a> crate::Account<'a> {
 		Ok(certificate)
 	}
 
-	pub async fn key_vault_certificate_merge(
-		&self,
-		key_vault_name: &str,
-		certificate_name: &str,
-		certificates: &[String],
-	) -> anyhow::Result<()> {
+	pub async fn certificate_merge(&self, certificate_name: &str, certificates: &[String]) -> anyhow::Result<()> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
 			x5c: &'a [String],
@@ -218,15 +193,10 @@ impl<'a> crate::Account<'a> {
 		let () =
 			log2::report_operation(
 				"azure/key_vault/certificate",
-				(key_vault_name, certificate_name),
+				(self.key_vault_name, certificate_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", certificates) },
 				async {
-					let key_vault_request_parameters =
-						self.key_vault_request_parameters(
-							key_vault_name,
-							format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
-						);
-					let (url, authorization) = key_vault_request_parameters.await?;
+					let (url, authorization) = self.request_parameters(format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name)).await?;
 
 					let _: Response =
 						self.client.request(

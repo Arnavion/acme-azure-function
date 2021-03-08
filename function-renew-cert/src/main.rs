@@ -20,15 +20,15 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 		settings.azure_client_secret.clone(),
 		settings.azure_tenant_id.clone(),
 	)?;
-	let azure_account = azure::Account::new(
-		&settings.azure_subscription_id,
-		&settings.azure_resource_group_name,
+
+	let azure_key_vault_client = azure::key_vault::Client::new(
+		&settings.azure_key_vault_name,
 		&azure_auth,
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
-	).context("could not initialize Azure API client")?;
+	).context("could not initialize Azure KeyVault API client")?;
 
 	let need_new_certificate = {
-		let certificate = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name).await?;
+		let certificate = azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?;
 		let need_new_certificate =
 			certificate.map_or(true, |certificate| certificate.not_after < chrono::Utc::now() + chrono::Duration::days(30));
 		need_new_certificate
@@ -43,15 +43,14 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 	}
 
 	let account_key = {
-		let account_key = azure_account.key_vault_key_get(&settings.azure_key_vault_name, &settings.azure_key_vault_acme_account_key_name).await?;
+		let account_key = azure_key_vault_client.key_get(&settings.azure_key_vault_acme_account_key_name).await?;
 		if let Some(account_key) = account_key {
 			account_key
 		}
 		else {
 			let (kty, crv) = settings.azure_key_vault_acme_account_key_type;
 			let account_key =
-				azure_account.key_vault_key_create(
-					&settings.azure_key_vault_name,
+				azure_key_vault_client.key_create(
 					&settings.azure_key_vault_acme_account_key_name,
 					kty,
 					crv,
@@ -72,11 +71,18 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 	let mut acme_order = acme_account.place_order(&domain_name).await?;
 
 	let certificates = {
+		let azure_management_client = azure::management::Client::new(
+			&settings.azure_subscription_id,
+			&settings.azure_resource_group_name,
+			&azure_auth,
+			concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+		).context("could not initialize Azure Management API client")?;
+
 		let certificate = loop {
 			match acme_order {
 				acme::Order::Pending(pending) => {
 					let () =
-						azure_account.dns_txt_record_create(
+						azure_management_client.dns_txt_record_create(
 							&settings.top_level_domain_name,
 							"_acme-challenge",
 							&pending.dns_txt_record_content,
@@ -86,7 +92,7 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 					let new_acme_order = acme_account.complete_authorization(pending).await;
 
 					let () =
-						azure_account.dns_txt_record_delete(
+						azure_management_client.dns_txt_record_delete(
 							&settings.top_level_domain_name,
 							"_acme-challenge",
 						).await?;
@@ -96,8 +102,7 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 
 				acme::Order::Ready(ready) => {
 					let csr =
-						azure_account.key_vault_csr_create(
-							&settings.azure_key_vault_name,
+						azure_key_vault_client.csr_create(
 							&settings.azure_key_vault_certificate_name,
 							&domain_name,
 							settings.azure_key_vault_certificate_key_type,
@@ -139,8 +144,7 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 	};
 
 	let () =
-		azure_account.key_vault_certificate_merge(
-			&settings.azure_key_vault_name,
+		azure_key_vault_client.certificate_merge(
 			&settings.azure_key_vault_certificate_name,
 			&certificates,
 		).await?;
@@ -179,7 +183,7 @@ struct Settings {
 
 	/// The parameters used for the private key of the ACME account key if it needs to be created.
 	#[serde(deserialize_with = "deserialize_key_vault_acme_account_key_type")]
-	azure_key_vault_acme_account_key_type: (azure::EcKty, azure::EcCurve),
+	azure_key_vault_acme_account_key_type: (azure::key_vault::EcKty, azure::key_vault::EcCurve),
 
 	// /// The name of the KeyVault secret that contains the ACME account key.
 	// ///
@@ -193,7 +197,7 @@ struct Settings {
 
 	/// The parameters used for the private key of the new TLS certificate.
 	#[serde(deserialize_with = "deserialize_key_vault_certificate_key_type")]
-	azure_key_vault_certificate_key_type: azure::KeyVaultCreateCsrKeyType,
+	azure_key_vault_certificate_key_type: azure::key_vault::CreateCsrKeyType,
 
 	/// The domain name to request the TLS certificate for
 	top_level_domain_name: String,
@@ -214,14 +218,14 @@ struct Settings {
 	azure_tenant_id: Option<String>,
 }
 
-fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::EcKty, azure::EcCurve), D::Error>
+fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, azure::key_vault::EcCurve), D::Error>
 where
 	D: serde::Deserializer<'de>,
 {
 	struct Visitor;
 
 	impl<'de> serde::de::Visitor<'de> for Visitor {
-		type Value = (azure::EcKty, azure::EcCurve);
+		type Value = (azure::key_vault::EcKty, azure::key_vault::EcCurve);
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 			f.write_str(r#"one of "#)?;
@@ -233,12 +237,12 @@ where
 
 		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
 			Ok(match s {
-				"ec:p256" => (azure::EcKty::Ec, azure::EcCurve::P256),
-				"ec-hsm:p256" => (azure::EcKty::EcHsm, azure::EcCurve::P256),
-				"ec:p384" => (azure::EcKty::Ec, azure::EcCurve::P384),
-				"ec-hsm:p384" => (azure::EcKty::EcHsm, azure::EcCurve::P384),
-				"ec:p521" => (azure::EcKty::Ec, azure::EcCurve::P521),
-				"ec-hsm:p521" => (azure::EcKty::EcHsm, azure::EcCurve::P521),
+				"ec:p256" => (azure::key_vault::EcKty::Ec, azure::key_vault::EcCurve::P256),
+				"ec-hsm:p256" => (azure::key_vault::EcKty::EcHsm, azure::key_vault::EcCurve::P256),
+				"ec:p384" => (azure::key_vault::EcKty::Ec, azure::key_vault::EcCurve::P384),
+				"ec-hsm:p384" => (azure::key_vault::EcKty::EcHsm, azure::key_vault::EcCurve::P384),
+				"ec:p521" => (azure::key_vault::EcKty::Ec, azure::key_vault::EcCurve::P521),
+				"ec-hsm:p521" => (azure::key_vault::EcKty::EcHsm, azure::key_vault::EcCurve::P521),
 
 				s => return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(s), &self)),
 			})
@@ -248,14 +252,14 @@ where
 	deserializer.deserialize_str(Visitor)
 }
 
-fn deserialize_key_vault_certificate_key_type<'de, D>(deserializer: D) -> Result<azure::KeyVaultCreateCsrKeyType, D::Error>
+fn deserialize_key_vault_certificate_key_type<'de, D>(deserializer: D) -> Result<azure::key_vault::CreateCsrKeyType, D::Error>
 where
 	D: serde::Deserializer<'de>,
 {
 	struct Visitor;
 
 	impl<'de> serde::de::Visitor<'de> for Visitor {
-		type Value = azure::KeyVaultCreateCsrKeyType;
+		type Value = azure::key_vault::CreateCsrKeyType;
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 			f.write_str(r#"one of "#)?;
@@ -269,21 +273,21 @@ where
 
 		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
 			Ok(match s {
-				"rsa:2048" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 2048, exportable: false },
-				"rsa:2048:exportable" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 2048, exportable: true },
-				"rsa-hsm:2048" => azure::KeyVaultCreateCsrKeyType::RsaHsm { num_bits: 2048 },
-				"rsa:4096" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 4096, exportable: false },
-				"rsa:4096:exportable" => azure::KeyVaultCreateCsrKeyType::Rsa { num_bits: 4096, exportable: true },
-				"rsa-hsm:4096" => azure::KeyVaultCreateCsrKeyType::RsaHsm { num_bits: 4096 },
-				"ec:p256" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P256, exportable: false },
-				"ec:p256:exportable" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P256, exportable: true },
-				"ec-hsm:p256" => azure::KeyVaultCreateCsrKeyType::EcHsm { curve: azure::EcCurve::P256 },
-				"ec:p384" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P384, exportable: false },
-				"ec:p384:exportable" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P384, exportable: true },
-				"ec-hsm:p384" => azure::KeyVaultCreateCsrKeyType::EcHsm { curve: azure::EcCurve::P384 },
-				"ec:p521" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P521, exportable: false },
-				"ec:p521:exportable" => azure::KeyVaultCreateCsrKeyType::Ec { curve: azure::EcCurve::P521, exportable: true },
-				"ec-hsm:p521" => azure::KeyVaultCreateCsrKeyType::EcHsm { curve: azure::EcCurve::P521 },
+				"rsa:2048" => azure::key_vault::CreateCsrKeyType::Rsa { num_bits: 2048, exportable: false },
+				"rsa:2048:exportable" => azure::key_vault::CreateCsrKeyType::Rsa { num_bits: 2048, exportable: true },
+				"rsa-hsm:2048" => azure::key_vault::CreateCsrKeyType::RsaHsm { num_bits: 2048 },
+				"rsa:4096" => azure::key_vault::CreateCsrKeyType::Rsa { num_bits: 4096, exportable: false },
+				"rsa:4096:exportable" => azure::key_vault::CreateCsrKeyType::Rsa { num_bits: 4096, exportable: true },
+				"rsa-hsm:4096" => azure::key_vault::CreateCsrKeyType::RsaHsm { num_bits: 4096 },
+				"ec:p256" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P256, exportable: false },
+				"ec:p256:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P256, exportable: true },
+				"ec-hsm:p256" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: azure::key_vault::EcCurve::P256 },
+				"ec:p384" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P384, exportable: false },
+				"ec:p384:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P384, exportable: true },
+				"ec-hsm:p384" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: azure::key_vault::EcCurve::P384 },
+				"ec:p521" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P521, exportable: false },
+				"ec:p521:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P521, exportable: true },
+				"ec-hsm:p521" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: azure::key_vault::EcCurve::P521 },
 
 				s => return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(s), &self)),
 			})

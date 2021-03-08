@@ -1,10 +1,5 @@
-impl<'a> crate::Account<'a> {
-	pub async fn dns_txt_record_create(
-		&self,
-		dns_zone_name: &str,
-		name: &str,
-		content: &str,
-	) -> anyhow::Result<()> {
+impl<'a> super::Client<'a> {
+	pub async fn dns_txt_record_create(&self, dns_zone_name: &str, name: &str, content: &str) -> anyhow::Result<()> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
 			properties: RequestProperties<'a>,
@@ -41,13 +36,12 @@ impl<'a> crate::Account<'a> {
 		}
 
 		let () = log2::report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
-			let management_request_parameters =
-				self.management_request_parameters(format_args!(
+			let (url, authorization) =
+				self.request_parameters(format_args!(
 					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
 					dns_zone_name,
 					name,
-				));
-			let (url, authorization) = management_request_parameters.await?;
+				)).await?;
 
 			let _: Response =
 				self.client.request(
@@ -72,11 +66,7 @@ impl<'a> crate::Account<'a> {
 		Ok(())
 	}
 
-	pub async fn dns_txt_record_delete(
-		&self,
-		dns_zone_name: &str,
-		name: &str,
-	) -> anyhow::Result<()> {
+	pub async fn dns_txt_record_delete(&self, dns_zone_name: &str, name: &str) -> anyhow::Result<()> {
 		struct Response;
 
 		impl http_common::FromResponse for Response {
@@ -95,13 +85,12 @@ impl<'a> crate::Account<'a> {
 		}
 
 		let () = log2::report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
-			let management_request_parameters =
-				self.management_request_parameters(format_args!(
+			let (url, authorization) =
+				self.request_parameters(format_args!(
 					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
 					dns_zone_name,
 					name,
-				));
-			let (url, authorization) = management_request_parameters.await?;
+				)).await?;
 
 			let _: Response =
 				self.client.request(

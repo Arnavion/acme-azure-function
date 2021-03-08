@@ -67,7 +67,7 @@ where
 		} = serde_json::from_str(&settings).context("could not read SECRET_SETTINGS env var")?;
 
 		let log_sender =
-			azure::LogAnalyticsLogSender::new(
+			azure::log_analytics::LogSender::new(
 				azure_log_analytics_workspace_id,
 				azure_log_analytics_workspace_signer,
 				concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),

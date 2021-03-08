@@ -1,4 +1,4 @@
-impl<'a> crate::Account<'a> {
+impl<'a> super::Client<'a> {
 	pub async fn cdn_custom_domain_secret_get(
 		&self,
 		cdn_profile_name: &str,
@@ -36,14 +36,13 @@ impl<'a> crate::Account<'a> {
 				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
 				<log2::ScopedObjectOperation>::Get,
 				async {
-					let management_request_parameters =
-						self.management_request_parameters(format_args!(
+					let (url, authorization) =
+						self.request_parameters(format_args!(
 							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}?api-version=2019-12-31",
 							cdn_profile_name,
 							cdn_endpoint_name,
 							cdn_custom_domain_name,
-						));
-					let (url, authorization) = management_request_parameters.await?;
+						)).await?;
 
 					let Response { properties: CustomDomainProperties { custom_https_parameters } } =
 						self.client.request(
@@ -109,14 +108,13 @@ impl<'a> crate::Account<'a> {
 				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", custom_domain_key_vault_secret) },
 				async {
-					let management_request_parameters =
-						self.management_request_parameters(format_args!(
+					let (url, authorization) =
+						self.request_parameters(format_args!(
 							"/providers/Microsoft.Cdn/profiles/{}/endpoints/{}/customDomains/{}/enableCustomHttps?api-version=2019-12-31",
 							cdn_profile_name,
 							cdn_endpoint_name,
 							cdn_custom_domain_name,
-						));
-					let (url, authorization) = management_request_parameters.await?;
+						)).await?;
 
 					let mut response =
 						self.client.request(

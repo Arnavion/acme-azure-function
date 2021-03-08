@@ -1,17 +1,14 @@
-#[cfg(feature = "key_vault_cert")]
-mod certificate;
-#[cfg(feature = "key_vault_cert")]
-pub use certificate::{Certificate, CreateCsrKeyType};
-
-#[cfg(feature = "key_vault_key")]
-mod key;
-#[cfg(feature = "key_vault_key")]
-pub use key::{EcKty, Key};
-
 use anyhow::Context;
 
+#[cfg(feature = "cdn")]
+pub mod cdn;
+
+#[cfg(feature = "dns")]
+mod dns;
+
 pub struct Client<'a> {
-	key_vault_name: &'a str,
+	subscription_id: &'a str,
+	resource_group_name: &'a str,
 	auth: &'a crate::Auth,
 
 	client: http_common::Client,
@@ -20,12 +17,14 @@ pub struct Client<'a> {
 
 impl<'a> Client<'a> {
 	pub fn new(
-		key_vault_name: &'a str,
+		subscription_id: &'a str,
+		resource_group_name: &'a str,
 		auth: &'a crate::Auth,
 		user_agent: &str,
 	) -> anyhow::Result<Self> {
 		Ok(Client {
-			key_vault_name,
+			subscription_id,
+			resource_group_name,
 			auth,
 
 			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
@@ -46,11 +45,11 @@ impl<'a> Client<'a> {
 			Some(authorization) => Ok(authorization.clone()),
 
 			None => {
-				const RESOURCE: &str = "https://vault.azure.net";
+				const RESOURCE: &str = "https://management.azure.com";
 
 				let authorization =
 					self.auth.get_authorization(&self.client, RESOURCE).await
-					.context("could not get KeyVault API authorization")?;
+					.context("could not get Management API authorization")?;
 				*cached_authorization = Some(authorization.clone());
 				Ok(authorization)
 			},
@@ -60,22 +59,10 @@ impl<'a> Client<'a> {
 	fn request_parameters(&self, relative_url: std::fmt::Arguments<'_>) ->
 		impl std::future::Future<Output = anyhow::Result<(String, hyper::header::HeaderValue)>> + '_
 	{
-		let url = format!("https://{}.vault.azure.net{}", self.key_vault_name, relative_url);
+		let url = format!("https://management.azure.com/subscriptions/{}/resourceGroups/{}{}", self.subscription_id, self.resource_group_name, relative_url);
 		async move {
 			let authorization = self.authorization().await?;
 			Ok((url, authorization))
 		}
 	}
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
-pub enum EcCurve {
-	#[serde(rename = "P-256")]
-	P256,
-
-	#[serde(rename = "P-384")]
-	P384,
-
-	#[serde(rename = "P-521")]
-	P521,
 }

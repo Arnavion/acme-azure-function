@@ -1,7 +1,6 @@
-impl<'a> crate::Account<'a> {
-	pub async fn key_vault_key_create<'b>(
+impl<'a> super::Client<'a> {
+	pub async fn key_create<'b>(
 		&'b self,
-		key_vault_name: &str,
 		key_name: &str,
 		kty: EcKty,
 		crv: super::EcCurve,
@@ -16,15 +15,10 @@ impl<'a> crate::Account<'a> {
 		let key =
 			log2::report_operation(
 				"azure/key_vault/key",
-				(key_vault_name, key_name),
+				(self.key_vault_name, key_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (kty, crv)) },
 				async {
-					let key_vault_request_parameters =
-						self.key_vault_request_parameters(
-							key_vault_name,
-							format_args!("/keys/{}/create?api-version=7.1", key_name),
-						);
-					let (url, authorization) = key_vault_request_parameters.await?;
+					let (url, authorization) = self.request_parameters(format_args!("/keys/{}/create?api-version=7.1", key_name)).await?;
 
 					let CreateOrGetKeyResponse { key } =
 						self.client.request(
@@ -46,13 +40,12 @@ impl<'a> crate::Account<'a> {
 			kid: key.kid,
 			x: key.x,
 			y: key.y,
-			account: self,
+			client: self,
 		})
 	}
 
-	pub async fn key_vault_key_get<'b>(
+	pub async fn key_get<'b>(
 		&'b self,
-		key_vault_name: &str,
 		key_name: &str,
 	) -> anyhow::Result<Option<Key<'b>>> {
 		struct Response(Option<CreateOrGetKeyResponse>);
@@ -72,13 +65,8 @@ impl<'a> crate::Account<'a> {
 			}
 		}
 
-		let key = log2::report_operation("azure/key_vault/key", (key_vault_name, key_name), <log2::ScopedObjectOperation>::Get, async {
-			let key_vault_request_parameters =
-				self.key_vault_request_parameters(
-					key_vault_name,
-					format_args!("/keys/{}?api-version=7.1", key_name),
-				);
-			let (url, authorization) = key_vault_request_parameters.await?;
+		let key = log2::report_operation("azure/key_vault/key", (self.key_vault_name, key_name), <log2::ScopedObjectOperation>::Get, async {
+			let (url, authorization) = self.request_parameters(format_args!("/keys/{}?api-version=7.1", key_name)).await?;
 
 			let Response(response) =
 				self.client.request(
@@ -96,7 +84,7 @@ impl<'a> crate::Account<'a> {
 			kid: key.kid,
 			x: key.x,
 			y: key.y,
-			account: self,
+			client: self,
 		}))
 	}
 }
@@ -115,7 +103,7 @@ pub struct Key<'a> {
 	kid: String,
 	x: String,
 	y: String,
-	account: &'a crate::Account<'a>,
+	client: &'a super::Client<'a>,
 }
 
 impl acme::AccountKey for Key<'_> {
@@ -164,10 +152,10 @@ impl acme::AccountKey for Key<'_> {
 
 		Box::pin(log2::report_operation("azure/key_vault/key/signature", &self.kid, log2::ScopedObjectOperation::Create { value: "" }, async move {
 			let url = format!("{}/sign?api-version=7.1", self.kid);
-			let authorization = self.account.key_vault_authorization().await?;
+			let authorization = self.client.authorization().await?;
 
 			let KeyVaultSignResponse { value: signature } =
-				self.account.client.request(
+				self.client.client.request(
 					hyper::Method::POST,
 					url,
 					authorization,

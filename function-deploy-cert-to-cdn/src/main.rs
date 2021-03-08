@@ -16,18 +16,25 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 		settings.azure_client_secret.clone(),
 		settings.azure_tenant_id.clone(),
 	)?;
-	let azure_account = azure::Account::new(
+
+	let azure_key_vault_client = azure::key_vault::Client::new(
+		&settings.azure_key_vault_name,
+		&azure_auth,
+		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+	).context("could not initialize Azure KeyVault API client")?;
+
+	let azure_management_client = azure::management::Client::new(
 		&settings.azure_subscription_id,
 		&settings.azure_cdn_resource_group_name,
 		&azure_auth,
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
-	).context("could not initialize Azure API client")?;
+	).context("could not initialize Azure Management API client")?;
 
 	let (expected_cdn_custom_domain_secret, actual_cdn_custom_domain_secret) = {
-		let certificate_f = azure_account.key_vault_certificate_get(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name);
+		let certificate_f = azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name);
 		futures_util::pin_mut!(certificate_f);
 
-		let secret_f = azure_account.cdn_custom_domain_secret_get(
+		let secret_f = azure_management_client.cdn_custom_domain_secret_get(
 			&settings.azure_cdn_profile_name,
 			&settings.azure_cdn_endpoint_name,
 			&settings.azure_cdn_custom_domain_name,
@@ -50,7 +57,7 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 			},
 		};
 		if let Some((expected_cdn_custom_domain_secret_version, actual_cdn_custom_domain_secret)) = result {
-			(azure::CdnCustomDomainKeyVaultSecret {
+			(azure::management::cdn::CustomDomainKeyVaultSecret {
 				subscription_id: (&*settings.azure_subscription_id).into(),
 				resource_group: (&*settings.azure_key_vault_resource_group_name).into(),
 				key_vault_name: (&*settings.azure_key_vault_name).into(),
@@ -65,19 +72,19 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 	};
 
 	match actual_cdn_custom_domain_secret {
-		Some(azure::CdnCustomDomainSecret::KeyVault(actual_cdn_custom_domain_secret)) if expected_cdn_custom_domain_secret == actual_cdn_custom_domain_secret => {
+		Some(azure::management::cdn::CustomDomainSecret::KeyVault(actual_cdn_custom_domain_secret)) if expected_cdn_custom_domain_secret == actual_cdn_custom_domain_secret => {
 			log2::report_message("CDN is up-to-date.");
 			return Ok(());
 		},
 
-		Some(azure::CdnCustomDomainSecret::Cdn) =>
+		Some(azure::management::cdn::CustomDomainSecret::Cdn) =>
 			log2::report_message("CDN-managed cert will be replaced by user-managed cert."),
 
 		_ => log2::report_message("User-managed cert will be deployed."),
 	}
 
 	let () =
-		azure_account.cdn_custom_domain_secret_set(
+		azure_management_client.cdn_custom_domain_secret_set(
 			&settings.azure_cdn_profile_name,
 			&settings.azure_cdn_endpoint_name,
 			&settings.azure_cdn_custom_domain_name,
