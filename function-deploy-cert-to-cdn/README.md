@@ -35,7 +35,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     export AZURE_KEY_VAULT_NAME='arnavion-dev-acme'
 
     # The name of the Azure KeyVault certificate
-    export AZURE_KEY_VAULT_CERTIFICATE_NAME='arnavion-dev'
+    export AZURE_KEY_VAULT_CERTIFICATE_NAME='star-arnavion-dev'
 
     # The name of the Function app.
     export AZURE_CDN_FUNCTION_APP_NAME='arnavion-dev-www'
@@ -44,10 +44,13 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     export AZURE_CDN_STORAGE_ACCOUNT_NAME='wwwarnaviondev'
 
     # The resource group that will host the Log Analytics workspace.
-    export AZURE_MONITOR_RESOURCE_GROUP_NAME='logs'
+    export AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME='logs'
 
     # The Log Analytics workspace.
     export AZURE_LOG_ANALYTICS_WORKSPACE_NAME='arnavion-log-analytics'
+
+    # The name of the Azure role used for the Function app.
+    export AZURE_CDN_ROLE_NAME='functionapp-www'
 
 
     export AZURE_ACCOUNT="$(az account show)"
@@ -128,55 +131,14 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --assign-identity '[system]' \
         --disable-app-insights
 
-    function_app_identity="$(
-        az functionapp identity show --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" --query principalId --output tsv
-    )"
-
-
-    # Give the Function app access to the CDN.
-    az role assignment create \
-        --role 'CDN Endpoint Contributor' \
-        --assignee "$function_app_identity" \
-        --scope "$(
-            az cdn endpoint show \
-                --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
-                --query id --output tsv
-        )"
-
-
-    # Give the Function app access to the KeyVault.
-    az keyvault set-policy --name "$AZURE_KEY_VAULT_NAME" \
-        --object-id "$function_app_identity" \
-        --certificate-permissions 'get'
-
-
-    # Give the CDN access to the KeyVault.
-    az keyvault set-policy --name "$AZURE_KEY_VAULT_NAME" \
-        --object-id "$(
-            az ad sp list --display-name 'Microsoft.AzureFrontDoor-Cdn' --query '[0].objectId' --output tsv
-        )" \
-        --secret-permissions 'get'
-
 
     # Create a resource group for the Log Analytics workspace.
-    az group create --name "$AZURE_MONITOR_RESOURCE_GROUP_NAME"
+    az group create --name "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME"
 
 
     # Create a Log Analytics workspace.
     az monitor log-analytics workspace create \
-        --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
-
-    export AZURE_LOG_ANALYTICS_WORKSPACE_ID="$(
-        az monitor log-analytics workspace show \
-            --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
-            --query customerId --output tsv
-    )"
-
-    export AZURE_LOG_ANALYTICS_WORKSPACE_KEY="$(
-        az monitor log-analytics workspace get-shared-keys \
-            --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
-            --query primarySharedKey --output tsv
-    )"
+        --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
 
 
     # Configure the CDN to log to the Log Analytics workspace.
@@ -189,7 +151,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "AzureCdnAccessLog", "enabled": true }]'
@@ -205,10 +167,84 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "FunctionAppLogs", "enabled": true }]'
+
+
+    # Create a custom role for the Function app to access the CDN, KeyVault and Log Analytics Workspace.
+    az role definition create --role-definition "$(
+        jq --null-input \
+            --arg 'AZURE_ROLE_NAME' "$AZURE_CDN_ROLE_NAME" \
+            --arg 'AZURE_SUBSCRIPTION_ID' "$AZURE_SUBSCRIPTION_ID" \
+            '{
+                "Name": $AZURE_ROLE_NAME,
+                "AssignableScopes": [
+                    "/subscriptions/\($AZURE_SUBSCRIPTION_ID)"
+                ],
+                "Actions": [
+                    "Microsoft.Cdn/operationresults/profileresults/endpointresults/customdomainresults/EnableCustomHttps/action",
+                    "Microsoft.Cdn/profiles/endpoints/customdomains/EnableCustomHttps/action",
+                    "Microsoft.OperationalInsights/workspaces/read",
+                    "Microsoft.OperationalInsights/workspaces/sharedKeys/action"
+                ],
+                "DataActions": [
+                    "Microsoft.KeyVault/vaults/certificates/read"
+                ],
+            }'
+    )"
+
+
+    # Apply the role to the Function app
+    function_app_identity="$(
+        az functionapp identity show \
+            --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --name "$AZURE_CDN_FUNCTION_APP_NAME" \
+            --query principalId --output tsv
+    )"
+    for scope in \
+        "$(
+            az cdn endpoint show \
+                --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
+                --query id --output tsv
+        )" \
+        "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
+        "$(
+            az monitor log-analytics workspace show \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --query id --output tsv
+        )"
+    do
+        az role assignment create \
+            --role "$AZURE_CDN_ROLE_NAME" \
+            --assignee "$function_app_identity" \
+            --scope "$scope"
+    done
+
+
+    # Create a custom role for the CDN to access the KeyVault.
+    az role definition create --role-definition "$(
+        jq --null-input \
+            --arg 'AZURE_ROLE_NAME' 'cdn-custom-domain-https-secret' \
+            --arg 'AZURE_SUBSCRIPTION_ID' "$AZURE_SUBSCRIPTION_ID" \
+            '{
+                "Name": $AZURE_ROLE_NAME,
+                "AssignableScopes": [
+                    "/subscriptions/\($AZURE_SUBSCRIPTION_ID)"
+                ],
+                "Actions": [],
+                "DataActions": [
+                    "Microsoft.KeyVault/vaults/secrets/getSecret/action"
+                ],
+            }'
+    )"
+
+
+    # Apply the role to the CDN
+    az role assignment create \
+        --role 'cdn-custom-domain-https-secret' \
+        --assignee "$(az ad sp list --display-name 'Microsoft.AzureFrontDoor-Cdn' --query '[0].objectId' --output tsv)" \
+        --scope "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/secrets/$AZURE_KEY_VAULT_CERTIFICATE_NAME"
     ```
 
 1. Prepare the Log Analytics table schema.
@@ -236,22 +272,24 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Grant the SP access to the Azure resources.
 
     ```sh
-    # CDN
-    az role assignment create \
-        --role 'CDN Endpoint Contributor' \
-        --assignee "$AZURE_CDN_SP_NAME" \
-        --scope "$(
+    for scope in \
+        "$(
             az cdn endpoint show \
                 --resource-group "$AZURE_CDN_RESOURCE_GROUP_NAME" --profile-name "$AZURE_CDN_PROFILE_NAME" --name "$AZURE_CDN_ENDPOINT_NAME" \
                 --query id --output tsv
+        )" \
+        "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
+        "$(
+            az monitor log-analytics workspace show \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --query id --output tsv
         )"
-
-
-    # KeyVault
-    az keyvault set-policy \
-        --name "$AZURE_KEY_VAULT_NAME" \
-        --certificate-permissions get \
-        --spn "$AZURE_CDN_SP_NAME"
+    do
+        az role assignment create \
+            --role "$AZURE_CDN_ROLE_NAME" \
+            --assignee "$AZURE_CDN_SP_NAME" \
+            --scope "$scope"
+    done
     ```
 
 1. Build the Function app and run it in the Functions host.

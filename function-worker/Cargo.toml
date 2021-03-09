@@ -25,6 +25,7 @@ hyper = { version = "0.14", default-features = false, features = [
 log = { version = "0.4", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
+	"rc",
 ] }
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error

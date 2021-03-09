@@ -24,9 +24,6 @@ esac
     '0 0 0 * * *' \
     "$(
         jq --null-input --sort-keys --compact-output \
-            --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
-            --arg AZURE_LOG_ANALYTICS_WORKSPACE_ID "$AZURE_LOG_ANALYTICS_WORKSPACE_ID" \
-            --arg AZURE_LOG_ANALYTICS_WORKSPACE_KEY "$AZURE_LOG_ANALYTICS_WORKSPACE_KEY" \
             --arg ACME_DIRECTORY_URL "$acme_directory_url" \
             --arg ACME_CONTACT_URL "$ACME_CONTACT_URL" \
             --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_ACME_RESOURCE_GROUP_NAME" \
@@ -35,9 +32,6 @@ esac
             --arg AZURE_KEY_VAULT_CERTIFICATE_NAME "$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
             --arg TOP_LEVEL_DOMAIN_NAME "$TOP_LEVEL_DOMAIN_NAME" \
             '{
-                "azure_subscription_id": $AZURE_SUBSCRIPTION_ID,
-                "azure_log_analytics_workspace_id": $AZURE_LOG_ANALYTICS_WORKSPACE_ID,
-                "azure_log_analytics_workspace_key": $AZURE_LOG_ANALYTICS_WORKSPACE_KEY,
                 "acme_directory_url": $ACME_DIRECTORY_URL,
                 "acme_contact_url": $ACME_CONTACT_URL,
                 "azure_resource_group_name": $AZURE_RESOURCE_GROUP_NAME,

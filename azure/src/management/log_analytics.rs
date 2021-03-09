@@ -1,32 +1,145 @@
 use anyhow::Context;
 
-pub struct LogSender {
-	customer_id: String,
-	signer: hmac::Hmac<sha2::Sha256>,
+impl<'a> super::Client<'a> {
+	pub async fn log_analytics_log_sender(self, workspace_name: &str) -> anyhow::Result<LogSender> {
+		#[derive(serde::Deserialize)]
+		struct GetResponse {
+			properties: Properties,
+		}
 
-	client: http_common::Client,
-	uri: hyper::Uri,
-	authorization_prefix: String,
-}
+		#[derive(serde::Deserialize)]
+		struct Properties {
+			#[serde(rename = "customerId")]
+			customer_id: String,
+		}
 
-impl LogSender {
-	pub fn new(customer_id: String, signer: hmac::Hmac<sha2::Sha256>, user_agent: hyper::header::HeaderValue) -> anyhow::Result<Self> {
+		impl http_common::FromResponse for GetResponse {
+			fn from_response(
+				status: hyper::StatusCode,
+				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				Ok(match (status, body) {
+					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+						Some(serde_json::from_reader(body)?),
+					_ => None,
+				})
+			}
+		}
+
+		#[derive(serde::Deserialize)]
+		struct SharedKeysResponse {
+			#[serde(deserialize_with = "deserialize_signer")]
+			#[serde(rename = "primarySharedKey")]
+			primary_shared_key: hmac::Hmac<sha2::Sha256>,
+		}
+
+		impl http_common::FromResponse for SharedKeysResponse {
+			fn from_response(
+				status: hyper::StatusCode,
+				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
+				_headers: hyper::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				Ok(match (status, body) {
+					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+						Some(serde_json::from_reader(body)?),
+					_ => None,
+				})
+			}
+		}
+
+		fn deserialize_signer<'de, D>(deserializer: D) -> Result<hmac::Hmac<sha2::Sha256>, D::Error> where D: serde::Deserializer<'de> {
+			struct Visitor;
+
+			impl serde::de::Visitor<'_> for Visitor {
+				type Value = hmac::Hmac<sha2::Sha256>;
+
+				fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+					f.write_str("base64-encoded string")
+				}
+
+				fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+					let key = base64::decode(s).map_err(serde::de::Error::custom)?;
+					let signer = hmac::NewMac::new_varkey(&key).expect("cannot fail to create hmac::Hmac<sha2::Sha256>");
+					Ok(signer)
+				}
+			}
+
+			deserializer.deserialize_str(Visitor)
+		}
+
+		let customer_id =
+			log2::report_operation(
+				"azure/log_analytics/workspace",
+				workspace_name,
+				<log2::ScopedObjectOperation>::Get,
+				async {
+					let (url, authorization) =
+						self.request_parameters(format_args!(
+							"/providers/Microsoft.OperationalInsights/workspaces/{}?api-version=2020-08-01",
+							workspace_name,
+						)).await?;
+
+					let GetResponse { properties: Properties { customer_id } } =
+						self.client.request(
+							hyper::Method::GET,
+							url,
+							authorization,
+							None::<&()>,
+						).await?;
+					Ok::<_, anyhow::Error>(customer_id)
+				},
+			);
+
+		let signer =
+			log2::report_operation(
+				"azure/log_analytics/workspace/shared_access_keys",
+				workspace_name,
+				<log2::ScopedObjectOperation>::Get,
+				async {
+					let (url, authorization) =
+						self.request_parameters(format_args!(
+							"/providers/Microsoft.OperationalInsights/workspaces/{}/sharedKeys?api-version=2020-08-01",
+							workspace_name,
+						)).await?;
+
+					let SharedKeysResponse { primary_shared_key } =
+						self.client.request(
+							hyper::Method::POST,
+							url,
+							authorization,
+							None::<&()>,
+						).await?;
+					Ok::<_, anyhow::Error>(log2::Secret(primary_shared_key))
+				},
+			);
+
+		let (customer_id, log2::Secret(signer)) = futures_util::future::try_join(customer_id, signer).await?;
+
 		let uri =
 			std::convert::TryInto::try_into(format!("https://{}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01", customer_id))
 			.context("could not construct Log Analytics Data Collector API URI")?;
-
 		let authorization_prefix = format!("SharedKey {}:", customer_id);
 
 		Ok(LogSender {
 			customer_id,
 			signer,
-
-			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
+			client: self.client,
 			uri,
 			authorization_prefix,
 		})
 	}
+}
 
+pub struct LogSender {
+	customer_id: String,
+	uri: hyper::Uri,
+	authorization_prefix: String,
+	signer: hmac::Hmac<sha2::Sha256>,
+	client: http_common::Client,
+}
+
+impl LogSender {
 	pub async fn send_logs(&self, log_type: hyper::header::HeaderValue, logs: Vec<u8>) -> anyhow::Result<()> {
 		struct Response;
 

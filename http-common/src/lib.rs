@@ -64,8 +64,13 @@ impl Client {
 				req.headers_mut().insert(hyper::header::CONTENT_TYPE, APPLICATION_JSON.clone());
 				req
 			}
-			else {
+			else if method == hyper::Method::GET {
 				hyper::Request::new(Default::default())
+			}
+			else {
+				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
+				req.headers_mut().insert(hyper::header::CONTENT_LENGTH, 0.into());
+				req
 			};
 		*req.method_mut() = method;
 		*req.uri_mut() = url.try_into().context("could not parse request URL")?;

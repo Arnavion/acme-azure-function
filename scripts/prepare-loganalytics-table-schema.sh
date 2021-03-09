@@ -5,6 +5,18 @@
 
 set -euxo pipefail
 
+azure_log_analytics_workspace_id="$(
+    az monitor log-analytics workspace show \
+        --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+        --query 'customerId' --output tsv
+)"
+
+azure_log_analytics_workspace_key="$(
+    az monitor log-analytics workspace get-shared-keys \
+        --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+        --query 'primarySharedKey' --output tsv
+)"
+
 body="$(
     jq --null-input --compact-output \
         --arg TIME_COLLECTED "$(date -u '+%Y-%m-%dT%TZ')" \
@@ -25,9 +37,9 @@ body="$(
 
 x_ms_date="$(date -u '+%a, %d %b %Y %T GMT')"
 
-authorization_header_value="SharedKey ${AZURE_LOG_ANALYTICS_WORKSPACE_ID}:$(
+authorization_header_value="SharedKey ${azure_log_analytics_workspace_id}:$(
     printf 'POST\n%d\napplication/json\nx-ms-date:%s\n/api/logs' "$(( "$(<<< "$body" wc -c)" - 1 ))" "$x_ms_date" |
-        openssl sha256 -mac hmac -macopt "hexkey:$(<<< "$AZURE_LOG_ANALYTICS_WORKSPACE_KEY" base64 -d | xxd -ps -c 256)" -binary |
+        openssl sha256 -mac hmac -macopt "hexkey:$(<<< "$azure_log_analytics_workspace_key" base64 -d | xxd -ps -c 256)" -binary |
         base64 -w 0
 )"
 
@@ -40,4 +52,4 @@ curl \
     -H 'time-generated-field: TimeCollected' \
     -H "x-ms-date: $x_ms_date" \
     --data-raw "$body" \
-    "https://${AZURE_LOG_ANALYTICS_WORKSPACE_ID}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01"
+    "https://${azure_log_analytics_workspace_id}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01"

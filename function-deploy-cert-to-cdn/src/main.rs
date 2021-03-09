@@ -10,21 +10,25 @@ function_worker::run! {
 	"deploy-cert-to-cdn" => deploy_cert_to_cdn_main,
 }
 
-async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> {
+async fn deploy_cert_to_cdn_main(
+	azure_subscription_id: std::rc::Rc<str>,
+	azure_auth: std::rc::Rc<azure::Auth>,
+	settings: std::rc::Rc<Settings>,
+) -> anyhow::Result<()> {
 	let user_agent: hyper::header::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
-		&settings.azure_auth,
+		&azure_auth,
 		user_agent.clone(),
 	).context("could not initialize Azure KeyVault API client")?;
 
 	let azure_management_client = azure::management::Client::new(
-		&settings.azure_subscription_id,
+		&azure_subscription_id,
 		&settings.azure_cdn_resource_group_name,
-		&settings.azure_auth,
+		&azure_auth,
 		user_agent,
 	).context("could not initialize Azure Management API client")?;
 
@@ -56,7 +60,7 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 		};
 		if let Some((expected_cdn_custom_domain_secret_version, actual_cdn_custom_domain_secret)) = result {
 			(azure::management::cdn::CustomDomainKeyVaultSecret {
-				subscription_id: (&*settings.azure_subscription_id).into(),
+				subscription_id: (&*azure_subscription_id).into(),
 				resource_group: (&*settings.azure_key_vault_resource_group_name).into(),
 				key_vault_name: (&*settings.azure_key_vault_name).into(),
 				secret_name: (&*settings.azure_key_vault_certificate_name).into(),
@@ -94,9 +98,6 @@ async fn deploy_cert_to_cdn_main(settings: std::rc::Rc<Settings>) -> anyhow::Res
 
 #[derive(serde::Deserialize)]
 struct Settings {
-	/// The Azure subscription ID
-	azure_subscription_id: String,
-
 	/// The name of the Azure resource group that contains the Azure CDN
 	azure_cdn_resource_group_name: String,
 
@@ -119,12 +120,4 @@ struct Settings {
 	///
 	/// The new certificate will be uploaded here, and used for the custom domain.
 	azure_key_vault_certificate_name: String,
-
-	/// The Azure authentication credentials.
-	///
-	/// Defaults to parsing `azure::Auth::ManagedIdentity` from the environment.
-	/// If not found, then debug builds fall back to parsing a service principal from this JSON object's
-	/// `{ azure_client_id: String, azure_client_secret: String, azure_tenant_id: String }` properties.
-	#[serde(flatten)]
-	azure_auth: azure::Auth,
 }

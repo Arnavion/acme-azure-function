@@ -47,10 +47,13 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     export AZURE_KEY_VAULT_CERTIFICATE_NAME='star-arnavion-dev'
 
     # The resource group that will host the Log Analytics workspace.
-    export AZURE_MONITOR_RESOURCE_GROUP_NAME='logs'
+    export AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME='logs'
 
     # The Log Analytics workspace.
     export AZURE_LOG_ANALYTICS_WORKSPACE_NAME='arnavion-log-analytics'
+
+    # The name of the Azure role used for the Function app.
+    export AZURE_ACME_ROLE_NAME='functionapp-acme'
 
 
     export AZURE_ACCOUNT="$(az account show)"
@@ -66,7 +69,8 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 
     # Create a KeyVault.
     az keyvault create \
-        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME"
+        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME" \
+        --enable-rbac-authorization
 
 
     # Create a DNS zone.
@@ -95,46 +99,15 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         --assign-identity '[system]' \
         --disable-app-insights
 
-    function_app_identity="$(
-        az functionapp identity show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" --query principalId --output tsv
-    )"
-
-
-    # Give the Function app access to the DNS zone.
-    az role assignment create \
-        --role 'DNS Zone Contributor' \
-        --assignee "$function_app_identity" \
-        --scope "$(
-            az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv
-        )"
-
-
-    # Give the Function app access to the KeyVault.
-    az keyvault set-policy --name "$AZURE_KEY_VAULT_NAME" \
-        --object-id "$function_app_identity" \
-        --certificate-permissions 'create' 'get' \
-        --key-permissions 'create' 'get' 'sign'
-
 
     # Create a resource group for the Log Analytics workspace.
-    az group create --name "$AZURE_MONITOR_RESOURCE_GROUP_NAME"
+    az group create --name "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME"
 
 
     # Create a Log Analytics workspace.
     az monitor log-analytics workspace create \
-        --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
+        --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME"
 
-    export AZURE_LOG_ANALYTICS_WORKSPACE_ID="$(
-        az monitor log-analytics workspace show \
-            --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
-            --query customerId --output tsv
-    )"
-
-    export AZURE_LOG_ANALYTICS_WORKSPACE_KEY="$(
-        az monitor log-analytics workspace get-shared-keys \
-            --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
-            --query primarySharedKey --output tsv
-    )"
 
     # Configure the Function app to log to the Log Analytics workspace.
     az monitor diagnostic-settings create \
@@ -146,7 +119,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "FunctionAppLogs", "enabled": true }]'
@@ -162,10 +135,60 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
         )" \
         --workspace "$(
             az monitor log-analytics workspace show \
-                --resource-group "$AZURE_MONITOR_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
                 --query id --output tsv
         )" \
         --logs '[{ "category": "AuditEvent", "enabled": true }]'
+
+
+    # Create a custom role for the Function app to access the DNS zone, KeyVault and Log Analytics Workspace.
+    az role definition create --role-definition "$(
+        jq --null-input \
+            --arg 'AZURE_ROLE_NAME' "$AZURE_ACME_ROLE_NAME" \
+            --arg 'AZURE_SUBSCRIPTION_ID' "$AZURE_SUBSCRIPTION_ID" \
+            '{
+                "Name": $AZURE_ROLE_NAME,
+                "AssignableScopes": [
+                    "/subscriptions/\($AZURE_SUBSCRIPTION_ID)"
+                ],
+                "Actions": [
+                    "Microsoft.Network/dnszones/TXT/delete",
+                    "Microsoft.Network/dnszones/TXT/write",
+                    "Microsoft.OperationalInsights/workspaces/read",
+                    "Microsoft.OperationalInsights/workspaces/sharedKeys/action"
+                ],
+                "DataActions": [
+                    "Microsoft.KeyVault/vaults/certificates/create/action",
+                    "Microsoft.KeyVault/vaults/certificates/read",
+                    "Microsoft.KeyVault/vaults/keys/create/action",
+                    "Microsoft.KeyVault/vaults/keys/read",
+                    "Microsoft.KeyVault/vaults/keys/sign/action"
+                ],
+            }'
+    )"
+
+
+    # Apply the role to the Function app
+    function_app_identity="$(
+        az functionapp identity show \
+            --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" \
+            --query principalId --output tsv
+    )"
+    for scope in \
+        "$(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
+        "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/keys/$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
+        "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
+        "$(
+            az monitor log-analytics workspace show \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --query id --output tsv
+        )"
+    do
+        az role assignment create \
+            --role "$AZURE_ACME_ROLE_NAME" \
+            --assignee "$function_app_identity" \
+            --scope "$scope"
+    done
     ```
 
 1. Create an NS record with your DNS registrar for the dns-01 challenge.
@@ -206,21 +229,21 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Grant the SP access to the Azure resources.
 
     ```sh
-    # DNS
-    az role assignment create \
-        --role 'DNS Zone Contributor' \
-        --assignee "$AZURE_ACME_SP_NAME" \
-        --scope "$(
-            az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv
+    for scope in \
+        "$(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
+        "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/keys/$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
+        "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
+        "$(
+            az monitor log-analytics workspace show \
+                --resource-group "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" --workspace-name "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+                --query id --output tsv
         )"
-
-
-    # KeyVault
-    az keyvault set-policy \
-        --name "$AZURE_KEY_VAULT_NAME" \
-        --spn "$AZURE_ACME_SP_NAME" \
-        --certificate-permissions 'create' 'get' \
-        --key-permissions 'create' 'get' 'sign'
+    do
+        az role assignment create \
+            --role "$AZURE_ACME_ROLE_NAME" \
+            --assignee "$AZURE_ACME_SP_NAME" \
+            --scope "$scope"
+    done
     ```
 
 1. Build the Function app and run it in the Functions host.

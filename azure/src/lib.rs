@@ -15,6 +15,7 @@
 	feature = "dns",
 	feature = "key_vault_cert",
 	feature = "key_vault_key",
+	feature = "log_analytics",
 ))]
 mod auth;
 #[cfg(any(
@@ -22,14 +23,12 @@ mod auth;
 	feature = "dns",
 	feature = "key_vault_cert",
 	feature = "key_vault_key",
+	feature = "log_analytics",
 ))]
 pub use auth::Auth;
 
 #[cfg(any(feature = "key_vault_cert", feature = "key_vault_key"))]
 pub mod key_vault;
 
-#[cfg(feature = "log_analytics")]
-pub mod log_analytics;
-
-#[cfg(any(feature = "cdn", feature = "dns"))]
+#[cfg(any(feature = "cdn", feature = "dns", feature = "log_analytics"))]
 pub mod management;

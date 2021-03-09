@@ -14,14 +14,18 @@ function_worker::run! {
 	"renew-cert" => renew_cert_main,
 }
 
-async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> {
+async fn renew_cert_main(
+	azure_subscription_id: std::rc::Rc<str>,
+	azure_auth: std::rc::Rc<azure::Auth>,
+	settings: std::rc::Rc<Settings>,
+) -> anyhow::Result<()> {
 	let user_agent: hyper::header::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
-		&settings.azure_auth,
+		&azure_auth,
 		user_agent.clone(),
 	).context("could not initialize Azure KeyVault API client")?;
 
@@ -70,9 +74,9 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 
 	let certificates = {
 		let azure_management_client = azure::management::Client::new(
-			&settings.azure_subscription_id,
+			&azure_subscription_id,
 			&settings.azure_resource_group_name,
-			&settings.azure_auth,
+			&azure_auth,
 			user_agent,
 		).context("could not initialize Azure Management API client")?;
 
@@ -158,9 +162,6 @@ async fn renew_cert_main(settings: std::rc::Rc<Settings>) -> anyhow::Result<()> 
 
 #[derive(serde::Deserialize)]
 struct Settings {
-	/// The Azure subscription ID
-	azure_subscription_id: String,
-
 	/// The directory URL of the ACME server
 	#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
 	acme_directory_url: hyper::Uri,
@@ -199,14 +200,6 @@ struct Settings {
 
 	/// The domain name to request the TLS certificate for
 	top_level_domain_name: String,
-
-	/// The Azure authentication credentials.
-	///
-	/// Defaults to parsing `azure::Auth::ManagedIdentity` from the environment.
-	/// If not found, then debug builds fall back to parsing a service principal from this JSON object's
-	/// `{ azure_client_id: String, azure_client_secret: String, azure_tenant_id: String }` properties.
-	#[serde(flatten)]
-	azure_auth: azure::Auth,
 }
 
 fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, azure::key_vault::EcCurve), D::Error>

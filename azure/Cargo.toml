@@ -42,10 +42,10 @@ once_cell2 = { path = "../once_cell2", optional = true }
 
 
 [features]
-cdn = ["form_urlencoded", "serde_json", "tokio", "_common"]
-dns = ["form_urlencoded", "serde_json", "tokio", "_common"]
-key_vault_cert = ["base64", "chrono", "form_urlencoded", "serde_json", "tokio", "_common"]
-key_vault_key = ["form_urlencoded", "serde_json", "tokio", "acme", "_common"]
+cdn = ["_common"]
+dns = ["_common"]
+key_vault_cert = ["base64", "chrono", "_common"]
+key_vault_key = ["acme", "_common"]
 log_analytics = ["base64", "chrono", "chrono/clock", "futures-util", "hmac", "hyper/stream", "log", "sha2", "_common"]
 
-_common = ["anyhow", "hyper", "serde", "http-common", "log2", "once_cell2"]
+_common = ["anyhow", "form_urlencoded", "hyper", "serde", "serde_json", "tokio", "http-common", "log2", "once_cell2"]

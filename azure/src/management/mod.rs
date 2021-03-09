@@ -6,6 +6,9 @@ pub mod cdn;
 #[cfg(feature = "dns")]
 mod dns;
 
+#[cfg(feature = "log_analytics")]
+pub mod log_analytics;
+
 pub struct Client<'a> {
 	subscription_id: &'a str,
 	resource_group_name: &'a str,

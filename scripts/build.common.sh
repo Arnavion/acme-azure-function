@@ -62,6 +62,19 @@ esac
 
 ./scripts/docker.sh
 
+secret_settings="$(
+    jq --null-input --sort-keys --compact-output \
+        --argjson SECRET_SETTINGS "$secret_settings" \
+        --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
+        --arg AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" \
+        --arg AZURE_LOG_ANALYTICS_WORKSPACE_NAME "$AZURE_LOG_ANALYTICS_WORKSPACE_NAME" \
+        '$SECRET_SETTINGS + {
+            "azure_subscription_id": $AZURE_SUBSCRIPTION_ID,
+            "azure_log_analytics_workspace_resource_group_name": $AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME,
+            "azure_log_analytics_workspace_name": $AZURE_LOG_ANALYTICS_WORKSPACE_NAME,
+        }'
+)"
+
 if [[ "$target" == debug* ]]; then
     secret_settings="$(
         jq --null-input --sort-keys --compact-output \
@@ -161,7 +174,7 @@ esac
 case "$target" in
     debug-*)
         docker run \
-            -t \
+            -it \
             --rm \
             -v "$PWD:$PWD" \
             -v "$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
@@ -185,7 +198,7 @@ case "$target" in
 
     'publish')
         docker run \
-            -t \
+            -it \
             --rm \
             -v "$PWD:$PWD" \
             -v "$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \

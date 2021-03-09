@@ -22,11 +22,11 @@ macro_rules! run {
 				.enable_time()
 				.build()?;
 			let local_set = $crate::_reexports::tokio::task::LocalSet::new();
-			let () = local_set.block_on(&runtime, $crate::_run(|req, settings| async move {
+			let () = local_set.block_on(&runtime, $crate::_run(|req, azure_subscription_id, azure_auth, settings| async move {
 				let path = req.uri().path();
 				if let Some(path) = path.strip_prefix('/') {
 					Ok(match path {
-						$($name => Some($f(settings).await?) ,)*
+						$($name => Some($f(azure_subscription_id, azure_auth, settings).await?) ,)*
 						_ => None,
 					})
 				}
@@ -46,7 +46,12 @@ pub mod _reexports {
 
 #[doc(hidden)]
 pub async fn _run<TSettings, TOutput>(
-	run_function: fn(req: hyper::Request<hyper::Body>, settings: std::rc::Rc<TSettings>) -> TOutput,
+	run_function: fn(
+		req: hyper::Request<hyper::Body>,
+		azure_subscription_id: std::rc::Rc<str>,
+		azure_auth: std::rc::Rc<azure::Auth>,
+		settings: std::rc::Rc<TSettings>,
+	) -> TOutput,
 ) -> anyhow::Result<()>
 where
 	TSettings: serde::de::DeserializeOwned + 'static,
@@ -58,23 +63,33 @@ where
 		log::set_max_level(log::LevelFilter::Info);
 	}
 
-	let (log_sender, settings) = {
+	let (log_sender, azure_subscription_id, azure_auth, settings) = {
 		let settings = std::env::var("SECRET_SETTINGS").context("could not read SECRET_SETTINGS env var")?;
 		let LoggerSettings::<TSettings> {
-			azure_log_analytics_workspace_id,
-			azure_log_analytics_workspace_signer,
+			azure_subscription_id,
+			azure_auth,
+			azure_log_analytics_workspace_resource_group_name,
+			azure_log_analytics_workspace_name,
 			rest,
 		} = serde_json::from_str(&settings).context("could not read SECRET_SETTINGS env var")?;
 
 		let log_sender =
-			azure::log_analytics::LogSender::new(
-				azure_log_analytics_workspace_id,
-				azure_log_analytics_workspace_signer,
+			azure::management::Client::new(
+				&azure_subscription_id,
+				&azure_log_analytics_workspace_resource_group_name,
+				&azure_auth,
 				concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 					.parse().expect("hard-coded user agent is valid HeaderValue"),
-			).context("could not create LogAnalytics log sender")?;
+			).context("could not initialize Azure Management API client")?
+			.log_analytics_log_sender(&azure_log_analytics_workspace_name)
+			.await.context("could not create LogAnalytics log sender")?;
 
-		(std::rc::Rc::new(log_sender), std::rc::Rc::new(rest))
+		(
+			std::rc::Rc::new(log_sender),
+			azure_subscription_id,
+			azure_auth,
+			rest,
+		)
 	};
 
 	let port = match std::env::var("FUNCTIONS_CUSTOMHANDLER_PORT") {
@@ -88,6 +103,8 @@ where
 		.executor(LocalSetExecutor)
 		.serve(hyper::service::make_service_fn(|_| {
 			let log_sender = log_sender.clone();
+			let azure_subscription_id = azure_subscription_id.clone();
+			let azure_auth = azure_auth.clone();
 			let settings = settings.clone();
 
 			std::future::ready(Ok::<_, std::convert::Infallible>(hyper::service::service_fn(move |mut req| {
@@ -120,6 +137,8 @@ where
 					}
 				};
 
+				let azure_subscription_id = azure_subscription_id.clone();
+				let azure_auth = azure_auth.clone();
 				let settings = settings.clone();
 
 				async move {
@@ -133,7 +152,7 @@ where
 
 						let res: hyper::Response<hyper::Body> =
 							if req.method() == hyper::Method::POST {
-								let output = run_function(req, settings).await;
+								let output = run_function(req, azure_subscription_id, azure_auth, settings).await;
 								match output {
 									Ok(Some(())) => {
 										let mut res = hyper::Response::new(
@@ -184,36 +203,25 @@ where
 
 #[derive(serde::Deserialize)]
 struct LoggerSettings<TSettings> {
-	/// The Azure Log Analytics workspace's customer ID
-	azure_log_analytics_workspace_id: String,
+	/// The Azure subscription ID.
+	azure_subscription_id: std::rc::Rc<str>,
 
-	/// The Azure Log Analytics workspace's shared key
-	#[serde(deserialize_with = "deserialize_signer")]
-	#[serde(rename = "azure_log_analytics_workspace_key")]
-	azure_log_analytics_workspace_signer: hmac::Hmac<sha2::Sha256>,
+	/// The Azure authentication credentials.
+	///
+	/// Defaults to parsing `azure::Auth::ManagedIdentity` from the environment.
+	/// If not found, then debug builds fall back to parsing a service principal from this JSON object's
+	/// `{ azure_client_id: String, azure_client_secret: String, azure_tenant_id: String }` properties.
+	#[serde(flatten)]
+	azure_auth: std::rc::Rc<azure::Auth>,
+
+	/// The name of the Azure resource group that contains the Azure Log Analytics workspace.
+	azure_log_analytics_workspace_resource_group_name: String,
+
+	/// The name of the Azure Log Analytics workspace.
+	azure_log_analytics_workspace_name: String,
 
 	#[serde(flatten)]
-	rest: TSettings,
-}
-
-fn deserialize_signer<'de, D>(deserializer: D) -> Result<hmac::Hmac<sha2::Sha256>, D::Error> where D: serde::Deserializer<'de> {
-	struct Visitor;
-
-	impl serde::de::Visitor<'_> for Visitor {
-		type Value = hmac::Hmac<sha2::Sha256>;
-
-		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-			f.write_str("base64-encoded string")
-		}
-
-		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
-			let key = base64::decode(s).map_err(serde::de::Error::custom)?;
-			let signer = hmac::NewMac::new_varkey(&key).expect("cannot fail to create hmac::Hmac<sha2::Sha256>");
-			Ok(signer)
-		}
-	}
-
-	deserializer.deserialize_str(Visitor)
+	rest: std::rc::Rc<TSettings>,
 }
 
 struct GlobalLogger;
