@@ -15,14 +15,16 @@ pub struct Client<'a> {
 	auth: &'a crate::Auth,
 
 	client: http_common::Client,
-	cached_authorization: tokio::sync::RwLock<Option<hyper::header::HeaderValue>>,
+	cached_authorization: tokio::sync::RwLock<Option<http::HeaderValue>>,
+	logger: &'a log2::Logger,
 }
 
 impl<'a> Client<'a> {
 	pub fn new(
 		key_vault_name: &'a str,
 		auth: &'a crate::Auth,
-		user_agent: hyper::header::HeaderValue,
+		user_agent: http::HeaderValue,
+		logger: &'a log2::Logger,
 	) -> anyhow::Result<Self> {
 		Ok(Client {
 			key_vault_name,
@@ -30,10 +32,11 @@ impl<'a> Client<'a> {
 
 			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
 			cached_authorization: Default::default(),
+			logger,
 		})
 	}
 
-	async fn authorization(&self) -> anyhow::Result<hyper::header::HeaderValue> {
+	async fn authorization(&self) -> anyhow::Result<http::HeaderValue> {
 		{
 			let cached_authorization = self.cached_authorization.read().await;
 			if let Some(authorization) = &*cached_authorization {
@@ -49,7 +52,7 @@ impl<'a> Client<'a> {
 				const RESOURCE: &str = "https://vault.azure.net";
 
 				let authorization =
-					self.auth.get_authorization(&self.client, RESOURCE).await
+					self.auth.get_authorization(&self.client, RESOURCE, self.logger).await
 					.context("could not get KeyVault API authorization")?;
 				*cached_authorization = Some(authorization.clone());
 				Ok(authorization)
@@ -58,7 +61,7 @@ impl<'a> Client<'a> {
 	}
 
 	fn request_parameters(&self, relative_url: std::fmt::Arguments<'_>) ->
-		impl std::future::Future<Output = anyhow::Result<(String, hyper::header::HeaderValue)>> + '_
+		impl std::future::Future<Output = anyhow::Result<(String, http::HeaderValue)>> + '_
 	{
 		let url = format!("https://{}.vault.azure.net{}", self.key_vault_name, relative_url);
 		async move {

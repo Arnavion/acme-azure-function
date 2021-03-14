@@ -11,11 +11,12 @@ function_worker::run! {
 }
 
 async fn deploy_cert_to_cdn_main(
-	azure_subscription_id: std::rc::Rc<str>,
-	azure_auth: std::rc::Rc<azure::Auth>,
-	settings: std::rc::Rc<Settings>,
+	azure_subscription_id: &str,
+	azure_auth: &azure::Auth,
+	settings: &Settings<'_>,
+	logger: &log2::Logger,
 ) -> anyhow::Result<()> {
-	let user_agent: hyper::header::HeaderValue =
+	let user_agent: http::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 
@@ -23,6 +24,7 @@ async fn deploy_cert_to_cdn_main(
 		&settings.azure_key_vault_name,
 		&azure_auth,
 		user_agent.clone(),
+		logger,
 	).context("could not initialize Azure KeyVault API client")?;
 
 	let azure_management_client = azure::management::Client::new(
@@ -30,6 +32,7 @@ async fn deploy_cert_to_cdn_main(
 		&settings.azure_cdn_resource_group_name,
 		&azure_auth,
 		user_agent,
+		logger,
 	).context("could not initialize Azure Management API client")?;
 
 	let (expected_cdn_custom_domain_secret, actual_cdn_custom_domain_secret) = {
@@ -68,21 +71,21 @@ async fn deploy_cert_to_cdn_main(
 			}, actual_cdn_custom_domain_secret)
 		}
 		else {
-			log2::report_message("Nothing to do.");
+			logger.report_message("Nothing to do.");
 			return Ok(());
 		}
 	};
 
 	match actual_cdn_custom_domain_secret {
 		Some(azure::management::cdn::CustomDomainSecret::KeyVault(actual_cdn_custom_domain_secret)) if expected_cdn_custom_domain_secret == actual_cdn_custom_domain_secret => {
-			log2::report_message("CDN is up-to-date.");
+			logger.report_message("CDN is up-to-date.");
 			return Ok(());
 		},
 
 		Some(azure::management::cdn::CustomDomainSecret::Cdn) =>
-			log2::report_message("CDN-managed cert will be replaced by user-managed cert."),
+			logger.report_message("CDN-managed cert will be replaced by user-managed cert."),
 
-		_ => log2::report_message("User-managed cert will be deployed."),
+		_ => logger.report_message("User-managed cert will be deployed."),
 	}
 
 	let () =
@@ -97,27 +100,34 @@ async fn deploy_cert_to_cdn_main(
 }
 
 #[derive(serde::Deserialize)]
-struct Settings {
+struct Settings<'a> {
 	/// The name of the Azure resource group that contains the Azure CDN
-	azure_cdn_resource_group_name: String,
+	#[serde(borrow)]
+	azure_cdn_resource_group_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the Azure CDN profile
-	azure_cdn_profile_name: String,
+	#[serde(borrow)]
+	azure_cdn_profile_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the Azure CDN endpoint in the Azure CDN profile
-	azure_cdn_endpoint_name: String,
+	#[serde(borrow)]
+	azure_cdn_endpoint_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the custom domain resource in the Azure CDN endpoint
-	azure_cdn_custom_domain_name: String,
+	#[serde(borrow)]
+	azure_cdn_custom_domain_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the Azure resource group that contains the Azure KeyVault
-	azure_key_vault_resource_group_name: String,
+	#[serde(borrow)]
+	azure_key_vault_resource_group_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the Azure KeyVault
-	azure_key_vault_name: String,
+	#[serde(borrow)]
+	azure_key_vault_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the certificate in the Azure KeyVault that contains the TLS certificate.
 	///
 	/// The new certificate will be uploaded here, and used for the custom domain.
-	azure_key_vault_certificate_name: String,
+	#[serde(borrow)]
+	azure_key_vault_certificate_name: std::borrow::Cow<'a, str>,
 }

@@ -15,11 +15,12 @@ function_worker::run! {
 }
 
 async fn renew_cert_main(
-	azure_subscription_id: std::rc::Rc<str>,
-	azure_auth: std::rc::Rc<azure::Auth>,
-	settings: std::rc::Rc<Settings>,
+	azure_subscription_id: &str,
+	azure_auth: &azure::Auth,
+	settings: &Settings<'_>,
+	logger: &log2::Logger,
 ) -> anyhow::Result<()> {
-	let user_agent: hyper::header::HeaderValue =
+	let user_agent: http::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 
@@ -27,6 +28,7 @@ async fn renew_cert_main(
 		&settings.azure_key_vault_name,
 		&azure_auth,
 		user_agent.clone(),
+		logger,
 	).context("could not initialize Azure KeyVault API client")?;
 
 	let need_new_certificate = {
@@ -36,7 +38,7 @@ async fn renew_cert_main(
 		need_new_certificate
 	};
 	if !need_new_certificate {
-		log2::report_state(
+		logger.report_state(
 			"azure/key_vault/certificate",
 			(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
 			"does not need to be renewed",
@@ -66,6 +68,7 @@ async fn renew_cert_main(
 		&settings.acme_contact_url,
 		&account_key,
 		user_agent.clone(),
+		logger,
 	).await.context("could not initialize ACME API client")?;
 
 	let domain_name = format!("*.{}", settings.top_level_domain_name);
@@ -78,6 +81,7 @@ async fn renew_cert_main(
 			&settings.azure_resource_group_name,
 			&azure_auth,
 			user_agent,
+			logger,
 		).context("could not initialize Azure Management API client")?;
 
 		let certificate = loop {
@@ -151,7 +155,7 @@ async fn renew_cert_main(
 			&certificates,
 		).await?;
 
-	log2::report_state(
+	logger.report_state(
 		"azure/key_vault/certificate",
 		(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
 		"renewed",
@@ -161,45 +165,46 @@ async fn renew_cert_main(
 }
 
 #[derive(serde::Deserialize)]
-struct Settings {
+struct Settings<'a> {
 	/// The directory URL of the ACME server
-	#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
-	acme_directory_url: hyper::Uri,
+	#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+	acme_directory_url: http::Uri,
 
 	/// The contact URL of the ACME account
-	acme_contact_url: String,
+	#[serde(borrow)]
+	acme_contact_url: std::borrow::Cow<'a, str>,
 
 	/// The name of the Azure resource group
-	azure_resource_group_name: String,
+	#[serde(borrow)]
+	azure_resource_group_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the Azure KeyVault
-	azure_key_vault_name: String,
+	#[serde(borrow)]
+	azure_key_vault_name: std::borrow::Cow<'a, str>,
 
 	/// The name of the KeyVault secret that contains the ACME account key.
 	///
 	/// A new key will be generated and uploaded if this secret does not already exist.
-	azure_key_vault_acme_account_key_name: String,
+	#[serde(borrow)]
+	azure_key_vault_acme_account_key_name: std::borrow::Cow<'a, str>,
 
 	/// The parameters used for the private key of the ACME account key if it needs to be created.
 	#[serde(deserialize_with = "deserialize_key_vault_acme_account_key_type")]
 	azure_key_vault_acme_account_key_type: (azure::key_vault::EcKty, azure::key_vault::EcCurve),
 
-	// /// The name of the KeyVault secret that contains the ACME account key.
-	// ///
-	// /// A new key will be generated and uploaded if this secret does not already exist.
-	// azure_key_vault_acme_account_key_name: String,
-
 	/// The name of the certificate in the Azure KeyVault that contains the TLS certificate.
 	///
 	/// The new certificate will be uploaded here, and used for the custom domain.
-	azure_key_vault_certificate_name: String,
+	#[serde(borrow)]
+	azure_key_vault_certificate_name: std::borrow::Cow<'a, str>,
 
 	/// The parameters used for the private key of the new TLS certificate.
 	#[serde(deserialize_with = "deserialize_key_vault_certificate_key_type")]
 	azure_key_vault_certificate_key_type: azure::key_vault::CreateCsrKeyType,
 
 	/// The domain name to request the TLS certificate for
-	top_level_domain_name: String,
+	#[serde(borrow)]
+	top_level_domain_name: std::borrow::Cow<'a, str>,
 }
 
 fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, azure::key_vault::EcCurve), D::Error>

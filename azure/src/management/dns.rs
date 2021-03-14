@@ -23,19 +23,19 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					hyper::StatusCode::OK |
-					hyper::StatusCode::CREATED => Some(Response),
+					http::StatusCode::OK |
+					http::StatusCode::CREATED => Some(Response),
 					_ => None,
 				})
 			}
 		}
 
-		let () = log2::report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
+		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
 			let (url, authorization) =
 				self.request_parameters(format_args!(
 					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
@@ -45,7 +45,7 @@ impl<'a> super::Client<'a> {
 
 			let _: Response =
 				self.client.request(
-					hyper::Method::PUT,
+					http::Method::PUT,
 					url,
 					authorization,
 					Some(&Request {
@@ -71,20 +71,20 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					hyper::StatusCode::ACCEPTED |
-					hyper::StatusCode::NOT_FOUND |
-					hyper::StatusCode::OK => Some(Response),
+					http::StatusCode::ACCEPTED |
+					http::StatusCode::NOT_FOUND |
+					http::StatusCode::OK => Some(Response),
 					_ => None,
 				})
 			}
 		}
 
-		let () = log2::report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
+		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
 			let (url, authorization) =
 				self.request_parameters(format_args!(
 					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
@@ -94,7 +94,7 @@ impl<'a> super::Client<'a> {
 
 			let _: Response =
 				self.client.request(
-					hyper::Method::DELETE,
+					http::Method::DELETE,
 					url,
 					authorization,
 					None::<&()>,

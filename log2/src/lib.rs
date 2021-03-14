@@ -2,61 +2,121 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
 	clippy::let_unit_value,
+	clippy::must_use_candidate,
 	clippy::shadow_unrelated,
 )]
 
 mod object_id;
 pub use object_id::ObjectId;
 
-pub fn report_error(err: &anyhow::Error) {
-	report_inner::<&str, &str>(Report::Error { err });
+pub struct Logger {
+	inner: std::cell::RefCell<LoggerInner>,
 }
 
-pub fn report_message<D>(message: D) where D: Copy + std::fmt::Display + serde::Serialize {
-	report_inner::<&str, _>(Report::Message { message });
-}
-
-pub async fn report_operation<IID, D, F, ID>(object_type: &str, object_id: IID, operation: ScopedObjectOperation<D>, f: F) -> F::Output
-where
-	IID: Into<ObjectId<ID>>,
-	ObjectId<ID>: Copy + std::fmt::Display,
-	D: Copy + std::fmt::Display + serde::Serialize,
-	F: std::future::Future,
-	F::Output: std::fmt::Debug,
-{
-	let object_id = object_id.into();
-
-	match operation {
-		ScopedObjectOperation::Create { value } => {
-			report_inner::<_, D>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateStart { value } });
-			let result = f.await;
-			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateEnd });
-			result
-		},
-
-		ScopedObjectOperation::Delete => {
-			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteStart });
-			let result = f.await;
-			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteEnd });
-			result
-		},
-
-		ScopedObjectOperation::Get => {
-			report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetStart });
-			let result = f.await;
-			report_inner(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetEnd { value: format_args!("{:?}", result) } });
-			result
-		},
+impl Logger {
+	pub fn new(function_invocation_id: Option<String>, persist_records: bool) -> Self {
+		Logger {
+			inner: std::cell::RefCell::new(LoggerInner {
+				function_invocation_id,
+				sequence_number: 0,
+				records: persist_records.then(Vec::new),
+			}),
+		}
 	}
-}
 
-pub fn report_state<IID, D, ID>(object_type: &str, object_id: IID, state: D)
-where
-	IID: Into<ObjectId<ID>>,
-	ObjectId<ID>: Copy + std::fmt::Display,
-	D: Copy + std::fmt::Display + serde::Serialize,
-{
-	report_inner(Report::ObjectState { object_type, object_id: object_id.into(), state });
+	pub fn report_error(&self, err: &anyhow::Error) {
+		self.report_inner::<&str, &str>(Report::Error { err });
+	}
+
+	pub fn report_message<D>(&self, message: D) where D: Copy + std::fmt::Display + serde::Serialize {
+		self.report_inner::<&str, _>(Report::Message { message });
+	}
+
+	pub async fn report_operation<IID, D, F, ID>(&self, object_type: &str, object_id: IID, operation: ScopedObjectOperation<D>, f: F) -> F::Output
+	where
+		IID: Into<ObjectId<ID>>,
+		ObjectId<ID>: Copy + std::fmt::Display,
+		D: Copy + std::fmt::Display + serde::Serialize,
+		F: std::future::Future,
+		F::Output: std::fmt::Debug,
+	{
+		let object_id = object_id.into();
+
+		match operation {
+			ScopedObjectOperation::Create { value } => {
+				self.report_inner::<_, D>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateStart { value } });
+				let result = f.await;
+				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateEnd });
+				result
+			},
+
+			ScopedObjectOperation::Delete => {
+				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteStart });
+				let result = f.await;
+				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteEnd });
+				result
+			},
+
+			ScopedObjectOperation::Get => {
+				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetStart });
+				let result = f.await;
+				self.report_inner(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetEnd { value: format_args!("{:?}", result) } });
+				result
+			},
+		}
+	}
+
+	pub fn report_state<IID, D, ID>(&self, object_type: &str, object_id: IID, state: D)
+	where
+		IID: Into<ObjectId<ID>>,
+		ObjectId<ID>: Copy + std::fmt::Display,
+		D: Copy + std::fmt::Display + serde::Serialize,
+	{
+		self.report_inner(Report::ObjectState { object_type, object_id: object_id.into(), state });
+	}
+
+	pub fn take_records(&self) -> Vec<u8> {
+		let mut inner = self.inner.borrow_mut();
+		inner.records.as_mut().map(std::mem::take).unwrap_or_default()
+	}
+
+	fn report_inner<ID, D>(&self, report: Report<'_, ID, D>)
+	where
+		for<'a> Record<'a, ID, D>: serde::Serialize,
+		for<'a> Report<'a, ID, D>: Copy + std::fmt::Debug,
+	{
+		let timestamp = chrono::Utc::now();
+
+		let mut inner = self.inner.borrow_mut();
+		let LoggerInner { function_invocation_id, sequence_number, records } = &mut *inner;
+
+		*sequence_number += 1;
+
+		if let Some(records) = records {
+			if !records.is_empty() {
+				records.push(b',');
+			}
+
+			let mut serializer = serde_json::Serializer::new(records);
+			let () =
+				serde::Serialize::serialize(
+					&Record {
+						timestamp,
+						function_invocation_id: function_invocation_id.as_deref(),
+						sequence_number: *sequence_number,
+						report,
+					},
+					&mut serializer,
+				).expect("could not serialize log record");
+		}
+
+		log::log!(
+			if matches!(report, Report::Error { .. }) { log::Level::Error } else { log::Level::Info },
+			"[{}] {:?}",
+			timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+			report,
+		);
+	}
 }
 
 #[derive(Clone, Copy)]
@@ -66,82 +126,8 @@ pub enum ScopedObjectOperation<D = &'static str> {
 	Get,
 }
 
-pub async fn with_task_local_logger<LS, LSF, F>(
-	function_invocation_id: Option<hyper::header::HeaderValue>,
-	log_sender: LS,
-	f: F,
-) -> F::Output
-where
-	LS: FnOnce(&'static tokio::task::LocalKey<TaskLocalLogger>, tokio::sync::oneshot::Receiver<()>) -> LSF,
-	LSF: std::future::Future<Output = anyhow::Result<()>>,
-	F: std::future::Future,
-{
-	futures_util::pin_mut!(f);
-
-	let function_invocation_id =
-		function_invocation_id.as_ref()
-		.and_then(|function_invocation_id| function_invocation_id.to_str().ok())
-		.map(|function_invocation_id| function_invocation_id.into());
-
-	let logger = TaskLocalLogger {
-		inner: std::sync::Mutex::new(TaskLocalLoggerInner {
-			function_invocation_id,
-			sequence_number: 0,
-			records: vec![],
-		}),
-	};
-
-	let result = LOGGER.scope(logger, async move {
-		let (stop_log_sender_tx, stop_log_sender_rx) = tokio::sync::oneshot::channel();
-
-		let log_sender = log_sender(&LOGGER, stop_log_sender_rx);
-		futures_util::pin_mut!(log_sender);
-
-		match futures_util::future::select(f, log_sender).await {
-			futures_util::future::Either::Left((f, log_sender)) => {
-				let _ = stop_log_sender_tx.send(());
-
-				match log_sender.await {
-					Ok(()) => ScopeResult::Ok(f),
-					Err(err) => ScopeResult::ErrReady(f, err),
-				}
-			},
-
-			futures_util::future::Either::Right((Ok(()), _)) =>
-				unreachable!("log sender completed before scoped future"),
-
-			futures_util::future::Either::Right((Err(err), f)) =>
-				ScopeResult::ErrPending(f, err),
-		}
-	}).await;
-
-	match result {
-		ScopeResult::Ok(f) => f,
-		ScopeResult::ErrPending(f, err) => {
-			log::error!("{:?}", err.context("log sender failed"));
-			// Run the rest of the future without the logger
-			f.await
-		},
-		ScopeResult::ErrReady(f, err) => {
-			log::error!("{:?}", err.context("log sender failed"));
-			f
-		},
-	}
-}
-
-pub struct TaskLocalLogger {
-	inner: std::sync::Mutex<TaskLocalLoggerInner>,
-}
-
-impl TaskLocalLogger {
-	pub fn take_records(&self) -> Vec<u8> {
-		let mut inner = self.inner.lock().expect("logger mutex poisoned");
-		std::mem::take(&mut inner.records)
-	}
-}
-
-pub static TIME_GENERATED_FIELD: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
-	once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("TimeCollected"));
+pub static TIME_GENERATED_FIELD: once_cell2::race::LazyBox<http::HeaderValue> =
+	once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("TimeCollected"));
 
 #[derive(serde::Deserialize)]
 pub struct Secret<T>(pub T);
@@ -152,57 +138,10 @@ impl<T> std::fmt::Debug for Secret<T> {
 	}
 }
 
-tokio::task_local! {
-	static LOGGER: TaskLocalLogger;
-}
-
-struct TaskLocalLoggerInner {
-	function_invocation_id: Option<std::rc::Rc<str>>,
+struct LoggerInner {
+	function_invocation_id: Option<String>,
 	sequence_number: usize,
-	records: Vec<u8>,
-}
-
-enum ScopeResult<T, F> {
-	Ok(T),
-	ErrPending(F, anyhow::Error),
-	ErrReady(T, anyhow::Error),
-}
-
-fn report_inner<ID, D>(report: Report<'_, ID, D>)
-where
-	for<'a> Record<'a, ID, D>: serde::Serialize,
-	for<'a> Report<'a, ID, D>: Copy + std::fmt::Debug,
-{
-	let timestamp = chrono::Utc::now();
-
-	let _: Result<(), _> = LOGGER.try_with(|TaskLocalLogger { inner }| {
-		let mut inner = inner.lock().expect("logger mutex poisoned");
-		let TaskLocalLoggerInner { function_invocation_id, sequence_number, records } = &mut *inner;
-
-		*sequence_number += 1;
-		if !records.is_empty() {
-			records.push(b',');
-		}
-
-		let mut serializer = serde_json::Serializer::new(records);
-		let () =
-			serde::Serialize::serialize(
-				&Record {
-					timestamp,
-					function_invocation_id: function_invocation_id.as_deref(),
-					sequence_number: *sequence_number,
-					report,
-				},
-				&mut serializer,
-			).expect("could not serialize log record");
-	});
-
-	log::log!(
-		if matches!(report, Report::Error { .. }) { log::Level::Error } else { log::Level::Info },
-		"[{}] {:?}",
-		timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-		report,
-	);
+	records: Option<Vec<u8>>,
 }
 
 struct Record<'a, ID, D> {
@@ -256,21 +195,17 @@ where
 						serializer.serialize_field("ObjectValue", value)?;
 					},
 
-					ObjectOperation::CreateEnd => {
-						serializer.serialize_field("ObjectOperation", "CreateEnd")?;
-					},
+					ObjectOperation::CreateEnd =>
+						serializer.serialize_field("ObjectOperation", "CreateEnd")?,
 
-					ObjectOperation::DeleteStart => {
-						serializer.serialize_field("ObjectOperation", "DeleteStart")?;
-					},
+					ObjectOperation::DeleteStart =>
+						serializer.serialize_field("ObjectOperation", "DeleteStart")?,
 
-					ObjectOperation::DeleteEnd => {
-						serializer.serialize_field("ObjectOperation", "DeleteEnd")?;
-					},
+					ObjectOperation::DeleteEnd =>
+						serializer.serialize_field("ObjectOperation", "DeleteEnd")?,
 
-					ObjectOperation::GetStart => {
-						serializer.serialize_field("ObjectOperation", "GetStart")?;
-					},
+					ObjectOperation::GetStart =>
+						serializer.serialize_field("ObjectOperation", "GetStart")?,
 
 					ObjectOperation::GetEnd { value } => {
 						serializer.serialize_field("ObjectOperation", "GetEnd")?;

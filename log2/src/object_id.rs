@@ -58,14 +58,14 @@ where
 	}
 }
 
-impl std::fmt::Display for ObjectId<&'_ hyper::Uri> {
+impl std::fmt::Display for ObjectId<&'_ http::Uri> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "{}", self.0)
 	}
 }
 
-impl<'a> From<&'a hyper::Uri> for ObjectId<&'a hyper::Uri> {
-	fn from(uri: &'a hyper::Uri) -> Self {
+impl<'a> From<&'a http::Uri> for ObjectId<&'a http::Uri> {
+	fn from(uri: &'a http::Uri) -> Self {
 		ObjectId(uri)
 	}
 }

@@ -13,16 +13,18 @@ pub struct Account<'a, K> {
 	account_key: &'a K,
 	account_url: String,
 	client: http_common::Client,
-	nonce: hyper::header::HeaderValue,
-	new_order_url: hyper::Uri,
+	nonce: http::HeaderValue,
+	new_order_url: http::Uri,
+	logger: &'a log2::Logger,
 }
 
 impl<'a, K> Account<'a, K> where K: AccountKey {
 	pub async fn new(
-		acme_directory_url: hyper::Uri,
+		acme_directory_url: http::Uri,
 		acme_contact_url: &str,
 		account_key: &'a K,
-		user_agent: hyper::header::HeaderValue,
+		user_agent: http::HeaderValue,
+		logger: &'a log2::Logger,
 	) -> anyhow::Result<Account<'a, K>> {
 		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
 
@@ -31,27 +33,27 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		let (new_nonce_url, new_account_url, new_order_url) = {
 			#[derive(Debug, serde::Deserialize)]
 			struct DirectoryResponse {
-				#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
+				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 				#[serde(rename = "newAccount")]
-				new_account_url: hyper::Uri,
+				new_account_url: http::Uri,
 
-				#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
+				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 				#[serde(rename = "newNonce")]
-				new_nonce_url: hyper::Uri,
+				new_nonce_url: http::Uri,
 
-				#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
+				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 				#[serde(rename = "newOrder")]
-				new_order_url: hyper::Uri,
+				new_order_url: http::Uri,
 			}
 
 			impl http_common::FromResponse for DirectoryResponse {
 				fn from_response(
-					status: hyper::StatusCode,
-					body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-					_headers: hyper::HeaderMap,
+					status: http::StatusCode,
+					body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+					_headers: http::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+						(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
 							Some(serde_json::from_reader(body)?),
 						_ => None,
 					})
@@ -62,7 +64,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				new_account_url,
 				new_nonce_url,
 				new_order_url,
-			} = log2::report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
+			} = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
 				get(
 					&client,
 					&mut nonce,
@@ -75,7 +77,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		let mut nonce =
 			if let Some(nonce) = nonce {
-				log2::report_state("acme/nonce", "", "already have initial");
+				logger.report_state("acme/nonce", "", "already have initial");
 				nonce
 			}
 			else {
@@ -83,18 +85,18 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 				impl http_common::FromResponse for NewNonceResponse {
 					fn from_response(
-						status: hyper::StatusCode,
-						_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-						_headers: hyper::HeaderMap,
+						status: http::StatusCode,
+						_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+						_headers: http::HeaderMap,
 					) -> anyhow::Result<Option<Self>> {
 						Ok(match status {
-							hyper::StatusCode::NO_CONTENT => Some(NewNonceResponse),
+							http::StatusCode::NO_CONTENT => Some(NewNonceResponse),
 							_ => None,
 						})
 					}
 				}
 
-				let log2::Secret(nonce) = log2::report_operation("acme/nonce", "", <log2::ScopedObjectOperation>::Get, async {
+				let log2::Secret(nonce) = logger.report_operation("acme/nonce", "", <log2::ScopedObjectOperation>::Get, async {
 					let NewNonceResponse = get(
 						&client,
 						&mut nonce,
@@ -119,25 +121,35 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 			#[derive(serde::Deserialize)]
 			struct NewAccountResponse {
-				status: String,
+				status: AccountStatus,
+			}
+
+			#[derive(Debug, serde::Deserialize)]
+			enum AccountStatus {
+				#[serde(rename = "deactivated")]
+				Deactivated,
+				#[serde(rename = "revoked")]
+				Revoked,
+				#[serde(rename = "valid")]
+				Valid,
 			}
 
 			impl http_common::FromResponse for NewAccountResponse {
 				fn from_response(
-					status: hyper::StatusCode,
-					body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-					_headers: hyper::HeaderMap,
+					status: http::StatusCode,
+					body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+					_headers: http::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(hyper::StatusCode::OK, Some((content_type, body))) |
-						(hyper::StatusCode::CREATED, Some((content_type, body))) if http_common::is_json(content_type) =>
+						(http::StatusCode::OK, Some((content_type, body))) |
+						(http::StatusCode::CREATED, Some((content_type, body))) if http_common::is_json(content_type) =>
 							Some(serde_json::from_reader(body)?),
 						_ => None,
 					})
 				}
 			}
 
-			let (account_url, status) = log2::report_operation("acme/account", "", <log2::ScopedObjectOperation>::Get, async {
+			let (account_url, status) = logger.report_operation("acme/account", "", <log2::ScopedObjectOperation>::Get, async {
 				let http_common::ResponseWithLocation {
 					body: NewAccountResponse { status },
 					location: account_url,
@@ -155,10 +167,10 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				Ok::<_, anyhow::Error>((account_url.to_string(), status))
 			}).await?;
 
-			log2::report_state("acme/account", &account_url, &status);
+			logger.report_state("acme/account", &account_url, format_args!("{:?}", status));
 
-			if status != "valid" {
-				return Err(anyhow::anyhow!("Account has {} status", status));
+			if !matches!(status, AccountStatus::Valid) {
+				return Err(anyhow::anyhow!("Account has {:?} status", status));
 			}
 
 			account_url
@@ -170,6 +182,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			client,
 			nonce,
 			new_order_url,
+			logger,
 		};
 
 		Ok(result)
@@ -187,7 +200,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			value: &'a str,
 		}
 
-		let order_url = log2::report_operation("acme/order", domain_name, <log2::ScopedObjectOperation>::Get, async {
+		let order_url = self.logger.report_operation("acme/order", domain_name, <log2::ScopedObjectOperation>::Get, async {
 			let http_common::ResponseWithLocation::<OrderResponse> {
 				location: order_url,
 				body: _,
@@ -218,7 +231,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					None::<&()>,
 				).await.context("could not get order")?;
 
-			log2::report_state("acme/order", &order_url, format_args!("{:?}", order));
+			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
 
 			match order {
 				OrderResponse::Invalid { .. } => return Err(anyhow::anyhow!("order failed")),
@@ -239,7 +252,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 							None::<&()>,
 						).await.context("could not get authorization")?;
 
-					log2::report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
+					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
 					let challenges = match authorization {
 						AuthorizationResponse::Pending { challenges, retry_after: _ } => challenges,
@@ -283,7 +296,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				},
 
 				OrderResponse::Processing { retry_after } => {
-					log2::report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -312,7 +325,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		#[derive(serde::Serialize)]
 		struct ChallengeCompleteRequest { }
 
-		log2::report_message(format_args!("Completing challenge {} ...", challenge_url));
+		self.logger.report_message(format_args!("Completing challenge {} ...", challenge_url));
 
 		let _: ChallengeResponse =
 			post(
@@ -335,17 +348,17 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					None::<&()>,
 				).await.context("could not get challenge")?;
 
-			log2::report_state("acme/challenge", &challenge_url, format_args!("{:?}", challenge));
+			self.logger.report_state("acme/challenge", &challenge_url, format_args!("{:?}", challenge));
 
 			match challenge {
 				ChallengeResponse::Pending { .. } => {
 					let retry_after = std::time::Duration::from_secs(1);
-					log2::report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
 				ChallengeResponse::Processing { retry_after } => {
-					log2::report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -355,7 +368,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			};
 		}
 
-		log2::report_message(format_args!("Waiting for authorization {} ...", authorization_url));
+		self.logger.report_message(format_args!("Waiting for authorization {} ...", authorization_url));
 
 		loop {
 			let authorization =
@@ -368,11 +381,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					None::<&()>,
 				).await.context("could not get authorization")?;
 
-			log2::report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
+			self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
 			match authorization {
 				AuthorizationResponse::Pending { challenges: _, retry_after } => {
-					log2::report_message(format_args!("Waiting for {:?} before rechecking authorization...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {:?} before rechecking authorization...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -394,7 +407,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		}: OrderReady,
 		mut csr: String,
 	) -> anyhow::Result<OrderValid> {
-		log2::report_message(format_args!("Finalizing order {} ...", order_url));
+		self.logger.report_message(format_args!("Finalizing order {} ...", order_url));
 
 		let order = loop {
 			let order =
@@ -407,7 +420,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					None::<&()>,
 				).await.context("could not get order")?;
 
-			log2::report_state("acme/order", &order_url, format_args!("{:?}", order));
+			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
 
 			match order {
 				OrderResponse::Invalid { .. } => return Err(anyhow::anyhow!("order failed")),
@@ -415,7 +428,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				OrderResponse::Pending { .. } => return Err(anyhow::anyhow!("order is still pending")),
 
 				OrderResponse::Processing { retry_after } => {
-					log2::report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -472,12 +485,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		impl http_common::FromResponse for CertificateResponse {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(hyper::StatusCode::OK, Some((content_type, body))) if content_type == "application/pem-certificate-chain" => {
+					(http::StatusCode::OK, Some((content_type, body))) if content_type == "application/pem-certificate-chain" => {
 						let mut certificate = String::new();
 						let _ = std::io::Read::read_to_string(body, &mut certificate)?;
 						Some(CertificateResponse(certificate))
@@ -487,7 +500,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			}
 		}
 
-		let certificate = log2::report_operation("acme/certificate", &certificate_url.clone(), <log2::ScopedObjectOperation>::Get, async {
+		let certificate = self.logger.report_operation("acme/certificate", &certificate_url.clone(), <log2::ScopedObjectOperation>::Get, async {
 			let CertificateResponse(certificate) =
 				post(
 					self.account_key,
@@ -541,30 +554,30 @@ pub enum Order {
 }
 
 pub struct OrderPending {
-	order_url: hyper::Uri,
-	authorization_url: hyper::Uri,
-	challenge_url: hyper::Uri,
+	order_url: http::Uri,
+	authorization_url: http::Uri,
+	challenge_url: http::Uri,
 	pub dns_txt_record_content: String,
 }
 
 pub struct OrderReady {
-	order_url: hyper::Uri,
+	order_url: http::Uri,
 }
 
 pub struct OrderValid {
-	certificate_url: hyper::Uri,
+	certificate_url: http::Uri,
 }
 
 async fn get<TResponse>(
 	client: &http_common::Client,
-	nonce: &mut Option<hyper::header::HeaderValue>,
-	url: hyper::Uri,
+	nonce: &mut Option<http::HeaderValue>,
+	url: http::Uri,
 ) -> anyhow::Result<TResponse>
 where
 	TResponse: http_common::FromResponse,
 {
-	let mut req = hyper::Request::new(Default::default());
-	*req.method_mut() = hyper::Method::GET;
+	let mut req = http::Request::new(Default::default());
+	*req.method_mut() = http::Method::GET;
 	*req.uri_mut() = url;
 
 	let ResponseWithNewNonce { body, new_nonce } =
@@ -581,21 +594,21 @@ async fn post<TRequest, TResponse>(
 	account_key: &impl AccountKey,
 	account_url: Option<&str>,
 	client: &http_common::Client,
-	nonce: &mut hyper::header::HeaderValue,
-	url: hyper::Uri,
+	nonce: &mut http::HeaderValue,
+	url: http::Uri,
 	body: Option<&TRequest>,
 ) -> anyhow::Result<TResponse>
 where
 	TRequest: serde::Serialize,
 	TResponse: http_common::FromResponse,
 {
-	fn serialize_header_value<S>(header_value: &hyper::header::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+	fn serialize_header_value<S>(header_value: &http::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
 		let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
 		serializer.serialize_str(header_value)
 	}
 
-	static APPLICATION_JOSE_JSON: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
-		once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("application/jose+json"));
+	static APPLICATION_JOSE_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
+		once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/jose+json"));
 
 	let mut req = {
 		#[derive(serde::Serialize)]
@@ -609,7 +622,7 @@ where
 			kid: Option<&'a str>,
 
 			#[serde(serialize_with = "serialize_header_value")]
-			nonce: &'a hyper::header::HeaderValue,
+			nonce: &'a http::HeaderValue,
 
 			url: std::fmt::Arguments<'a>,
 		}
@@ -689,11 +702,11 @@ where
 			signature: &signature,
 		};
 		let body = serde_json::to_vec(&body).expect("could not serialize JWS request body");
-		hyper::Request::new(body.into())
+		http::Request::new(body.into())
 	};
-	*req.method_mut() = hyper::Method::POST;
+	*req.method_mut() = http::Method::POST;
 	*req.uri_mut() = url;
-	req.headers_mut().insert(hyper::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
+	req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
 
 	let ResponseWithNewNonce { body, new_nonce } =
 		client.request_inner(req).await.context("could not execute HTTP request")?;
@@ -707,17 +720,17 @@ const JWS_BASE64_CONFIG: base64::Config = base64::Config::new(base64::CharacterS
 
 struct ResponseWithNewNonce<TResponse> {
 	body: TResponse,
-	new_nonce: Option<hyper::header::HeaderValue>,
+	new_nonce: Option<http::HeaderValue>,
 }
 
 impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> where TResponse: http_common::FromResponse {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		mut headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		mut headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
-		static REPLAY_NONCE: once_cell2::race::LazyBox<hyper::header::HeaderName> =
-			once_cell2::race::LazyBox::new(|| hyper::header::HeaderName::from_static("replay-nonce"));
+		static REPLAY_NONCE: once_cell2::race::LazyBox<http::header::HeaderName> =
+			once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("replay-nonce"));
 
 		let new_nonce = headers.remove(&*REPLAY_NONCE);
 		match TResponse::from_response(status, body, headers) {
@@ -751,28 +764,28 @@ enum OrderResponse {
 
 	#[serde(rename = "ready")]
 	Ready {
-		#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
+		#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 		#[serde(rename = "finalize")]
-		finalize_url: hyper::Uri,
+		finalize_url: http::Uri,
 	},
 
 	#[serde(rename = "valid")]
 	Valid {
-		#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
+		#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 		#[serde(rename = "certificate")]
-		certificate_url: hyper::Uri,
+		certificate_url: http::Uri,
 	},
 }
 
 impl http_common::FromResponse for OrderResponse {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(hyper::StatusCode::CREATED, Some((content_type, body))) |
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+			(http::StatusCode::CREATED, Some((content_type, body))) |
+			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 				let mut body = serde_json::from_reader(body)?;
 				if let OrderResponse::Processing { retry_after } = &mut body {
 					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
@@ -813,12 +826,12 @@ enum AuthorizationResponse {
 
 impl http_common::FromResponse for AuthorizationResponse {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 				let mut body = serde_json::from_reader(body)?;
 				if let AuthorizationResponse::Pending { challenges: _, retry_after } = &mut body {
 					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
@@ -843,8 +856,8 @@ enum ChallengeResponse {
 	Pending {
 		token: log2::Secret<String>,
 		r#type: String,
-		#[serde(deserialize_with = "http_common::deserialize_hyper_uri")]
-		url: hyper::Uri,
+		#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+		url: http::Uri,
 	},
 
 	#[serde(rename = "processing")]
@@ -859,12 +872,12 @@ enum ChallengeResponse {
 
 impl http_common::FromResponse for ChallengeResponse {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 				let mut body = serde_json::from_reader(body)?;
 				if let ChallengeResponse::Processing { retry_after } = &mut body {
 					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;

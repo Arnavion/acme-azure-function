@@ -18,12 +18,12 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
 						Some(serde_json::from_reader(body)?),
 					_ => None,
 				})
@@ -31,7 +31,7 @@ impl<'a> super::Client<'a> {
 		}
 
 		let secret =
-			log2::report_operation(
+			self.logger.report_operation(
 				"azure/cdn/custom_domain/secret",
 				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
 				<log2::ScopedObjectOperation>::Get,
@@ -46,7 +46,7 @@ impl<'a> super::Client<'a> {
 
 					let Response { properties: CustomDomainProperties { custom_https_parameters } } =
 						self.client.request(
-							hyper::Method::GET,
+							http::Method::GET,
 							url,
 							authorization,
 							None::<&()>,
@@ -76,20 +76,20 @@ impl<'a> super::Client<'a> {
 		enum Response {
 			Ok,
 			Accepted {
-				location: hyper::Uri,
+				location: http::Uri,
 				retry_after: std::time::Duration,
 			},
 		}
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					hyper::StatusCode::OK => Some(Response::Ok),
-					hyper::StatusCode::ACCEPTED => {
+					http::StatusCode::OK => Some(Response::Ok),
+					http::StatusCode::ACCEPTED => {
 						let location = http_common::get_location(&headers)?;
 						let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
 						Some(Response::Accepted {
@@ -103,7 +103,7 @@ impl<'a> super::Client<'a> {
 		}
 
 		let () =
-			log2::report_operation(
+			self.logger.report_operation(
 				"azure/cdn/custom_domain/secret",
 				(cdn_profile_name, cdn_endpoint_name, cdn_custom_domain_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", custom_domain_key_vault_secret) },
@@ -118,7 +118,7 @@ impl<'a> super::Client<'a> {
 
 					let mut response =
 						self.client.request(
-							hyper::Method::POST,
+							http::Method::POST,
 							url,
 							authorization.clone(),
 							Some(&CustomDomainPropertiesCustomHttpsParameters::KeyVault {
@@ -137,13 +137,13 @@ impl<'a> super::Client<'a> {
 							Response::Ok => break,
 
 							Response::Accepted { location, retry_after } => {
-								log2::report_message(format_args!("Waiting for {:?} before rechecking async operation...", retry_after));
+								self.logger.report_message(format_args!("Waiting for {:?} before rechecking async operation...", retry_after));
 								tokio::time::sleep(retry_after).await;
 
-								log2::report_message(format_args!("Checking async operation {} ...", location));
+								self.logger.report_message(format_args!("Checking async operation {} ...", location));
 
 								let new_response = self.client.request(
-									hyper::Method::GET,
+									http::Method::GET,
 									location,
 									authorization.clone(),
 									None::<&()>,

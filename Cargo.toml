@@ -5,6 +5,7 @@ members = [
 	"function-worker",
 	"http-common",
 	"log2",
+	"once_cell2",
 
 	"function-deploy-cert-to-cdn",
 	"function-renew-cert",

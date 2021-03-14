@@ -6,6 +6,8 @@ default:
 	cargo build -p function-deploy-cert-to-cdn -p function-renew-cert ${CARGOFLAGS}
 
 test:
+	cargo clippy -p once_cell2
+
 	cargo clippy -p log2
 
 	cargo clippy -p http-common

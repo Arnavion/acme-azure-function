@@ -14,7 +14,7 @@ anyhow = { version = "1", default-features = false, features = [
 base64 = { version = "0.13", default-features = false, features = [
 	"std", # for base64::read, base64::write
 ] }
-hyper = { version = "0.14", default-features = false }
+http = { version = "0.2", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
 ] }

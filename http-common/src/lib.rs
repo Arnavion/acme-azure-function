@@ -11,16 +11,16 @@
 
 use anyhow::Context;
 
-pub static APPLICATION_JSON: once_cell2::race::LazyBox<hyper::header::HeaderValue> =
-	once_cell2::race::LazyBox::new(|| hyper::header::HeaderValue::from_static("application/json"));
+pub static APPLICATION_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
+	once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/json"));
 
 pub struct Client {
 	inner: hyper::Client<hyper_rustls::HttpsConnector<hyper::client::connect::HttpConnector>, hyper::Body>,
-	user_agent: hyper::header::HeaderValue,
+	user_agent: http::HeaderValue,
 }
 
 impl Client {
-	pub fn new(user_agent: hyper::header::HeaderValue) -> anyhow::Result<Self> {
+	pub fn new(user_agent: http::HeaderValue) -> anyhow::Result<Self> {
 		// Use this long form instead of just `hyper_rustls::HttpsConnector::with_webpki_roots()`
 		// because otherwise it tries to initiate HTTP/2 connections with some hosts.
 		//
@@ -47,47 +47,47 @@ impl Client {
 
 	pub async fn request<U, B, T>(
 		&self,
-		method: hyper::Method,
+		method: http::Method,
 		url: U,
-		authorization: hyper::header::HeaderValue,
+		authorization: http::HeaderValue,
 		body: Option<B>,
 	) -> anyhow::Result<T>
 	where
-		U: std::convert::TryInto<hyper::Uri>,
-		Result<hyper::Uri, U::Error>: anyhow::Context<hyper::Uri, U::Error>,
+		U: std::convert::TryInto<http::Uri>,
+		Result<http::Uri, U::Error>: anyhow::Context<http::Uri, U::Error>,
 		B: serde::Serialize,
 		T: FromResponse,
 	{
 		let mut req =
 			if let Some(body) = body {
 				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(hyper::header::CONTENT_TYPE, APPLICATION_JSON.clone());
+				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON.clone());
 				req
 			}
-			else if method == hyper::Method::GET {
+			else if method == http::Method::GET {
 				hyper::Request::new(Default::default())
 			}
 			else {
 				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(hyper::header::CONTENT_LENGTH, 0.into());
+				req.headers_mut().insert(http::header::CONTENT_LENGTH, 0.into());
 				req
 			};
 		*req.method_mut() = method;
 		*req.uri_mut() = url.try_into().context("could not parse request URL")?;
-		req.headers_mut().insert(hyper::header::AUTHORIZATION, authorization);
+		req.headers_mut().insert(http::header::AUTHORIZATION, authorization);
 
 		let value = self.request_inner(req).await?;
 		Ok(value)
 	}
 
 	pub async fn request_inner<T>(&self, mut req: hyper::Request<hyper::Body>) -> anyhow::Result<T> where T: FromResponse {
-		req.headers_mut().insert(hyper::header::USER_AGENT, self.user_agent.clone());
+		req.headers_mut().insert(http::header::USER_AGENT, self.user_agent.clone());
 
 		let res = self.inner.request(req).await.context("could not execute request")?;
 
 		let (http::response::Parts { status, mut headers, .. }, body) = res.into_parts();
 
-		let mut body = match headers.remove(hyper::header::CONTENT_TYPE) {
+		let mut body = match headers.remove(http::header::CONTENT_TYPE) {
 			Some(content_type) => {
 				let body = hyper::body::aggregate(body).await.context("could not read response body")?;
 				let body = hyper::body::Buf::reader(body);
@@ -117,22 +117,22 @@ impl Client {
 
 pub trait FromResponse: Sized {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>>;
 }
 
 pub struct ResponseWithLocation<T> {
 	pub body: T,
-	pub location: hyper::Uri,
+	pub location: http::Uri,
 }
 
 impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		let location = get_location(&headers)?;
 
@@ -144,31 +144,27 @@ impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 	}
 }
 
-pub fn is_json(content_type: &hyper::header::HeaderValue) -> bool {
-	let content_type = match content_type.to_str() {
-		Ok(content_type) => content_type,
-		Err(_) => return false,
-	};
-	content_type == "application/json" || content_type.starts_with("application/json;")
+pub fn is_json(content_type: &http::HeaderValue) -> bool {
+	content_type.to_str().map(|content_type| content_type == "application/json" || content_type.starts_with("application/json;")).unwrap_or_default()
 }
 
-pub fn get_location(headers: &hyper::HeaderMap) -> anyhow::Result<hyper::Uri> {
+pub fn get_location(headers: &http::HeaderMap) -> anyhow::Result<http::Uri> {
 	let location =
 		std::convert::TryInto::try_into(
 			headers
-			.get(hyper::header::LOCATION).context("missing location header")?
+			.get(http::header::LOCATION).context("missing location header")?
 			.as_bytes(),
 		).context("could not parse location header")?;
 	Ok(location)
 }
 
 pub fn get_retry_after(
-	headers: &hyper::HeaderMap,
+	headers: &http::HeaderMap,
 	min: std::time::Duration,
 	max: std::time::Duration,
 ) -> anyhow::Result<std::time::Duration> {
 	let retry_after =
-		if let Some(retry_after) = headers.get(hyper::header::RETRY_AFTER) {
+		if let Some(retry_after) = headers.get(http::header::RETRY_AFTER) {
 			retry_after
 		}
 		else {
@@ -199,14 +195,14 @@ pub fn get_retry_after(
 	Ok(retry_after.clamp(min, max))
 }
 
-pub fn deserialize_hyper_uri<'de, D>(deserializer: D) -> Result<hyper::Uri, D::Error> where D: serde::Deserializer<'de> {
+pub fn deserialize_http_uri<'de, D>(deserializer: D) -> Result<http::Uri, D::Error> where D: serde::Deserializer<'de> {
 	struct Visitor;
 
 	impl serde::de::Visitor<'_> for Visitor {
-		type Value = hyper::Uri;
+		type Value = http::Uri;
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-			f.write_str("hyper::Uri")
+			f.write_str("http::Uri")
 		}
 
 		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
@@ -222,4 +218,4 @@ pub fn deserialize_hyper_uri<'de, D>(deserializer: D) -> Result<hyper::Uri, D::E
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct DeserializableUri(#[serde(deserialize_with = "deserialize_hyper_uri")] pub hyper::Uri);
+pub struct DeserializableUri(#[serde(deserialize_with = "deserialize_http_uri")] pub http::Uri);

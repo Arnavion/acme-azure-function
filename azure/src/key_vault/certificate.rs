@@ -47,12 +47,12 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(hyper::StatusCode::ACCEPTED, Some((content_type, body))) if http_common::is_json(content_type) =>
+					(http::StatusCode::ACCEPTED, Some((content_type, body))) if http_common::is_json(content_type) =>
 						Some(serde_json::from_reader(body)?),
 					_ => None,
 				})
@@ -60,7 +60,7 @@ impl<'a> super::Client<'a> {
 		}
 
 		let csr =
-			log2::report_operation(
+			self.logger.report_operation(
 				"azure/key_vault/csr",
 				(self.key_vault_name, certificate_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (common_name, key_type)) },
@@ -69,7 +69,7 @@ impl<'a> super::Client<'a> {
 
 					let Response { csr } =
 						self.client.request(
-							hyper::Method::POST,
+							http::Method::POST,
 							url,
 							authorization,
 							Some(&Request {
@@ -115,9 +115,9 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
 				struct ResponseInner {
@@ -131,7 +131,7 @@ impl<'a> super::Client<'a> {
 				}
 
 				Ok(match (status, body) {
-					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 						let ResponseInner { attributes: ResponseAttributes { exp }, id } = serde_json::from_reader(body)?;
 
 						let not_after =
@@ -141,30 +141,31 @@ impl<'a> super::Client<'a> {
 						let version = id.split('/').last().expect("str::split yields at least one part").to_owned();
 
 						Some(Response(Some(Certificate {
-							not_after,
 							version,
+							not_after,
 						})))
 					},
 
-					(hyper::StatusCode::NOT_FOUND, _) => Some(Response(None)),
+					(http::StatusCode::NOT_FOUND, _) => Some(Response(None)),
 
 					_ => None,
 				})
 			}
 		}
 
-		let certificate = log2::report_operation( "azure/key_vault/certificate", (self.key_vault_name, certificate_name), <log2::ScopedObjectOperation>::Get, async {
-			let (url, authorization) = self.request_parameters(format_args!("/certificates/{}?api-version=7.1", certificate_name)).await?;
+		let certificate =
+			self.logger.report_operation( "azure/key_vault/certificate", (self.key_vault_name, certificate_name), <log2::ScopedObjectOperation>::Get, async {
+				let (url, authorization) = self.request_parameters(format_args!("/certificates/{}?api-version=7.1", certificate_name)).await?;
 
-			let Response(certificate) =
-				self.client.request(
-					hyper::Method::GET,
-					url,
-					authorization,
-					None::<&()>,
-				).await?;
-			Ok::<_, anyhow::Error>(certificate)
-		}).await?;
+				let Response(certificate) =
+					self.client.request(
+						http::Method::GET,
+						url,
+						authorization,
+						None::<&()>,
+					).await?;
+				Ok::<_, anyhow::Error>(certificate)
+			}).await?;
 
 		Ok(certificate)
 	}
@@ -179,19 +180,19 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				_body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					hyper::StatusCode::CREATED => Some(Response),
+					http::StatusCode::CREATED => Some(Response),
 					_ => None,
 				})
 			}
 		}
 
 		let () =
-			log2::report_operation(
+			self.logger.report_operation(
 				"azure/key_vault/certificate",
 				(self.key_vault_name, certificate_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", certificates) },
@@ -200,7 +201,7 @@ impl<'a> super::Client<'a> {
 
 					let _: Response =
 						self.client.request(
-							hyper::Method::POST,
+							http::Method::POST,
 							url,
 							authorization,
 							Some(&Request {

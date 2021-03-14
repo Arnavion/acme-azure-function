@@ -3,7 +3,7 @@ use anyhow::Context;
 pub enum Auth {
 	ManagedIdentity {
 		endpoint: String,
-		secret: hyper::header::HeaderValue,
+		secret: http::HeaderValue,
 	},
 
 	#[cfg(debug_assertions)]
@@ -15,7 +15,12 @@ pub enum Auth {
 }
 
 impl Auth {
-	pub(crate) async fn get_authorization(&self, client: &http_common::Client, resource: &str) -> anyhow::Result<hyper::header::HeaderValue> {
+	pub(crate) async fn get_authorization(
+		&self,
+		client: &http_common::Client,
+		resource: &str,
+		logger: &log2::Logger,
+	) -> anyhow::Result<http::HeaderValue> {
 		// TODO: Workaround for https://github.com/rust-lang/rust/issues/55779 when running
 		// `cargo build --manifest-path ./azure/Cargo.toml --features dns`
 		#[allow(unused_extern_crates)]
@@ -29,26 +34,26 @@ impl Auth {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
 						Some(serde_json::from_reader(body)?),
 					_ => None,
 				})
 			}
 		}
 
-		let log2::Secret(authorization) = log2::report_operation("azure/authorization", resource, <log2::ScopedObjectOperation>::Get, async {
+		let log2::Secret(authorization) = logger.report_operation("azure/authorization", resource, <log2::ScopedObjectOperation>::Get, async {
 			let req = match self {
 				Auth::ManagedIdentity { endpoint, secret } => {
-					static SECRET: once_cell2::race::LazyBox<hyper::header::HeaderName> =
-						once_cell2::race::LazyBox::new(|| hyper::header::HeaderName::from_static("secret"));
+					static SECRET: once_cell2::race::LazyBox<http::header::HeaderName> =
+						once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("secret"));
 
-					let mut req = hyper::Request::new(Default::default());
-					*req.method_mut() = hyper::Method::GET;
+					let mut req = http::Request::new(Default::default());
+					*req.method_mut() = http::Method::GET;
 					*req.uri_mut() =
 						std::convert::TryInto::try_into(format!("{}?resource={}&api-version=2017-09-01", endpoint, resource))
 						.context("could not construct authorization request URI")?;
@@ -65,8 +70,8 @@ impl Auth {
 						.append_pair("client_secret", client_secret)
 						.append_pair("resource", resource)
 						.finish();
-					let mut req = hyper::Request::new(body.into());
-					*req.method_mut() = hyper::Method::POST;
+					let mut req = http::Request::new(body.into());
+					*req.method_mut() = http::Method::POST;
 					*req.uri_mut() =
 						std::convert::TryInto::try_into(format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id))
 						.context("could not construct authorization request URI")?;

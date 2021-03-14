@@ -13,7 +13,7 @@ impl<'a> super::Client<'a> {
 		}
 
 		let key =
-			log2::report_operation(
+			self.logger.report_operation(
 				"azure/key_vault/key",
 				(self.key_vault_name, key_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (kty, crv)) },
@@ -22,7 +22,7 @@ impl<'a> super::Client<'a> {
 
 					let CreateOrGetKeyResponse { key } =
 						self.client.request(
-							hyper::Method::POST,
+							http::Method::POST,
 							url,
 							authorization,
 							Some(&Request {
@@ -52,25 +52,25 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
 						Some(Response(Some(serde_json::from_reader(body)?))),
-					(hyper::StatusCode::NOT_FOUND, _) => Some(Response(None)),
+					(http::StatusCode::NOT_FOUND, _) => Some(Response(None)),
 					_ => None,
 				})
 			}
 		}
 
-		let key = log2::report_operation("azure/key_vault/key", (self.key_vault_name, key_name), <log2::ScopedObjectOperation>::Get, async {
+		let key = self.logger.report_operation("azure/key_vault/key", (self.key_vault_name, key_name), <log2::ScopedObjectOperation>::Get, async {
 			let (url, authorization) = self.request_parameters(format_args!("/keys/{}?api-version=7.1", key_name)).await?;
 
 			let Response(response) =
 				self.client.request(
-					hyper::Method::GET,
+					http::Method::GET,
 					url,
 					authorization,
 					None::<&()>,
@@ -138,25 +138,25 @@ impl acme::AccountKey for Key<'_> {
 
 		impl http_common::FromResponse for KeyVaultSignResponse {
 			fn from_response(
-				status: hyper::StatusCode,
-				body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-				_headers: hyper::HeaderMap,
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
 						Some(serde_json::from_reader(body)?),
 					_ => None,
 				})
 			}
 		}
 
-		Box::pin(log2::report_operation("azure/key_vault/key/signature", &self.kid, log2::ScopedObjectOperation::Create { value: "" }, async move {
+		Box::pin(self.client.logger.report_operation("azure/key_vault/key/signature", &self.kid, log2::ScopedObjectOperation::Create { value: "" }, async move {
 			let url = format!("{}/sign?api-version=7.1", self.kid);
 			let authorization = self.client.authorization().await?;
 
 			let KeyVaultSignResponse { value: signature } =
 				self.client.client.request(
-					hyper::Method::POST,
+					http::Method::POST,
 					url,
 					authorization,
 					Some(&KeyVaultSignRequest {
@@ -185,12 +185,12 @@ struct KeyResponse {
 
 impl http_common::FromResponse for CreateOrGetKeyResponse {
 	fn from_response(
-		status: hyper::StatusCode,
-		body: Option<(&hyper::header::HeaderValue, &mut impl std::io::Read)>,
-		_headers: hyper::HeaderMap,
+		status: http::StatusCode,
+		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		_headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(hyper::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
+			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
 				Some(serde_json::from_reader(body)?),
 			_ => None,
 		})
