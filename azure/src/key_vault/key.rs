@@ -53,12 +53,11 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-						Some(Response(Some(serde_json::from_reader(body)?))),
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(Response(Some(body.as_json()?))),
 					(http::StatusCode::NOT_FOUND, _) => Some(Response(None)),
 					_ => None,
 				})
@@ -139,12 +138,11 @@ impl acme::AccountKey for Key<'_> {
 		impl http_common::FromResponse for KeyVaultSignResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-						Some(serde_json::from_reader(body)?),
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -186,12 +184,11 @@ struct KeyResponse {
 impl http_common::FromResponse for CreateOrGetKeyResponse {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 		_headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-				Some(serde_json::from_reader(body)?),
+			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
 			_ => None,
 		})
 	}

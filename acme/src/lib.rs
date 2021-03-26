@@ -49,12 +49,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			impl http_common::FromResponse for DirectoryResponse {
 				fn from_response(
 					status: http::StatusCode,
-					body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+					body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 					_headers: http::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-							Some(serde_json::from_reader(body)?),
+						(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
 						_ => None,
 					})
 				}
@@ -86,7 +85,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				impl http_common::FromResponse for NewNonceResponse {
 					fn from_response(
 						status: http::StatusCode,
-						_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+						_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 						_headers: http::HeaderMap,
 					) -> anyhow::Result<Option<Self>> {
 						Ok(match status {
@@ -116,7 +115,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				contact_urls: &'a [&'a str],
 
 				#[serde(rename = "termsOfServiceAgreed")]
-				terms_of_service_agreed: bool
+				terms_of_service_agreed: bool,
 			}
 
 			#[derive(serde::Deserialize)]
@@ -137,13 +136,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			impl http_common::FromResponse for NewAccountResponse {
 				fn from_response(
 					status: http::StatusCode,
-					body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+					body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 					_headers: http::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
 						(http::StatusCode::OK, Some((content_type, body))) |
-						(http::StatusCode::CREATED, Some((content_type, body))) if http_common::is_json(content_type) =>
-							Some(serde_json::from_reader(body)?),
+						(http::StatusCode::CREATED, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
 						_ => None,
 					})
 				}
@@ -200,10 +198,16 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			value: &'a str,
 		}
 
-		let order_url = self.logger.report_operation("acme/order", domain_name, <log2::ScopedObjectOperation>::Get, async {
-			let http_common::ResponseWithLocation::<OrderResponse> {
+		#[derive(Debug, serde::Deserialize)]
+		struct OrderObjPending {
+			#[serde(rename = "authorizations")]
+			authorization_urls: Vec<http_common::DeserializableUri>,
+		}
+
+		let (order_url, mut order) = self.logger.report_operation("acme/order", domain_name, <log2::ScopedObjectOperation>::Get, async {
+			let http_common::ResponseWithLocation {
 				location: order_url,
-				body: _,
+				body: order,
 			} = post(
 				self.account_key,
 				Some(&self.account_url),
@@ -217,26 +221,65 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					}],
 				}),
 			).await.context("could not create / get order")?;
-			Ok::<_, anyhow::Error>(order_url)
+			Ok::<_, anyhow::Error>((order_url, order))
 		}).await?;
 
 		let order = loop {
-			let order =
-				post(
-					self.account_key,
-					Some(&self.account_url),
-					&self.client,
-					&mut self.nonce,
-					order_url.clone(),
-					None::<&()>,
-				).await.context("could not get order")?;
-
 			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
 
 			match order {
-				OrderResponse::Invalid { .. } => return Err(anyhow::anyhow!("order failed")),
+				OrderResponse::Pending(OrderObjPending { mut authorization_urls }) => {
+					#[derive(Debug)]
+					enum AuthorizationResponse {
+						Pending { hasher: sha2::Sha256, challenge_url: http::Uri },
+						Valid,
+					}
 
-				OrderResponse::Pending { mut authorization_urls } => {
+					impl http_common::FromResponse for AuthorizationResponse {
+						fn from_response(
+							status: http::StatusCode,
+							body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+							_headers: http::HeaderMap,
+						) -> anyhow::Result<Option<Self>> {
+							#[derive(serde::Deserialize)]
+							struct AuthorizationPending<'a> {
+								#[serde(borrow)]
+								challenges: Vec<Challenge<ChallengePending<'a>>>,
+							}
+
+							#[derive(serde::Deserialize)]
+							struct ChallengePending<'a> {
+								#[serde(borrow)]
+								token: std::borrow::Cow<'a, str>,
+								#[serde(borrow)]
+								r#type: std::borrow::Cow<'a, str>,
+								#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+								url: http::Uri,
+							}
+
+							Ok(match (status, body) {
+								(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+									Authorization::Pending(AuthorizationPending { challenges }) => {
+										let (token, challenge_url) =
+											challenges.into_iter()
+											.find_map(|challenge| match challenge {
+												Challenge::Pending(ChallengePending { token, r#type, url }) => (r#type == "dns-01").then(|| (token, url)),
+												_ => None,
+											})
+											.context("did not find any pending dns-01 challenges")?;
+										let mut hasher: sha2::Sha256 = sha2::Digest::new();
+										sha2::Digest::update(&mut hasher, token.as_bytes());
+										AuthorizationResponse::Pending { hasher, challenge_url }
+									},
+
+									Authorization::Valid => AuthorizationResponse::Valid,
+								}),
+
+								_ => None,
+							})
+						}
+					}
+
 					let http_common::DeserializableUri(authorization_url) = authorization_urls.pop().context("no authorizations")?;
 					if !authorization_urls.is_empty() {
 						return Err(anyhow::anyhow!("more than one authorization"));
@@ -254,18 +297,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
-					let challenges = match authorization {
-						AuthorizationResponse::Pending { challenges, retry_after: _ } => challenges,
+					let (mut hasher, challenge_url) = match authorization {
+						AuthorizationResponse::Pending { hasher, challenge_url } => (hasher, challenge_url),
 						_ => return Err(anyhow::anyhow!("authorization has unexpected status")),
 					};
 
-					let (token, challenge_url) =
-						challenges.into_iter()
-						.find_map(|challenge| match challenge {
-							ChallengeResponse::Pending { token: log2::Secret(token), r#type, url } => (r#type == "dns-01").then(|| (token, url)),
-							_ => None,
-						})
-						.context("did not find any pending dns-01 challenges")?;
+					sha2::Digest::update(&mut hasher, b".");
 
 					let jwk_thumbprint = {
 						let mut hasher: sha2::Sha256 = sha2::Digest::new();
@@ -273,10 +310,6 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						let () = serde::Serialize::serialize(&self.account_key.jwk(), &mut serializer).expect("cannot fail to serialize JWK");
 						sha2::Digest::finalize(hasher)
 					};
-
-					let mut hasher: sha2::Sha256 = sha2::Digest::new();
-					sha2::Digest::update(&mut hasher, token);
-					sha2::Digest::update(&mut hasher, b".");
 
 					{
 						let mut writer = base64::write::EncoderWriter::new(&mut hasher, JWS_BASE64_CONFIG);
@@ -300,7 +333,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					tokio::time::sleep(retry_after).await;
 				},
 
-				OrderResponse::Ready { finalize_url: _ } => break Order::Ready(OrderReady {
+				OrderResponse::Ready(serde::de::IgnoredAny) => break Order::Ready(OrderReady {
 					order_url,
 				}),
 
@@ -308,6 +341,16 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					certificate_url,
 				}),
 			};
+
+			order =
+				post(
+					self.account_key,
+					Some(&self.account_url),
+					&self.client,
+					&mut self.nonce,
+					order_url.clone(),
+					None::<&()>,
+				).await.context("could not get order")?;
 		};
 
 		Ok(order)
@@ -325,33 +368,80 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		#[derive(serde::Serialize)]
 		struct ChallengeCompleteRequest { }
 
+		#[derive(Debug)]
+		enum ChallengeResponse {
+			Pending,
+			Processing { retry_after: std::time::Duration },
+			Valid,
+		}
+
+		impl http_common::FromResponse for ChallengeResponse {
+			fn from_response(
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				headers: http::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				Ok(match (status, body) {
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+						Challenge::Pending(serde::de::IgnoredAny) => ChallengeResponse::Pending,
+
+						Challenge::Processing => {
+							let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+							ChallengeResponse::Processing { retry_after }
+						},
+
+						Challenge::Valid => ChallengeResponse::Valid,
+					}),
+					_ => None,
+				})
+			}
+		}
+
+		#[derive(Debug)]
+		enum AuthorizationResponse {
+			Pending { retry_after: std::time::Duration },
+			Valid,
+		}
+
+		impl http_common::FromResponse for AuthorizationResponse {
+			fn from_response(
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				headers: http::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				Ok(match (status, body) {
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+						Authorization::Pending(serde::de::IgnoredAny) => {
+							let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+							AuthorizationResponse::Pending { retry_after }
+						},
+
+						Authorization::Valid => AuthorizationResponse::Valid,
+					}),
+
+					_ => None,
+				})
+			}
+		}
+
 		self.logger.report_message(format_args!("Completing challenge {} ...", challenge_url));
 
-		let _: ChallengeResponse =
-			post(
-				self.account_key,
-				Some(&self.account_url),
-				&self.client,
-				&mut self.nonce,
-				challenge_url.clone(),
-				Some(&ChallengeCompleteRequest { }),
-			).await.context("could not complete challenge")?;
-
+		let mut body = Some(&ChallengeCompleteRequest { });
 		loop {
-			let challenge =
+			let challenge: ChallengeResponse =
 				post(
 					self.account_key,
 					Some(&self.account_url),
 					&self.client,
 					&mut self.nonce,
 					challenge_url.clone(),
-					None::<&()>,
-				).await.context("could not get challenge")?;
+					body.take(),
+				).await.context("could not complete challenge")?;
 
 			self.logger.report_state("acme/challenge", &challenge_url, format_args!("{:?}", challenge));
 
 			match challenge {
-				ChallengeResponse::Pending { .. } => {
+				ChallengeResponse::Pending => {
 					let retry_after = std::time::Duration::from_secs(1);
 					self.logger.report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
 					tokio::time::sleep(retry_after).await;
@@ -363,8 +453,6 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				},
 
 				ChallengeResponse::Valid => break,
-
-				_ => return Err(anyhow::anyhow!("challenge has unexpected status")),
 			};
 		}
 
@@ -384,14 +472,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
 			match authorization {
-				AuthorizationResponse::Pending { challenges: _, retry_after } => {
+				AuthorizationResponse::Pending { retry_after } => {
 					self.logger.report_message(format_args!("Waiting for {:?} before rechecking authorization...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
 				AuthorizationResponse::Valid => break,
-
-				_ => return Err(anyhow::anyhow!("authorization has unexpected status")),
 			};
 		}
 
@@ -407,6 +493,13 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		}: OrderReady,
 		mut csr: String,
 	) -> anyhow::Result<OrderValid> {
+		#[derive(Debug, serde::Deserialize)]
+		struct OrderObjReady {
+			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+			#[serde(rename = "finalize")]
+			finalize_url: http::Uri,
+		}
+
 		self.logger.report_message(format_args!("Finalizing order {} ...", order_url));
 
 		let order = loop {
@@ -423,16 +516,14 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
 
 			match order {
-				OrderResponse::Invalid { .. } => return Err(anyhow::anyhow!("order failed")),
-
-				OrderResponse::Pending { .. } => return Err(anyhow::anyhow!("order is still pending")),
+				OrderResponse::Pending(serde::de::IgnoredAny) => return Err(anyhow::anyhow!("order is still pending")),
 
 				OrderResponse::Processing { retry_after } => {
 					self.logger.report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
 					tokio::time::sleep(retry_after).await;
 				},
 
-				OrderResponse::Ready { finalize_url } => {
+				OrderResponse::Ready(OrderObjReady { finalize_url }) => {
 					#[derive(serde::Serialize)]
 					struct FinalizeOrderRequest<'a> {
 						csr: &'a str,
@@ -453,7 +544,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					}
 					let csr = csr.trim_end_matches('=');
 
-					let _: OrderResponse =
+					let _: OrderResponse<serde::de::IgnoredAny, serde::de::IgnoredAny> =
 						post(
 							self.account_key,
 							Some(&self.account_url),
@@ -486,13 +577,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		impl http_common::FromResponse for CertificateResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
 					(http::StatusCode::OK, Some((content_type, body))) if content_type == "application/pem-certificate-chain" => {
-						let mut certificate = String::new();
-						let _ = std::io::Read::read_to_string(body, &mut certificate)?;
+						let certificate = body.as_str()?.into_owned();
 						Some(CertificateResponse(certificate))
 					},
 					_ => None,
@@ -726,7 +816,7 @@ struct ResponseWithNewNonce<TResponse> {
 impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> where TResponse: http_common::FromResponse {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 		mut headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		static REPLAY_NONCE: once_cell2::race::LazyBox<http::header::HeaderName> =
@@ -741,150 +831,90 @@ impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> wh
 	}
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[serde(tag = "status")]
-enum OrderResponse {
-	#[serde(rename = "invalid")]
-	Invalid {
-		#[serde(flatten)]
-		body: serde_json::Value,
-	},
+#[derive(Debug)]
+enum OrderResponse<TPending, TReady> {
+	Pending(TPending),
 
-	#[serde(rename = "pending")]
-	Pending {
-		#[serde(rename = "authorizations")]
-		authorization_urls: Vec<http_common::DeserializableUri>,
-	},
-
-	#[serde(rename = "processing")]
 	Processing {
-		#[serde(default, skip)]
 		retry_after: std::time::Duration,
 	},
 
-	#[serde(rename = "ready")]
-	Ready {
-		#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-		#[serde(rename = "finalize")]
-		finalize_url: http::Uri,
-	},
+	Ready(TReady),
 
-	#[serde(rename = "valid")]
 	Valid {
-		#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-		#[serde(rename = "certificate")]
 		certificate_url: http::Uri,
 	},
 }
 
-impl http_common::FromResponse for OrderResponse {
+impl<TPending, TReady> http_common::FromResponse for OrderResponse<TPending, TReady>
+where
+	TPending: serde::de::DeserializeOwned,
+	TReady: serde::de::DeserializeOwned,
+{
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
+		#[derive(serde::Deserialize)]
+		#[serde(tag = "status")]
+		enum Order<TPending, TReady> {
+			#[serde(rename = "pending")]
+			Pending(TPending),
+
+			#[serde(rename = "processing")]
+			Processing,
+
+			#[serde(rename = "ready")]
+			Ready(TReady),
+
+			#[serde(rename = "valid")]
+			Valid {
+				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+				#[serde(rename = "certificate")]
+				certificate_url: http::Uri,
+			},
+		}
+
 		Ok(match (status, body) {
 			(http::StatusCode::CREATED, Some((content_type, body))) |
-			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
-				let mut body = serde_json::from_reader(body)?;
-				if let OrderResponse::Processing { retry_after } = &mut body {
-					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
-				}
-				Some(body)
-			},
+			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+				Order::Pending(pending) => OrderResponse::Pending(pending),
+
+				Order::Processing => {
+					let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
+					OrderResponse::Processing { retry_after }
+				},
+
+				Order::Ready(ready) => OrderResponse::Ready(ready),
+
+				Order::Valid { certificate_url } => OrderResponse::Valid { certificate_url },
+			}),
+
 			_ => None,
 		})
 	}
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 #[serde(tag = "status")]
-enum AuthorizationResponse {
-	#[serde(rename = "deactivated")]
-	Deactivated,
-
-	#[serde(rename = "expired")]
-	Expired,
-
-	#[serde(rename = "invalid")]
-	Invalid,
-
+enum Authorization<TPending> {
 	#[serde(rename = "pending")]
-	Pending {
-		challenges: Vec<ChallengeResponse>,
-
-		#[serde(default, skip)]
-		retry_after: std::time::Duration,
-	},
-
-	#[serde(rename = "revoked")]
-	Revoked,
+	Pending(TPending),
 
 	#[serde(rename = "valid")]
 	Valid,
 }
 
-impl http_common::FromResponse for AuthorizationResponse {
-	fn from_response(
-		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
-		headers: http::HeaderMap,
-	) -> anyhow::Result<Option<Self>> {
-		Ok(match (status, body) {
-			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
-				let mut body = serde_json::from_reader(body)?;
-				if let AuthorizationResponse::Pending { challenges: _, retry_after } = &mut body {
-					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
-				}
-				Some(body)
-			},
-			_ => None,
-		})
-	}
-}
-
-#[derive(Debug, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 #[serde(tag = "status")]
-enum ChallengeResponse {
-	#[serde(rename = "invalid")]
-	Invalid {
-		#[serde(flatten)]
-		body: serde_json::Value,
-	},
-
+enum Challenge<TPending> {
 	#[serde(rename = "pending")]
-	Pending {
-		token: log2::Secret<String>,
-		r#type: String,
-		#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-		url: http::Uri,
-	},
+	Pending(TPending),
 
 	#[serde(rename = "processing")]
-	Processing {
-		#[serde(default, skip)]
-		retry_after: std::time::Duration,
-	},
+	Processing,
 
 	#[serde(rename = "valid")]
 	Valid,
-}
-
-impl http_common::FromResponse for ChallengeResponse {
-	fn from_response(
-		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
-		headers: http::HeaderMap,
-	) -> anyhow::Result<Option<Self>> {
-		Ok(match (status, body) {
-			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
-				let mut body = serde_json::from_reader(body)?;
-				if let ChallengeResponse::Processing { retry_after } = &mut body {
-					*retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
-				}
-				Some(body)
-			},
-			_ => None,
-		})
-	}
 }

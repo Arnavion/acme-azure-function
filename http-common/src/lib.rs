@@ -85,12 +85,35 @@ impl Client {
 
 		let res = self.inner.request(req).await.context("could not execute request")?;
 
-		let (http::response::Parts { status, mut headers, .. }, body) = res.into_parts();
+		let (http::response::Parts { status, mut headers, .. }, mut body) = res.into_parts();
 
 		let mut body = match headers.remove(http::header::CONTENT_TYPE) {
 			Some(content_type) => {
-				let body = hyper::body::aggregate(body).await.context("could not read response body")?;
-				let body = hyper::body::Buf::reader(body);
+				let first = hyper::body::HttpBody::data(&mut body).await.transpose().context("could not read response body")?;
+				let body =
+					if let Some(first) = first {
+						let second = hyper::body::HttpBody::data(&mut body).await.transpose().context("could not read response body")?;
+						if let Some(second) = second {
+							let rest = hyper::body::aggregate(body).await.context("could not read response body")?;
+							let rest = hyper::body::Buf::reader(hyper::body::Buf::chain(second, rest));
+							Body {
+								first,
+								rest: Some(rest),
+							}
+						}
+						else {
+							Body {
+								first,
+								rest: None,
+							}
+						}
+					}
+					else {
+						Body {
+							first: Default::default(),
+							rest: None,
+						}
+					};
 				Some((content_type, body))
 			},
 			None => None,
@@ -102,15 +125,17 @@ impl Client {
 			Err(err) => Some(err),
 		};
 
-		let remaining = body.map(|(content_type, mut body)| {
-			let mut remaining = vec![];
-			let _ = std::io::Read::read_to_end(&mut body, &mut remaining).expect("cannot fail to read Buf to end");
-			(content_type, hyper::body::Bytes::from(remaining))
+		let body = body.map(|(content_type, mut body)| {
+			let mut body_vec = body.first.to_vec();
+			if let Some(rest) = &mut body.rest {
+				std::io::Read::read_to_end(rest, &mut body_vec).expect("cannot fail to read Buf to end");
+			}
+			(content_type, hyper::body::Bytes::from(body_vec))
 		});
 
 		match err {
-			Some(err) => Err(err).context(format!("unexpected response {}: {:?}", status, remaining)),
-			None => Err(anyhow::anyhow!("unexpected response {}: {:?}", status, remaining)),
+			Some(err) => Err(err).context(format!("unexpected response {}: {:?}", status, body)),
+			None => Err(anyhow::anyhow!("unexpected response {}: {:?}", status, body)),
 		}
 	}
 }
@@ -118,9 +143,36 @@ impl Client {
 pub trait FromResponse: Sized {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		body: Option<(&http::HeaderValue, &mut Body<impl std::io::Read>)>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>>;
+}
+
+pub struct Body<R> {
+	first: hyper::body::Bytes,
+	rest: Option<R>,
+}
+
+impl<R> Body<R> where R: std::io::Read {
+	pub fn as_json<'de, T>(&'de mut self) -> serde_json::Result<T> where T: serde::Deserialize<'de> {
+		let first = &self.first[..];
+		match &mut self.rest {
+			Some(rest) => serde::Deserialize::deserialize(&mut serde_json::Deserializer::from_reader(std::io::Read::chain(first, rest))),
+			None => serde::Deserialize::deserialize(&mut serde_json::Deserializer::from_slice(first)),
+		}
+	}
+
+	pub fn as_str(&mut self) -> anyhow::Result<std::borrow::Cow<'_, str>> {
+		let first = &self.first[..];
+		match &mut self.rest {
+			Some(rest) => {
+				let mut result = String::new();
+				std::io::Read::read_to_string(&mut std::io::Read::chain(first, rest), &mut result)?;
+				Ok(result.into())
+			},
+			None => Ok(std::str::from_utf8(first)?.into()),
+		}
+	}
 }
 
 pub struct ResponseWithLocation<T> {
@@ -131,7 +183,7 @@ pub struct ResponseWithLocation<T> {
 impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+		body: Option<(&http::HeaderValue, &mut Body<impl std::io::Read>)>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		let location = get_location(&headers)?;

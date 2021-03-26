@@ -24,7 +24,7 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
@@ -72,7 +72,7 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {

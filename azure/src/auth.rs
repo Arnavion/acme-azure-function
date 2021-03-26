@@ -26,21 +26,30 @@ impl Auth {
 		#[allow(unused_extern_crates)]
 		extern crate serde;
 
-		#[derive(serde::Deserialize)]
-		struct Response {
-			access_token: String,
-			token_type: String,
-		}
+		struct Response(http::HeaderValue);
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
+				#[derive(serde::Deserialize)]
+				struct ResponseInner<'a> {
+					#[serde(borrow)]
+					access_token: std::borrow::Cow<'a, str>,
+					#[serde(borrow)]
+					token_type: std::borrow::Cow<'a, str>,
+				}
+
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-						Some(serde_json::from_reader(body)?),
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+						let ResponseInner { access_token, token_type } = body.as_json()?;
+						let header_value =
+							std::convert::TryInto::try_into(format!("{} {}", token_type, access_token))
+							.context("could not parse token as HeaderValue")?;
+						Some(Response(header_value))
+					},
 					_ => None,
 				})
 			}
@@ -79,12 +88,8 @@ impl Auth {
 				},
 			};
 
-			let Response { access_token, token_type } =
+			let Response(header_value) =
 				client.request_inner(req).await.context("could not get authorization")?;
-
-			let header_value =
-				std::convert::TryInto::try_into(format!("{} {}", token_type, access_token))
-				.context("could not parse token as HeaderValue")?;
 			Ok::<_, anyhow::Error>(log2::Secret(header_value))
 		}).await?;
 		Ok(authorization)

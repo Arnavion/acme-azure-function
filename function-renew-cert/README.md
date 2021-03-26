@@ -265,9 +265,9 @@ az keyvault certificate purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$AZUR
 If you need to force the ACME server to return a new certificate even if a previous one is still valid, delete the account key:
 
 ```sh
-az keyvault secret delete --vault-name "$AZURE_KEY_VAULT_NAME" --name "$ACME_ACCOUNT_KEY_SECRET_NAME"
+az keyvault key delete --vault-name "$AZURE_KEY_VAULT_NAME" --name "$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME"
 sleep 10
-az keyvault secret purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$ACME_ACCOUNT_KEY_SECRET_NAME"
+az keyvault key purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME"
 ```
 
 

@@ -48,12 +48,11 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::ACCEPTED, Some((content_type, body))) if http_common::is_json(content_type) =>
-						Some(serde_json::from_reader(body)?),
+					(http::StatusCode::ACCEPTED, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -116,13 +115,14 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
-				struct ResponseInner {
+				struct ResponseInner<'a> {
 					attributes: ResponseAttributes,
-					id: String,
+					#[serde(borrow)]
+					id: std::borrow::Cow<'a, str>,
 				}
 
 				#[derive(serde::Deserialize)]
@@ -132,7 +132,7 @@ impl<'a> super::Client<'a> {
 
 				Ok(match (status, body) {
 					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
-						let ResponseInner { attributes: ResponseAttributes { exp }, id } = serde_json::from_reader(body)?;
+						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
 
 						let not_after =
 							chrono::TimeZone::ymd(&chrono::Utc, 1970, 1, 1).and_hms(0, 0, 0) +
@@ -181,7 +181,7 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {

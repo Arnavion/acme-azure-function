@@ -5,26 +5,59 @@ impl<'a> super::Client<'a> {
 		cdn_endpoint_name: &str,
 		cdn_custom_domain_name: &str,
 	) -> anyhow::Result<Option<CustomDomainSecret<'static>>> {
-		#[derive(serde::Deserialize)]
-		struct Response {
-			properties: CustomDomainProperties,
-		}
-
-		#[derive(serde::Deserialize)]
-		struct CustomDomainProperties {
-			#[serde(rename = "customHttpsParameters")]
-			custom_https_parameters: Option<CustomDomainPropertiesCustomHttpsParameters<'static>>,
-		}
+		struct Response(Option<CustomDomainSecret<'static>>);
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
+				#[derive(serde::Deserialize)]
+				struct ResponseInner<'a> {
+					#[serde(borrow)]
+					properties: CustomDomainProperties<'a>,
+				}
+
+				#[derive(serde::Deserialize)]
+				struct CustomDomainProperties<'a> {
+					#[serde(borrow, rename = "customHttpsParameters")]
+					custom_https_parameters: Option<CustomDomainPropertiesCustomHttpsParameters<'a>>,
+				}
+
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) =>
-						Some(serde_json::from_reader(body)?),
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+						let ResponseInner { properties: CustomDomainProperties { custom_https_parameters } } = body.as_json()?;
+						let secret = custom_https_parameters.map(|custom_https_parameters| match custom_https_parameters {
+							CustomDomainPropertiesCustomHttpsParameters::KeyVault {
+								certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters {
+									secret,
+									..
+								},
+								..
+							} => {
+								let CustomDomainKeyVaultSecret {
+									subscription_id,
+									resource_group,
+									key_vault_name,
+									secret_name,
+									secret_version,
+								} = secret.into_owned();
+								let secret = CustomDomainKeyVaultSecret {
+									subscription_id: subscription_id.into_owned().into(),
+									resource_group: resource_group.into_owned().into(),
+									key_vault_name: key_vault_name.into_owned().into(),
+									secret_name: secret_name.into_owned().into(),
+									secret_version: secret_version.into_owned().into(),
+								};
+								CustomDomainSecret::KeyVault(secret)
+							},
+
+							CustomDomainPropertiesCustomHttpsParameters::Cdn =>
+								CustomDomainSecret::Cdn,
+						});
+						Some(Response(secret))
+					},
 					_ => None,
 				})
 			}
@@ -44,20 +77,13 @@ impl<'a> super::Client<'a> {
 							cdn_custom_domain_name,
 						)).await?;
 
-					let Response { properties: CustomDomainProperties { custom_https_parameters } } =
+					let Response(secret) =
 						self.client.request(
 							http::Method::GET,
 							url,
 							authorization,
 							None::<&()>,
 						).await?;
-					let secret = custom_https_parameters.map(|custom_https_parameters| match custom_https_parameters {
-						CustomDomainPropertiesCustomHttpsParameters::KeyVault { certificate_source_parameters, .. } =>
-							CustomDomainSecret::KeyVault(certificate_source_parameters.secret.into_owned()),
-
-						CustomDomainPropertiesCustomHttpsParameters::Cdn =>
-							CustomDomainSecret::Cdn,
-					});
 					Ok::<_, anyhow::Error>(secret)
 				},
 			).await?;
@@ -84,7 +110,7 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				_body: Option<(&http::HeaderValue, &mut impl std::io::Read)>,
+				_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 				headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
@@ -169,7 +195,7 @@ pub enum CustomDomainSecret<'a> {
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct CustomDomainKeyVaultSecret<'a> {
-	#[serde(rename = "subscriptionId")]
+	#[serde(borrow, rename = "subscriptionId")]
 	pub subscription_id: std::borrow::Cow<'a, str>,
 
 	// This field doesn't serve any purpose because the KeyVault name is globally unique.
@@ -179,16 +205,16 @@ pub struct CustomDomainKeyVaultSecret<'a> {
 	//
 	// So it would be possible to not expose this as a struct field and instead just serialize a dummy value.
 	// But for the sake of clarity and forward-compatibility, set it to the correct value anyway.
-	#[serde(rename = "resourceGroupName")]
+	#[serde(borrow, rename = "resourceGroupName")]
 	pub resource_group: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "vaultName")]
+	#[serde(borrow, rename = "vaultName")]
 	pub key_vault_name: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "secretName")]
+	#[serde(borrow, rename = "secretName")]
 	pub secret_name: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "secretVersion")]
+	#[serde(borrow, rename = "secretVersion")]
 	pub secret_version: std::borrow::Cow<'a, str>,
 }
 
@@ -197,10 +223,10 @@ pub struct CustomDomainKeyVaultSecret<'a> {
 enum CustomDomainPropertiesCustomHttpsParameters<'a> {
 	#[serde(rename = "AzureKeyVault")]
 	KeyVault {
-		#[serde(rename = "certificateSourceParameters")]
+		#[serde(borrow, rename = "certificateSourceParameters")]
 		certificate_source_parameters: CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters<'a>,
 
-		#[serde(rename = "protocolType")]
+		#[serde(borrow, rename = "protocolType")]
 		protocol_type: std::borrow::Cow<'a, str>,
 	},
 
@@ -209,15 +235,15 @@ enum CustomDomainPropertiesCustomHttpsParameters<'a> {
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct CustomDomainPropertiesCustomHttpsParametersCertificateSourceParameters<'a> {
-	#[serde(rename = "deleteRule")]
+	#[serde(borrow, rename = "deleteRule")]
 	delete_rule: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "@odata.type")]
+	#[serde(borrow, rename = "@odata.type")]
 	odata_type: std::borrow::Cow<'a, str>,
 
-	#[serde(rename = "updateRule")]
+	#[serde(borrow, rename = "updateRule")]
 	update_rule: std::borrow::Cow<'a, str>,
 
-	#[serde(flatten)]
+	#[serde(borrow, flatten)]
 	secret: std::borrow::Cow<'a, CustomDomainKeyVaultSecret<'a>>,
 }
