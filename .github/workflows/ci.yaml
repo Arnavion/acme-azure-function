@@ -22,5 +22,6 @@ jobs:
 
         rustup self update
         rustup set profile minimal
+        rustup update
 
         make SHELL=/bin/bash test
