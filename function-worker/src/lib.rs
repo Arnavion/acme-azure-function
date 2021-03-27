@@ -69,7 +69,7 @@ macro_rules! run {
 							match path {
 								$(
 									$name => match $f(&azure_subscription_id, &azure_auth, &settings, &logger).await {
-										Ok(()) => $crate::_Response::Ok,
+										Ok(message) => $crate::_Response::Ok(message),
 										Err(err) => $crate::_Response::Error(format!("{:?}", err)),
 									},
 								)*
@@ -335,7 +335,7 @@ pub async fn _parse_request<'a>(
 #[doc(hidden)]
 #[derive(Debug)]
 pub enum _Response {
-	Ok,
+	Ok(&'static str),
 	UnknownFunction,
 	MethodNotAllowed,
 	Error(String),
@@ -415,7 +415,7 @@ pub async fn _handle_request(
 	};
 
 	let status = match &res {
-		_Response::Ok => http::StatusCode::OK,
+		_Response::Ok(_) => http::StatusCode::OK,
 		_Response::UnknownFunction => http::StatusCode::NOT_FOUND,
 		_Response::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
 		_Response::Error(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -430,7 +430,7 @@ pub async fn _handle_request(
 		std::io::IoSlice::new(b""), // body
 	];
 	match &res {
-		_Response::Ok => {
+		_Response::Ok(_) => {
 			io_slices[3] = std::io::IoSlice::new(b"content-type:application/json\r\n");
 			io_slices[5] = std::io::IoSlice::new(br#"{"Outputs":{"":""},"Logs":null,"ReturnValue":""}"#);
 		},

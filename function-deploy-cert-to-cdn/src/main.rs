@@ -15,7 +15,7 @@ async fn deploy_cert_to_cdn_main(
 	azure_auth: &azure::Auth,
 	settings: &Settings<'_>,
 	logger: &log2::Logger,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<&'static str> {
 	let user_agent: http::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
@@ -72,14 +72,14 @@ async fn deploy_cert_to_cdn_main(
 		}
 		else {
 			logger.report_message("Nothing to do.");
-			return Ok(());
+			return Ok("nothing to do");
 		}
 	};
 
 	match actual_cdn_custom_domain_secret {
 		Some(azure::management::cdn::CustomDomainSecret::KeyVault(actual_cdn_custom_domain_secret)) if expected_cdn_custom_domain_secret == actual_cdn_custom_domain_secret => {
 			logger.report_message("CDN is up-to-date.");
-			return Ok(());
+			return Ok("CDN is up-to-date");
 		},
 
 		Some(azure::management::cdn::CustomDomainSecret::Cdn) =>
@@ -96,7 +96,7 @@ async fn deploy_cert_to_cdn_main(
 			&expected_cdn_custom_domain_secret,
 		).await?;
 
-	Ok(())
+	Ok("CDN has been updated")
 }
 
 #[derive(serde::Deserialize)]

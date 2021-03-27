@@ -19,7 +19,7 @@ async fn renew_cert_main(
 	azure_auth: &azure::Auth,
 	settings: &Settings<'_>,
 	logger: &log2::Logger,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<&'static str> {
 	let user_agent: http::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
@@ -43,7 +43,7 @@ async fn renew_cert_main(
 			(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
 			"does not need to be renewed",
 		);
-		return Ok(());
+		return Ok("certificate does not need to be renewed");
 	}
 
 	let account_key = {
@@ -161,7 +161,7 @@ async fn renew_cert_main(
 		"renewed",
 	);
 
-	Ok(())
+	Ok("certificate has been renewed")
 }
 
 #[derive(serde::Deserialize)]
