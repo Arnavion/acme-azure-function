@@ -10,3 +10,4 @@ members = [
 	"function-deploy-cert-to-cdn",
 	"function-renew-cert",
 ]
+resolver = "2"
