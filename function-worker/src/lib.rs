@@ -335,7 +335,7 @@ pub async fn _parse_request<'a>(
 #[doc(hidden)]
 #[derive(Debug)]
 pub enum _Response {
-	Ok(&'static str),
+	Ok(std::borrow::Cow<'static, str>),
 	UnknownFunction,
 	MethodNotAllowed,
 	Error(String),

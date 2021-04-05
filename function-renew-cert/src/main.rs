@@ -19,7 +19,7 @@ async fn renew_cert_main(
 	azure_auth: &azure::Auth,
 	settings: &Settings<'_>,
 	logger: &log2::Logger,
-) -> anyhow::Result<&'static str> {
+) -> anyhow::Result<std::borrow::Cow<'static, str>> {
 	let user_agent: http::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
@@ -31,19 +31,18 @@ async fn renew_cert_main(
 		logger,
 	).context("could not initialize Azure KeyVault API client")?;
 
-	let need_new_certificate = {
+	{
 		let certificate = azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?;
-		let need_new_certificate =
-			certificate.map_or(true, |certificate| certificate.not_after < chrono::Utc::now() + chrono::Duration::days(30));
-		need_new_certificate
-	};
-	if !need_new_certificate {
-		logger.report_state(
-			"azure/key_vault/certificate",
-			(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
-			"does not need to be renewed",
-		);
-		return Ok("certificate does not need to be renewed");
+		if let Some(certificate) = certificate {
+			if certificate.not_after > chrono::Utc::now() + chrono::Duration::days(30) {
+				logger.report_state(
+					"azure/key_vault/certificate",
+					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
+					"does not need to be renewed",
+				);
+				return Ok(format!("certificate does not need to be renewed: {:?}", certificate).into());
+			}
+		}
 	}
 
 	let account_key = {
@@ -161,7 +160,11 @@ async fn renew_cert_main(
 		"renewed",
 	);
 
-	Ok("certificate has been renewed")
+	let certificate =
+		azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?
+		.context("newly-created certificate does not exist")?;
+
+	Ok(format!("certificate has been renewed: {:?}", certificate).into())
 }
 
 #[derive(serde::Deserialize)]
