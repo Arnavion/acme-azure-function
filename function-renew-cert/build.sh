@@ -26,7 +26,7 @@ esac
         jq --null-input --sort-keys --compact-output \
             --arg ACME_DIRECTORY_URL "$acme_directory_url" \
             --arg ACME_CONTACT_URL "$ACME_CONTACT_URL" \
-            --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_ACME_RESOURCE_GROUP_NAME" \
+            --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_COMMON_RESOURCE_GROUP_NAME" \
             --arg AZURE_KEY_VAULT_NAME "$AZURE_KEY_VAULT_NAME" \
             --arg AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME "$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
             --arg AZURE_KEY_VAULT_CERTIFICATE_NAME "$AZURE_KEY_VAULT_CERTIFICATE_NAME" \

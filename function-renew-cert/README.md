@@ -22,13 +22,16 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     # The top-level domain name. Certificates will be requested for "*.TOP_LEVEL_DOMAIN_NAME".
     export TOP_LEVEL_DOMAIN_NAME='arnavion.dev'
 
+    # The resource group that will host the KeyVault and DNS zone.
+    export AZURE_COMMON_RESOURCE_GROUP_NAME='arnavion-dev'
+
     # The ACME server's directory URL.
     export ACME_DIRECTORY_URL='https://acme-v02.api.letsencrypt.org/directory'
 
     # The contact URL used to register an account with the ACME server.
     export ACME_CONTACT_URL='mailto:admin@arnavion.dev'
 
-    # The resource group that will host the KeyVault and Function app.
+    # The resource group that will host the Function app.
     export AZURE_ACME_RESOURCE_GROUP_NAME='arnavion-dev-acme'
 
     # The name of the KeyVault.
@@ -63,19 +66,23 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Deploy Azure resources.
 
     ```sh
-    # Create a resource group.
-    az group create --name "$AZURE_ACME_RESOURCE_GROUP_NAME"
+    # Create the resource group for the KeyVault and DNS zone.
+    az group create --name "$AZURE_COMMON_RESOURCE_GROUP_NAME"
 
 
     # Create a KeyVault.
     az keyvault create \
-        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME" \
+        --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$AZURE_KEY_VAULT_NAME" \
         --enable-rbac-authorization
 
 
     # Create a DNS zone.
     az network dns zone create \
-        --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME"
+        --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME"
+
+
+    # Create the resource group for the Function app.
+    az group create --name "$AZURE_ACME_RESOURCE_GROUP_NAME"
 
 
     # Create a Storage account for the Function app.
@@ -175,7 +182,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
             --query principalId --output tsv
     )"
     for scope in \
-        "$(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
+        "$(az network dns zone show --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/keys/$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
         "$(
@@ -194,7 +201,11 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 1. Create an NS record with your DNS registrar for the dns-01 challenge.
 
     ```sh
-    echo "Create NS record for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to $(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query 'nameServers[0]' --output tsv)"
+    echo "Create NS record for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to $(
+        az network dns zone show \
+            --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" \
+            --query 'nameServers[0]' --output tsv
+    )"
     ```
 
 1. Prepare the Log Analytics table schema.
@@ -230,7 +241,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
 
     ```sh
     for scope in \
-        "$(az network dns zone show --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
+        "$(az network dns zone show --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/keys/$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
         "$(
