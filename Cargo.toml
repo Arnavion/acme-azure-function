@@ -7,7 +7,6 @@ members = [
 	"log2",
 	"once_cell2",
 
-	"function-deploy-cert-to-cdn",
 	"function-renew-cert",
 ]
 resolver = "2"

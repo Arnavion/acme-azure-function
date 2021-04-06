@@ -159,19 +159,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "function-deploy-cert-to-cdn"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "azure",
- "function-worker",
- "futures-util",
- "http",
- "log2",
- "serde",
-]
-
-[[package]]
 name = "function-renew-cert"
 version = "0.1.0"
 dependencies = [

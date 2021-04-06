@@ -1,11 +1,7 @@
-#[cfg(feature = "key_vault_cert")]
 mod certificate;
-#[cfg(feature = "key_vault_cert")]
 pub use certificate::{Certificate, CreateCsrKeyType};
 
-#[cfg(feature = "key_vault_key")]
 mod key;
-#[cfg(feature = "key_vault_key")]
 pub use key::{EcKty, Key};
 
 use anyhow::Context;

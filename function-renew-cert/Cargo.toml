@@ -30,11 +30,7 @@ tokio = { version = "1", default-features = false, features = [
 ] }
 
 acme = { path = "../acme" }
-azure = { path = "../azure", features = [
-	"dns",
-	"key_vault_cert",
-	"key_vault_key",
-] }
+azure = { path = "../azure" }
 function-worker = { path = "../function-worker" }
 http-common = { path = "../http-common" }
 log2 = { path = "../log2" }

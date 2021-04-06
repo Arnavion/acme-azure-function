@@ -1,12 +1,7 @@
 use anyhow::Context;
 
-#[cfg(feature = "cdn")]
-pub mod cdn;
-
-#[cfg(feature = "dns")]
 mod dns;
 
-#[cfg(feature = "log_analytics")]
 pub mod log_analytics;
 
 pub struct Client<'a> {

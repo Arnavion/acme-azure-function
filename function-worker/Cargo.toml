@@ -34,8 +34,6 @@ tokio = { version = "1", default-features = false, features = [
 	"time",
 ] }
 
-azure = { path = "../azure", features = [
-	"log_analytics",
-] }
+azure = { path = "../azure" }
 log2 = { path = "../log2" }
 once_cell2 = { path = "../once_cell2" }
