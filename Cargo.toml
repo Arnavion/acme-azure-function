@@ -10,3 +10,11 @@ members = [
 	"function-renew-cert",
 ]
 resolver = "2"
+
+[profile.release]
+codegen-units = 1
+debug = false
+incremental = false
+lto = true
+opt-level = "s"
+panic = "abort"
