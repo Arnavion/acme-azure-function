@@ -72,20 +72,17 @@ impl<'a> super::Client<'a> {
 				workspace_name,
 				<log2::ScopedObjectOperation>::Get,
 				async {
-					let (url, authorization) =
-						self.request_parameters(format_args!(
-							"/providers/Microsoft.OperationalInsights/workspaces/{}?api-version=2020-08-01",
-							workspace_name,
-						)).await?;
-
 					let GetResponse { properties: Properties { customer_id } } =
-						self.client.request(
+						crate::request(
+							&self,
 							http::Method::GET,
-							url,
-							authorization,
+							format_args!(
+								"/providers/Microsoft.OperationalInsights/workspaces/{}?api-version=2020-08-01",
+								workspace_name,
+							),
 							None::<&()>,
 						).await?;
-					Ok::<_, anyhow::Error>(customer_id)
+					Ok(customer_id)
 				},
 			);
 
@@ -95,20 +92,17 @@ impl<'a> super::Client<'a> {
 				workspace_name,
 				<log2::ScopedObjectOperation>::Get,
 				async {
-					let (url, authorization) =
-						self.request_parameters(format_args!(
-							"/providers/Microsoft.OperationalInsights/workspaces/{}/sharedKeys?api-version=2020-08-01",
-							workspace_name,
-						)).await?;
-
 					let SharedKeysResponse { primary_shared_key } =
-						self.client.request(
+						crate::request(
+							&self,
 							http::Method::POST,
-							url,
-							authorization,
+							format_args!(
+								"/providers/Microsoft.OperationalInsights/workspaces/{}/sharedKeys?api-version=2020-08-01",
+								workspace_name,
+							),
 							None::<&()>,
 						).await?;
-					Ok::<_, anyhow::Error>(log2::Secret(primary_shared_key))
+					Ok(log2::Secret(primary_shared_key))
 				},
 			);
 
@@ -149,15 +143,12 @@ impl LogSender<'_> {
 		let content_length: http::HeaderValue = (1 + logs.len() + 1).into();
 		let content_length_s = content_length.to_str().expect("usize HeaderValue should be convertible to str").to_owned();
 
-		#[allow(clippy::borrow_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
 		let body =
-			futures_util::StreamExt::chain(
-				futures_util::StreamExt::chain(
-					futures_util::stream::iter(std::iter::once(Ok::<_, std::convert::Infallible>(BODY_PREFIX))),
-					futures_util::stream::iter(std::iter::once(Ok(logs.into()))),
-				),
-				futures_util::stream::iter(std::iter::once(Ok(BODY_SUFFIX))),
-			);
+			futures_util::stream::iter(std::array::IntoIter::new([
+				Ok::<_, std::convert::Infallible>(BODY_PREFIX),
+				Ok(logs.into()),
+				Ok(BODY_SUFFIX),
+			]));
 
 		self.logger.report_operation(
 			"azure/log_analytics/logs",
@@ -232,14 +223,14 @@ impl LogSender<'_> {
 					let headers = req.headers_mut();
 					headers.insert(http::header::AUTHORIZATION, authorization);
 					headers.insert(http::header::CONTENT_LENGTH, content_length);
-					headers.insert(http::header::CONTENT_TYPE, http_common::APPLICATION_JSON.clone());
+					headers.insert(http::header::CONTENT_TYPE, crate::APPLICATION_JSON.clone());
 					headers.insert(LOG_TYPE.clone(), log_type);
 					headers.insert(TIME_GENERATED_FIELD.clone(), log2::TIME_GENERATED_FIELD.clone());
 					headers.insert(X_MS_DATE.clone(), x_ms_date);
 				}
 
-				let _: Response = self.client.request_inner(req).await?;
-				Ok::<_, anyhow::Error>(())
+				let _: Response = self.client.request(req).await?;
+				Ok(())
 			},
 		).await?;
 

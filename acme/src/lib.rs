@@ -4,6 +4,7 @@
 	clippy::default_trait_access,
 	clippy::let_unit_value,
 	clippy::missing_errors_doc,
+	clippy::must_use_candidate,
 	clippy::too_many_lines,
 )]
 
@@ -11,9 +12,10 @@ use anyhow::Context;
 
 pub struct Account<'a, K> {
 	account_key: &'a K,
-	account_url: String,
+	account_url: Option<String>,
 	client: http_common::Client,
-	nonce: http::HeaderValue,
+	nonce: Option<http::HeaderValue>,
+	new_nonce_url: http::Uri,
 	new_order_url: http::Uri,
 	logger: &'a log2::Logger,
 }
@@ -26,89 +28,60 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		user_agent: http::HeaderValue,
 		logger: &'a log2::Logger,
 	) -> anyhow::Result<Account<'a, K>> {
+		#[derive(Debug, serde::Deserialize)]
+		struct DirectoryResponse {
+			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+			#[serde(rename = "newAccount")]
+			new_account_url: http::Uri,
+
+			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+			#[serde(rename = "newNonce")]
+			new_nonce_url: http::Uri,
+
+			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
+			#[serde(rename = "newOrder")]
+			new_order_url: http::Uri,
+		}
+
+		impl http_common::FromResponse for DirectoryResponse {
+			fn from_response(
+				status: http::StatusCode,
+				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				_headers: http::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				Ok(match (status, body) {
+					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
+					_ => None,
+				})
+			}
+		}
+
 		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
 
-		let mut nonce = None;
+		let (DirectoryResponse {
+			new_account_url,
+			new_nonce_url,
+			new_order_url,
+		}, log2::Secret(nonce)) = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
+			let mut req = http::Request::new(Default::default());
+			*req.method_mut() = http::Method::GET;
+			*req.uri_mut() = acme_directory_url;
 
-		let (new_nonce_url, new_account_url, new_order_url) = {
-			#[derive(Debug, serde::Deserialize)]
-			struct DirectoryResponse {
-				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-				#[serde(rename = "newAccount")]
-				new_account_url: http::Uri,
+			let ResponseWithNewNonce { body, new_nonce } = client.request(req).await.context("could not execute HTTP request")?;
+			Ok((body, log2::Secret(new_nonce)))
+		}).await.context("could not query ACME directory")?;
 
-				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-				#[serde(rename = "newNonce")]
-				new_nonce_url: http::Uri,
-
-				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-				#[serde(rename = "newOrder")]
-				new_order_url: http::Uri,
-			}
-
-			impl http_common::FromResponse for DirectoryResponse {
-				fn from_response(
-					status: http::StatusCode,
-					body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
-					_headers: http::HeaderMap,
-				) -> anyhow::Result<Option<Self>> {
-					Ok(match (status, body) {
-						(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
-						_ => None,
-					})
-				}
-			}
-
-			let DirectoryResponse {
-				new_account_url,
-				new_nonce_url,
-				new_order_url,
-			} = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
-				get(
-					&client,
-					&mut nonce,
-					acme_directory_url,
-				).await.context("could not query ACME directory")
-			}).await?;
-
-			(new_nonce_url, new_account_url, new_order_url)
+		let mut account = Account {
+			account_key,
+			account_url: None,
+			client,
+			nonce,
+			new_nonce_url,
+			new_order_url,
+			logger,
 		};
 
-		let mut nonce =
-			if let Some(nonce) = nonce {
-				logger.report_state("acme/nonce", "", "already have initial");
-				nonce
-			}
-			else {
-				struct NewNonceResponse;
-
-				impl http_common::FromResponse for NewNonceResponse {
-					fn from_response(
-						status: http::StatusCode,
-						_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
-						_headers: http::HeaderMap,
-					) -> anyhow::Result<Option<Self>> {
-						Ok(match status {
-							http::StatusCode::NO_CONTENT => Some(NewNonceResponse),
-							_ => None,
-						})
-					}
-				}
-
-				let log2::Secret(nonce) = logger.report_operation("acme/nonce", "", <log2::ScopedObjectOperation>::Get, async {
-					let NewNonceResponse = get(
-						&client,
-						&mut nonce,
-						new_nonce_url,
-					).await.context("could not get initial nonce")?;
-
-					let nonce = nonce.context("server did not return initial nonce")?;
-					Ok::<_, anyhow::Error>(log2::Secret(nonce))
-				}).await?;
-				nonce
-			};
-
-		let account_url = {
+		account.account_url = {
 			#[derive(serde::Serialize)]
 			struct NewAccountRequest<'a> {
 				#[serde(rename = "contact")]
@@ -151,18 +124,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				let http_common::ResponseWithLocation {
 					body: NewAccountResponse { status },
 					location: account_url,
-				} = post(
-					account_key,
-					None,
-					&client,
-					&mut nonce,
-					new_account_url,
-					Some(&NewAccountRequest {
+				} =
+					account.post(new_account_url, Some(&NewAccountRequest {
 						contact_urls: &[acme_contact_url],
 						terms_of_service_agreed: true,
-					}),
-				).await.context("could not create / get account")?;
-				Ok::<_, anyhow::Error>((account_url.to_string(), status))
+					})).await.context("could not create / get account")?;
+				Ok((account_url.to_string(), status))
 			}).await?;
 
 			logger.report_state("acme/account", &account_url, format_args!("{:?}", status));
@@ -171,19 +138,10 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				return Err(anyhow::anyhow!("Account has {:?} status", status));
 			}
 
-			account_url
+			Some(account_url)
 		};
 
-		let result = Account {
-			account_key,
-			account_url,
-			client,
-			nonce,
-			new_order_url,
-			logger,
-		};
-
-		Ok(result)
+		Ok(account)
 	}
 
 	pub async fn place_order(&mut self, domain_name: &str) -> anyhow::Result<Order> {
@@ -208,20 +166,14 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			let http_common::ResponseWithLocation {
 				location: order_url,
 				body: order,
-			} = post(
-				self.account_key,
-				Some(&self.account_url),
-				&self.client,
-				&mut self.nonce,
-				self.new_order_url.clone(),
-				Some(&NewOrderRequest {
+			} =
+				self.post(self.new_order_url.clone(), Some(&NewOrderRequest {
 					identifiers: &[NewOrderRequestIdentifier {
 						r#type: "dns",
 						value: domain_name,
 					}],
-				}),
-			).await.context("could not create / get order")?;
-			Ok::<_, anyhow::Error>((order_url, order))
+				})).await.context("could not create / get order")?;
+			Ok((order_url, order))
 		}).await?;
 
 		let order = loop {
@@ -285,15 +237,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						return Err(anyhow::anyhow!("more than one authorization"));
 					}
 
-					let authorization =
-						post(
-							self.account_key,
-							Some(&self.account_url),
-							&self.client,
-							&mut self.nonce,
-							authorization_url.clone(),
-							None::<&()>,
-						).await.context("could not get authorization")?;
+					let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
 
 					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
@@ -311,11 +255,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						sha2::Digest::finalize(hasher)
 					};
 
-					{
-						let mut writer = base64::write::EncoderWriter::new(&mut hasher, JWS_BASE64_CONFIG);
+					let hasher = {
+						let mut writer = base64::write::EncoderWriter::new(hasher, JWS_BASE64_CONFIG);
 						let () = std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
-						let _ = writer.finish().expect("cannot fail to base64-encode JWK hash");
-					}
+						writer.finish().expect("cannot fail to base64-encode JWK hash")
+					};
 
 					let hash = sha2::Digest::finalize(hasher);
 					let dns_txt_record_content = base64::encode_config(&hash, JWS_BASE64_CONFIG);
@@ -342,15 +286,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				}),
 			};
 
-			order =
-				post(
-					self.account_key,
-					Some(&self.account_url),
-					&self.client,
-					&mut self.nonce,
-					order_url.clone(),
-					None::<&()>,
-				).await.context("could not get order")?;
+			order = self.post(order_url.clone(), None::<&()>).await.context("could not get order")?;
 		};
 
 		Ok(order)
@@ -428,15 +364,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		let mut body = Some(&ChallengeCompleteRequest { });
 		loop {
-			let challenge: ChallengeResponse =
-				post(
-					self.account_key,
-					Some(&self.account_url),
-					&self.client,
-					&mut self.nonce,
-					challenge_url.clone(),
-					body.take(),
-				).await.context("could not complete challenge")?;
+			let challenge = self.post(challenge_url.clone(), body.take()).await.context("could not complete challenge")?;
 
 			self.logger.report_state("acme/challenge", &challenge_url, format_args!("{:?}", challenge));
 
@@ -459,15 +387,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		self.logger.report_message(format_args!("Waiting for authorization {} ...", authorization_url));
 
 		loop {
-			let authorization =
-				post(
-					self.account_key,
-					Some(&self.account_url),
-					&self.client,
-					&mut self.nonce,
-					authorization_url.clone(),
-					None::<&()>,
-				).await.context("could not get authorization")?;
+			let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
 
 			self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
@@ -503,15 +423,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		self.logger.report_message(format_args!("Finalizing order {} ...", order_url));
 
 		let order = loop {
-			let order =
-				post(
-					self.account_key,
-					Some(&self.account_url),
-					&self.client,
-					&mut self.nonce,
-					order_url.clone(),
-					None::<&()>,
-				).await.context("could not get order")?;
+			let order = self.post(order_url.clone(), None::<&()>).await.context("could not get order")?;
 
 			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
 
@@ -545,16 +457,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					let csr = csr.trim_end_matches('=');
 
 					let _: OrderResponse<serde::de::IgnoredAny, serde::de::IgnoredAny> =
-						post(
-							self.account_key,
-							Some(&self.account_url),
-							&self.client,
-							&mut self.nonce,
-							finalize_url,
-							Some(&FinalizeOrderRequest {
-								csr,
-							}),
-						).await.context("could not finalize order")?;
+						self.post(finalize_url, Some(&FinalizeOrderRequest { csr })).await.context("could not finalize order")?;
 				},
 
 				OrderResponse::Valid { certificate_url } => break OrderValid {
@@ -591,30 +494,179 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		}
 
 		let certificate = self.logger.report_operation("acme/certificate", &certificate_url.clone(), <log2::ScopedObjectOperation>::Get, async {
-			let CertificateResponse(certificate) =
-				post(
-					self.account_key,
-					Some(&self.account_url),
-					&self.client,
-					&mut self.nonce,
-					certificate_url,
-					None::<&()>,
-				).await.context("could not download certificate")?;
-			Ok::<_, anyhow::Error>(certificate)
+			let CertificateResponse(certificate) = self.post(certificate_url, None::<&()>).await.context("could not download certificate")?;
+			Ok(certificate)
 		}).await?;
 
 		Ok(certificate)
+	}
+
+	async fn post<TRequest, TResponse>(
+		&mut self,
+		url: http::Uri,
+		body: Option<&TRequest>,
+	) -> anyhow::Result<TResponse>
+	where
+		TRequest: serde::Serialize,
+		TResponse: http_common::FromResponse,
+	{
+		// This fn encapsulates the non-generic parts of `post` to reduce code size from monomorphization.
+		async fn make_request<K>(account: &mut Account<'_, K>, url: http::Uri, payload: String) -> anyhow::Result<http::Request<hyper::Body>> where K: AccountKey {
+			static APPLICATION_JOSE_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
+				once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/jose+json"));
+
+			let nonce =
+				if let Some(nonce) = account.nonce.take() {
+					nonce
+				}
+				else {
+					struct NewNonceResponse;
+
+					impl http_common::FromResponse for NewNonceResponse {
+						fn from_response(
+							status: http::StatusCode,
+							_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+							_headers: http::HeaderMap,
+						) -> anyhow::Result<Option<Self>> {
+							Ok(match status {
+								http::StatusCode::OK => Some(NewNonceResponse),
+								_ => None,
+							})
+						}
+					}
+
+					let log2::Secret(nonce) = account.logger.report_operation("acme/nonce", "", <log2::ScopedObjectOperation>::Get, async {
+						let mut req = http::Request::new(Default::default());
+						*req.method_mut() = http::Method::HEAD;
+						*req.uri_mut() = account.new_nonce_url.clone();
+
+						let ResponseWithNewNonce::<NewNonceResponse> { body: _, new_nonce } =
+							account.client.request(req).await
+							.context("could not execute HTTP request")
+							.context("newNonce URL did not return new nonce")?;
+
+						let nonce = new_nonce.context("newNonce URL did not return new nonce")?;
+						Ok(log2::Secret(nonce))
+					}).await?;
+					nonce
+				};
+
+			let protected = {
+				#[derive(serde::Serialize)]
+				struct Protected<'a> {
+					alg: &'a str,
+
+					#[serde(flatten)]
+					jwk_or_kid: JwkOrKid<'a>,
+
+					#[serde(serialize_with = "serialize_header_value")]
+					nonce: &'a http::HeaderValue,
+
+					url: std::fmt::Arguments<'a>,
+				}
+
+				#[derive(serde::Serialize)]
+				enum JwkOrKid<'a> {
+					#[serde(rename = "jwk")]
+					Jwk(Jwk<'a>),
+
+					#[serde(rename = "kid")]
+					Kid(&'a str),
+				}
+
+				fn serialize_header_value<S>(header_value: &http::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+					let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
+					serializer.serialize_str(header_value)
+				}
+
+				let jwk = account.account_key.jwk();
+				let alg = jwk.crv.jws_sign_alg();
+
+				let jwk_or_kid = account.account_url.as_deref().map_or_else(|| JwkOrKid::Jwk(jwk), JwkOrKid::Kid);
+
+				let mut writer = base64::write::EncoderStringWriter::from(String::with_capacity(1024), JWS_BASE64_CONFIG);
+				let mut serializer = serde_json::Serializer::new(&mut writer);
+				let () =
+					serde::Serialize::serialize(
+						&Protected {
+							alg,
+							jwk_or_kid,
+							nonce: &nonce,
+							url: format_args!("{}", url),
+						},
+						&mut serializer,
+					).context("could not serialize `protected`")?;
+				writer.into_inner()
+			};
+
+			let signature =
+				account.account_key.sign(std::array::IntoIter::new([
+					protected.as_bytes(),
+					&b"."[..],
+					payload.as_bytes(),
+				])).await?;
+
+			// All strings are base64 so there's no need to get serde_json involved
+			let body = {
+				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
+				const PART1: hyper::body::Bytes = hyper::body::Bytes::from_static(br#"{"payload":""#);
+				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
+				const PART2: hyper::body::Bytes = hyper::body::Bytes::from_static(br#"","protected":""#);
+				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
+				const PART3: hyper::body::Bytes = hyper::body::Bytes::from_static(br#"","signature":""#);
+				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
+				const PART4: hyper::body::Bytes = hyper::body::Bytes::from_static(br#""}"#);
+
+				let body =
+					futures_util::stream::iter(std::array::IntoIter::new([
+						Ok::<_, std::convert::Infallible>(PART1),
+						Ok(payload.into()),
+						Ok(PART2),
+						Ok(protected.into()),
+						Ok(PART3),
+						Ok(signature.into()),
+						Ok(PART4),
+					]));
+
+				hyper::Body::wrap_stream(body)
+			};
+
+			let mut req = http::Request::new(body);
+			*req.method_mut() = http::Method::POST;
+			*req.uri_mut() = url;
+			req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
+			Ok(req)
+		}
+
+		let payload =
+			if let Some(payload) = body {
+				let mut writer = base64::write::EncoderStringWriter::new(JWS_BASE64_CONFIG);
+				let mut serializer = serde_json::Serializer::new(&mut writer);
+				let () = serde::Serialize::serialize(payload, &mut serializer).context("could not serialize `payload`")?;
+				writer.into_inner()
+			}
+			else {
+				String::new()
+			};
+
+		let req = make_request(self, url, payload).await?;
+
+		let ResponseWithNewNonce { body, new_nonce } =
+			self.client.request(req).await.context("could not execute HTTP request")?;
+
+		self.nonce = new_nonce;
+
+		Ok(body)
 	}
 }
 
 pub trait AccountKey {
 	fn jwk(&self) -> Jwk<'_>;
 
-	fn sign<'a>(
-		&'a self,
-		alg: &'static str,
-		digest: &'a str,
-	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>;
+	fn sign<'a, I>(&'a self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>
+	where
+		I: Iterator,
+		<I as Iterator>::Item: AsRef<[u8]>;
 }
 
 #[derive(Clone, Copy, serde::Serialize)]
@@ -625,7 +677,7 @@ pub struct Jwk<'a> {
 	pub y: &'a str,
 }
 
-#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 pub enum EcCurve {
 	#[serde(rename = "P-256")]
 	P256,
@@ -635,6 +687,16 @@ pub enum EcCurve {
 
 	#[serde(rename = "P-521")]
 	P521,
+}
+
+impl EcCurve {
+	pub fn jws_sign_alg(self) -> &'static str {
+		match self {
+			EcCurve::P256 => "ES256",
+			EcCurve::P384 => "ES384",
+			EcCurve::P521 => "ES512",
+		}
+	}
 }
 
 pub enum Order {
@@ -658,155 +720,7 @@ pub struct OrderValid {
 	certificate_url: http::Uri,
 }
 
-async fn get<TResponse>(
-	client: &http_common::Client,
-	nonce: &mut Option<http::HeaderValue>,
-	url: http::Uri,
-) -> anyhow::Result<TResponse>
-where
-	TResponse: http_common::FromResponse,
-{
-	let mut req = http::Request::new(Default::default());
-	*req.method_mut() = http::Method::GET;
-	*req.uri_mut() = url;
-
-	let ResponseWithNewNonce { body, new_nonce } =
-		client.request_inner(req).await.context("could not execute HTTP request")?;
-
-	if let Some(new_nonce) = new_nonce {
-		*nonce = Some(new_nonce);
-	}
-
-	Ok(body)
-}
-
-async fn post<TRequest, TResponse>(
-	account_key: &impl AccountKey,
-	account_url: Option<&str>,
-	client: &http_common::Client,
-	nonce: &mut http::HeaderValue,
-	url: http::Uri,
-	body: Option<&TRequest>,
-) -> anyhow::Result<TResponse>
-where
-	TRequest: serde::Serialize,
-	TResponse: http_common::FromResponse,
-{
-	fn serialize_header_value<S>(header_value: &http::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
-		let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
-		serializer.serialize_str(header_value)
-	}
-
-	static APPLICATION_JOSE_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
-		once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/jose+json"));
-
-	let mut req = {
-		#[derive(serde::Serialize)]
-		struct Protected<'a> {
-			alg: &'a str,
-
-			#[serde(skip_serializing_if = "Option::is_none")]
-			jwk: Option<Jwk<'a>>,
-
-			#[serde(skip_serializing_if = "Option::is_none")]
-			kid: Option<&'a str>,
-
-			#[serde(serialize_with = "serialize_header_value")]
-			nonce: &'a http::HeaderValue,
-
-			url: std::fmt::Arguments<'a>,
-		}
-
-		#[derive(serde::Serialize)]
-		struct Request<'a> {
-			payload: &'a str,
-			protected: &'a str,
-			signature: &'a str,
-		}
-
-		macro_rules! hash {
-			($crv:expr, $protected:expr, $payload:expr, { $($crv_name:pat => $hash:ty,)* }) => {
-				match $crv {
-					$(
-						$crv_name => {
-							let mut hasher: $hash = sha2::Digest::new();
-							sha2::Digest::update(&mut hasher, $protected);
-							sha2::Digest::update(&mut hasher, b".");
-							sha2::Digest::update(&mut hasher, $payload);
-							let hash = sha2::Digest::finalize(hasher);
-							base64::encode_config(&hash, JWS_BASE64_CONFIG)
-						},
-					)*
-				}
-			};
-		}
-
-		let jwk = account_key.jwk();
-
-		let alg = match jwk.crv {
-			EcCurve::P256 => "ES256",
-			EcCurve::P384 => "ES384",
-			EcCurve::P521 => "ES512",
-		};
-
-		let protected = {
-			let (jwk, kid) = account_url.map_or_else(|| (Some(jwk), None), |account_url| (None, Some(account_url)));
-
-			let mut writer = base64::write::EncoderStringWriter::new(JWS_BASE64_CONFIG);
-			let mut serializer = serde_json::Serializer::new(&mut writer);
-			let () =
-				serde::Serialize::serialize(
-					&Protected {
-						alg,
-						jwk,
-						kid,
-						nonce,
-						url: format_args!("{}", url),
-					},
-					&mut serializer,
-				).context("could not serialize `protected`")?;
-			writer.into_inner()
-		};
-
-		let payload =
-			if let Some(payload) = body {
-				let mut writer = base64::write::EncoderStringWriter::new(JWS_BASE64_CONFIG);
-				let mut serializer = serde_json::Serializer::new(&mut writer);
-				let () = serde::Serialize::serialize(payload, &mut serializer).context("could not serialize `payload`")?;
-				writer.into_inner()
-			}
-			else {
-				String::new()
-			};
-
-		let digest = hash!(jwk.crv, &protected, &payload, {
-			EcCurve::P256 => sha2::Sha256,
-			EcCurve::P384 => sha2::Sha384,
-			EcCurve::P521 => sha2::Sha512,
-		});
-		let signature = account_key.sign(alg, &digest).await?;
-
-		let body = Request {
-			payload: &payload,
-			protected: &protected,
-			signature: &signature,
-		};
-		let body = serde_json::to_vec(&body).expect("could not serialize JWS request body");
-		http::Request::new(body.into())
-	};
-	*req.method_mut() = http::Method::POST;
-	*req.uri_mut() = url;
-	req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
-
-	let ResponseWithNewNonce { body, new_nonce } =
-		client.request_inner(req).await.context("could not execute HTTP request")?;
-
-	*nonce = new_nonce.context("server did not return new nonce")?;
-
-	Ok(body)
-}
-
-const JWS_BASE64_CONFIG: base64::Config = base64::Config::new(base64::CharacterSet::UrlSafe, false);
+pub const JWS_BASE64_CONFIG: base64::Config = base64::Config::new(base64::CharacterSet::UrlSafe, false);
 
 struct ResponseWithNewNonce<TResponse> {
 	body: TResponse,

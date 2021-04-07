@@ -89,8 +89,8 @@ impl Auth {
 			};
 
 			let Response(header_value) =
-				client.request_inner(req).await.context("could not get authorization")?;
-			Ok::<_, anyhow::Error>(log2::Secret(header_value))
+				client.request(req).await.context("could not get authorization")?;
+			Ok(log2::Secret(header_value))
 		}).await?;
 		Ok(authorization)
 	}

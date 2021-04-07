@@ -32,38 +32,42 @@ impl<'a> Client<'a> {
 			logger,
 		})
 	}
+}
 
-	async fn authorization(&self) -> anyhow::Result<http::HeaderValue> {
-		{
-			let cached_authorization = self.cached_authorization.read().await;
-			if let Some(authorization) = &*cached_authorization {
-				return Ok(authorization.clone());
-			}
-		}
+impl crate::Client for Client<'_> {
+	const AUTH_RESOURCE: &'static str = "https://management.azure.com";
 
-		let mut cached_authorization = self.cached_authorization.write().await;
-		match &mut *cached_authorization {
-			Some(authorization) => Ok(authorization.clone()),
+	fn make_url(&self, path_and_query: std::fmt::Arguments<'_>) -> anyhow::Result<http::uri::Parts> {
+		static AUTHORITY: once_cell2::race::LazyBox<http::uri::Authority> =
+			once_cell2::race::LazyBox::new(|| http::uri::Authority::from_static("management.azure.com"));
 
-			None => {
-				const RESOURCE: &str = "https://management.azure.com";
+		let mut url: http::uri::Parts = Default::default();
+		url.scheme = Some(http::uri::Scheme::HTTPS);
+		url.authority = Some(AUTHORITY.clone());
+		url.path_and_query = Some({
+			// http::uri::PathAndQuery implements TryFrom<String> by copying instead of reusing the String.
+			// So use http::uri::PathAndQuery::from_maybe_shared with a manually-constructed bytes::Bytes instead.
+			//
+			// Ref: https://github.com/hyperium/http/pull/477
 
-				let authorization =
-					self.auth.get_authorization(&self.client, RESOURCE, self.logger).await
-					.context("could not get Management API authorization")?;
-				*cached_authorization = Some(authorization.clone());
-				Ok(authorization)
-			},
-		}
+			let path_and_query: bytes::Bytes =
+				format!("/subscriptions/{}/resourceGroups/{}{}", self.subscription_id, self.resource_group_name, path_and_query).into();
+			http::uri::PathAndQuery::from_maybe_shared(path_and_query).context("could not parse request URL")?
+		});
+		Ok(url)
 	}
 
-	fn request_parameters(&self, relative_url: std::fmt::Arguments<'_>) ->
-		impl std::future::Future<Output = anyhow::Result<(String, http::HeaderValue)>> + '_
-	{
-		let url = format!("https://management.azure.com/subscriptions/{}/resourceGroups/{}{}", self.subscription_id, self.resource_group_name, relative_url);
-		async move {
-			let authorization = self.authorization().await?;
-			Ok((url, authorization))
-		}
+	fn request_parameters(&self) -> (
+		&crate::Auth,
+		&http_common::Client,
+		&tokio::sync::RwLock<Option<http::HeaderValue>>,
+		&log2::Logger,
+	) {
+		(
+			self.auth,
+			&self.client,
+			&self.cached_authorization,
+			self.logger,
+		)
 	}
 }

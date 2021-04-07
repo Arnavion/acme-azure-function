@@ -193,7 +193,7 @@ struct Settings<'a> {
 
 	/// The parameters used for the private key of the ACME account key if it needs to be created.
 	#[serde(deserialize_with = "deserialize_key_vault_acme_account_key_type")]
-	azure_key_vault_acme_account_key_type: (azure::key_vault::EcKty, azure::key_vault::EcCurve),
+	azure_key_vault_acme_account_key_type: (azure::key_vault::EcKty, acme::EcCurve),
 
 	/// The name of the certificate in the Azure KeyVault that contains the TLS certificate.
 	///
@@ -210,14 +210,14 @@ struct Settings<'a> {
 	top_level_domain_name: std::borrow::Cow<'a, str>,
 }
 
-fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, azure::key_vault::EcCurve), D::Error>
+fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, acme::EcCurve), D::Error>
 where
 	D: serde::Deserializer<'de>,
 {
 	struct Visitor;
 
 	impl<'de> serde::de::Visitor<'de> for Visitor {
-		type Value = (azure::key_vault::EcKty, azure::key_vault::EcCurve);
+		type Value = (azure::key_vault::EcKty, acme::EcCurve);
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 			f.write_str(r#"one of "#)?;
@@ -229,12 +229,12 @@ where
 
 		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
 			Ok(match s {
-				"ec:p256" => (azure::key_vault::EcKty::Ec, azure::key_vault::EcCurve::P256),
-				"ec-hsm:p256" => (azure::key_vault::EcKty::EcHsm, azure::key_vault::EcCurve::P256),
-				"ec:p384" => (azure::key_vault::EcKty::Ec, azure::key_vault::EcCurve::P384),
-				"ec-hsm:p384" => (azure::key_vault::EcKty::EcHsm, azure::key_vault::EcCurve::P384),
-				"ec:p521" => (azure::key_vault::EcKty::Ec, azure::key_vault::EcCurve::P521),
-				"ec-hsm:p521" => (azure::key_vault::EcKty::EcHsm, azure::key_vault::EcCurve::P521),
+				"ec:p256" => (azure::key_vault::EcKty::Ec, acme::EcCurve::P256),
+				"ec-hsm:p256" => (azure::key_vault::EcKty::EcHsm, acme::EcCurve::P256),
+				"ec:p384" => (azure::key_vault::EcKty::Ec, acme::EcCurve::P384),
+				"ec-hsm:p384" => (azure::key_vault::EcKty::EcHsm, acme::EcCurve::P384),
+				"ec:p521" => (azure::key_vault::EcKty::Ec, acme::EcCurve::P521),
+				"ec-hsm:p521" => (azure::key_vault::EcKty::EcHsm, acme::EcCurve::P521),
 
 				s => return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(s), &self)),
 			})
@@ -271,15 +271,15 @@ where
 				"rsa:4096" => azure::key_vault::CreateCsrKeyType::Rsa { num_bits: 4096, exportable: false },
 				"rsa:4096:exportable" => azure::key_vault::CreateCsrKeyType::Rsa { num_bits: 4096, exportable: true },
 				"rsa-hsm:4096" => azure::key_vault::CreateCsrKeyType::RsaHsm { num_bits: 4096 },
-				"ec:p256" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P256, exportable: false },
-				"ec:p256:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P256, exportable: true },
-				"ec-hsm:p256" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: azure::key_vault::EcCurve::P256 },
-				"ec:p384" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P384, exportable: false },
-				"ec:p384:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P384, exportable: true },
-				"ec-hsm:p384" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: azure::key_vault::EcCurve::P384 },
-				"ec:p521" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P521, exportable: false },
-				"ec:p521:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: azure::key_vault::EcCurve::P521, exportable: true },
-				"ec-hsm:p521" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: azure::key_vault::EcCurve::P521 },
+				"ec:p256" => azure::key_vault::CreateCsrKeyType::Ec { curve: acme::EcCurve::P256, exportable: false },
+				"ec:p256:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: acme::EcCurve::P256, exportable: true },
+				"ec-hsm:p256" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: acme::EcCurve::P256 },
+				"ec:p384" => azure::key_vault::CreateCsrKeyType::Ec { curve: acme::EcCurve::P384, exportable: false },
+				"ec:p384:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: acme::EcCurve::P384, exportable: true },
+				"ec-hsm:p384" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: acme::EcCurve::P384 },
+				"ec:p521" => azure::key_vault::CreateCsrKeyType::Ec { curve: acme::EcCurve::P521, exportable: false },
+				"ec:p521:exportable" => azure::key_vault::CreateCsrKeyType::Ec { curve: acme::EcCurve::P521, exportable: true },
+				"ec-hsm:p521" => azure::key_vault::CreateCsrKeyType::EcHsm { curve: acme::EcCurve::P521 },
 
 				s => return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(s), &self)),
 			})

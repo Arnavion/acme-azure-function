@@ -44,37 +44,35 @@ macro_rules! run {
 
 				let log_sender =
 					$crate::_log_sender(
-						&misc_logger,
 						&azure_subscription_id,
 						&azure_log_analytics_workspace_resource_group_name,
 						&azure_log_analytics_workspace_name,
 						&azure_auth,
+						&misc_logger,
 					).await?;
 
 				let mut pending_requests = $crate::_reexports::futures_util::stream::FuturesUnordered::new();
 
-				while let Some(stream) = $crate::_next_stream(&mut incoming, &mut pending_requests, &misc_logger).await? {
+				while let Some(stream) = $crate::_next_stream(&mut incoming, &mut pending_requests, &misc_logger).await {
 					pending_requests.push(async {
 						let mut stream = stream;
+						let (mut read, mut write) = stream.split();
 
 						let mut buf = [std::mem::MaybeUninit::uninit(); 8192];
 						let mut buf = $crate::_reexports::tokio::io::ReadBuf::uninit(&mut buf);
 						let (method, path, logger) = loop {
-							if let Some(req) = $crate::_parse_request(&mut stream, &mut buf).await? {
+							if let Some(req) = $crate::_parse_request(&mut read, &mut buf).await? {
 								break req;
 							}
 						};
 
-						$crate::_handle_request(method, path, &logger, &log_sender, &mut stream, async {
-							match path {
+						$crate::_handle_request(method, path, &logger, &log_sender, &mut write, async {
+							Ok(match path {
 								$(
-									$name => match $f(&azure_subscription_id, &azure_auth, &settings, &logger).await {
-										Ok(message) => $crate::_Response::Ok(message),
-										Err(err) => $crate::_Response::Error(format!("{:?}", err)),
-									},
+									$name => Some($f(&azure_subscription_id, &azure_auth, &settings, &logger).await?),
 								)*
-								_ => $crate::_Response::UnknownFunction,
-							}
+								_ => None,
+							})
 						}).await?;
 
 						Ok(())
@@ -202,11 +200,11 @@ pub fn _parse_settings<'a, TSettings>(settings: &'a str) -> anyhow::Result<(
 
 #[doc(hidden)]
 pub async fn _log_sender<'a>(
-	misc_logger: &'a log2::Logger,
 	azure_subscription_id: &'a str,
 	azure_log_analytics_workspace_resource_group_name: &'a str,
 	azure_log_analytics_workspace_name: &'a str,
 	azure_auth: &'a azure::Auth,
+	misc_logger: &'a log2::Logger,
 ) -> anyhow::Result<azure::management::log_analytics::LogSender<'a>> {
 	let log_sender =
 		azure::management::Client::new(
@@ -225,18 +223,16 @@ pub async fn _log_sender<'a>(
 #[doc(hidden)]
 pub async fn _next_stream(
 	incoming: &mut (impl futures_util::stream::Stream<Item = anyhow::Result<tokio::net::TcpStream>> + Unpin),
-	pending_requests: &mut futures_util::stream::FuturesUnordered<impl std::future::Future<Output = anyhow::Result<()>>>,
+	pending_requests: &mut (impl futures_util::stream::Stream<Item = anyhow::Result<()>> + Unpin),
 	misc_logger: &log2::Logger,
-) -> anyhow::Result<Option<tokio::net::TcpStream>> {
+) -> Option<tokio::net::TcpStream> {
+	// FuturesUnordered repeatedly yields Poll::Ready(None) when it's empty, but we want to treat it like it yields Poll::Pending.
+	// So chain(stream::pending()) to it.
+	let mut pending_requests = futures_util::StreamExt::chain(pending_requests, futures_util::stream::pending());
 	loop {
-		if pending_requests.is_empty() {
-			let stream = futures_util::TryStreamExt::try_next(incoming).await?;
-			break Ok(stream);
-		}
-
-		let next = futures_util::future::try_select(futures_util::TryStreamExt::try_next(incoming), futures_util::TryStreamExt::try_next(pending_requests));
+		let next = futures_util::future::try_select(futures_util::TryStreamExt::try_next(incoming), futures_util::TryStreamExt::try_next(&mut pending_requests));
 		match next.await {
-			Ok(futures_util::future::Either::Left((stream, _))) => break Ok(stream),
+			Ok(futures_util::future::Either::Left((stream, _))) => break stream,
 			Ok(futures_util::future::Either::Right(_)) => (),
 			Err(err) => {
 				let (err, _) = err.factor_first();
@@ -249,7 +245,7 @@ pub async fn _next_stream(
 #[allow(clippy::needless_lifetimes)] // TODO: https://github.com/rust-lang/rust-clippy/issues/5787
 #[doc(hidden)]
 pub async fn _parse_request<'a>(
-	stream: &mut tokio::net::TcpStream,
+	stream: &mut (impl tokio::io::AsyncRead + Unpin),
 	mut buf: &'a mut tokio::io::ReadBuf<'_>,
 ) -> anyhow::Result<Option<(&'a str, &'a str, log2::Logger)>> {
 	if buf.remaining() == 0 {
@@ -259,9 +255,8 @@ pub async fn _parse_request<'a>(
 	{
 		let previous_filled = buf.filled().len();
 		let () =
-			futures_util::future::poll_fn(|cx|
-				tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, &mut buf),
-			).await.context("could not read request")?;
+			futures_util::future::poll_fn(|cx| tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, &mut buf))
+			.await.context("could not read request")?;
 		let new_filled = buf.filled().len();
 		if previous_filled == new_filled {
 			return Err(anyhow::anyhow!("malformed request: EOF"));
@@ -308,9 +303,8 @@ pub async fn _parse_request<'a>(
 				buf.clear();
 
 				let () =
-					futures_util::future::poll_fn(|cx|
-						tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, &mut buf),
-					).await.context("could not read request body")?;
+					futures_util::future::poll_fn(|cx| tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, &mut buf))
+					.await.context("could not read request body")?;
 				let read = buf.filled().len();
 				if read == 0 {
 					return Err(anyhow::anyhow!("malformed request: EOF"));
@@ -333,32 +327,129 @@ pub async fn _parse_request<'a>(
 }
 
 #[doc(hidden)]
-#[derive(Debug)]
-pub enum _Response {
-	Ok(std::borrow::Cow<'static, str>),
-	UnknownFunction,
-	MethodNotAllowed,
-	Error(String),
-}
-
-#[doc(hidden)]
 pub async fn _handle_request(
 	method: &str,
 	path: &str,
 	logger: &log2::Logger,
 	log_sender: &azure::management::log_analytics::LogSender<'_>,
-	stream: &mut tokio::net::TcpStream,
-	res_f: impl std::future::Future<Output = _Response>,
+	stream: &mut (impl tokio::io::AsyncWrite + Unpin),
+	res_f: impl std::future::Future<Output = anyhow::Result<Option<std::borrow::Cow<'static, str>>>>,
 ) -> anyhow::Result<()> {
+	fn make_log_sender<'a>(
+		logger: &'a log2::Logger,
+		log_sender: &'a azure::management::log_analytics::LogSender<'_>,
+	) -> (
+		tokio::sync::oneshot::Sender<()>,
+		impl std::future::Future<Output = anyhow::Result<()>> + 'a,
+	) {
+		let (stop_log_sender_tx, mut stop_log_sender_rx) = tokio::sync::oneshot::channel();
+
+		let log_sender_f = async move {
+			let mut push_timer = tokio::time::interval(std::time::Duration::from_secs(1));
+
+			loop {
+				let push_timer_tick = push_timer.tick();
+				futures_util::pin_mut!(push_timer_tick);
+
+				let r = futures_util::future::select(push_timer_tick, stop_log_sender_rx).await;
+
+				let records = logger.take_records();
+
+				if !records.is_empty() {
+					static LOG_TYPE: once_cell2::race::LazyBox<http::HeaderValue> =
+						once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("FunctionAppLogs"));
+
+					log_sender.send_logs(LOG_TYPE.clone(), records).await?;
+				}
+
+				match r {
+					futures_util::future::Either::Left((_, stop_log_sender_rx_)) => stop_log_sender_rx = stop_log_sender_rx_,
+					futures_util::future::Either::Right(_) => break Ok::<_, anyhow::Error>(()),
+				}
+			}
+		};
+
+		(stop_log_sender_tx, log_sender_f)
+	}
+
+	#[derive(Debug)]
+	enum Response {
+		Ok(std::borrow::Cow<'static, str>),
+		UnknownFunction,
+		MethodNotAllowed,
+		Error(String),
+	}
+
+	async fn write_response(stream: &mut (impl tokio::io::AsyncWrite + Unpin), res: &Response) -> anyhow::Result<()> {
+		let status = match res {
+			Response::Ok(_) => http::StatusCode::OK,
+			Response::UnknownFunction => http::StatusCode::NOT_FOUND,
+			Response::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
+			Response::Error(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+		};
+
+		let mut io_slices = [
+			std::io::IoSlice::new(b"HTTP/1.1 "),
+			std::io::IoSlice::new(status.as_str().as_bytes()),
+			std::io::IoSlice::new(b" \r\n"),
+			std::io::IoSlice::new(b""), // headers
+			std::io::IoSlice::new(b"\r\n"),
+			std::io::IoSlice::new(b""), // body
+		];
+		match res {
+			Response::Ok(_) => {
+				io_slices[3] = std::io::IoSlice::new(b"content-type:application/json\r\n");
+				io_slices[5] = std::io::IoSlice::new(br#"{"Outputs":{"":""},"Logs":null,"ReturnValue":""}"#);
+			},
+
+			Response::UnknownFunction => (),
+
+			Response::MethodNotAllowed =>
+				io_slices[3] = std::io::IoSlice::new(b"allow:POST\r\n"),
+
+			Response::Error(err) => {
+				io_slices[3] = std::io::IoSlice::new(b"content-type:text/plain\r\n");
+				io_slices[5] = std::io::IoSlice::new(err.as_bytes());
+			},
+		}
+
+		let to_write: usize = io_slices.iter().map(|io_slice| io_slice.len()).sum();
+
+		let written =
+			futures_util::future::poll_fn(|cx| tokio::io::AsyncWrite::poll_write_vectored(std::pin::Pin::new(stream), cx, &io_slices))
+			.await.context("could not write response")?;
+		if written != to_write {
+			// TODO:
+			//
+			// Our responses are short enough that writev is unlikely to do a short write, so this works in practice.
+			// But when `std::io::IoSlice::advance()` [1] becomes stable and tokio adds `AsyncWriteExt::write_all_vectored` [2],
+			// switch this to use that.
+			//
+			// [1]: https://github.com/rust-lang/rust/issues/62726
+			// [2]: https://github.com/tokio-rs/tokio/issues/3679
+			return Err(anyhow::anyhow!("could not write response: short write from writev ({}/{})", written, to_write));
+		}
+
+		let () =
+			futures_util::future::poll_fn(|cx| tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(stream), cx))
+			.await.context("could not write response")?;
+
+		Ok(())
+	}
+
 	let res_f = async {
 		logger.report_state("function_invocation", "", format_args!("Request {{ method: {:?}, path: {:?} }}", method, path));
 
 		let res =
 			if method == "POST" {
-				res_f.await
+				match res_f.await {
+					Ok(Some(message)) => Response::Ok(message),
+					Ok(None) => Response::UnknownFunction,
+					Err(err) => Response::Error(format!("{:?}", err)),
+				}
 			}
 			else {
-				_Response::MethodNotAllowed
+				Response::MethodNotAllowed
 			};
 
 		logger.report_state("function_invocation", "", format_args!("Response {{ {:?} }}", res));
@@ -366,32 +457,7 @@ pub async fn _handle_request(
 	};
 	futures_util::pin_mut!(res_f);
 
-	let (stop_log_sender_tx, mut stop_log_sender_rx) = tokio::sync::oneshot::channel();
-
-	let log_sender_f = async {
-		let mut push_timer = tokio::time::interval(std::time::Duration::from_secs(1));
-
-		loop {
-			let push_timer_tick = push_timer.tick();
-			futures_util::pin_mut!(push_timer_tick);
-
-			let r = futures_util::future::select(push_timer_tick, stop_log_sender_rx).await;
-
-			let records = logger.take_records();
-
-			if !records.is_empty() {
-				static LOG_TYPE: once_cell2::race::LazyBox<http::HeaderValue> =
-					once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("FunctionAppLogs"));
-
-				log_sender.send_logs(LOG_TYPE.clone(), records).await?;
-			}
-
-			match r {
-				futures_util::future::Either::Left((_, stop_log_sender_rx_)) => stop_log_sender_rx = stop_log_sender_rx_,
-				futures_util::future::Either::Right(_) => break Ok::<_, anyhow::Error>(()),
-			}
-		}
-	};
+	let (stop_log_sender_tx, log_sender_f) = make_log_sender(logger, log_sender);
 	futures_util::pin_mut!(log_sender_f);
 
 	let res = match futures_util::future::select(res_f, log_sender_f).await {
@@ -414,57 +480,6 @@ pub async fn _handle_request(
 		},
 	};
 
-	let status = match &res {
-		_Response::Ok(_) => http::StatusCode::OK,
-		_Response::UnknownFunction => http::StatusCode::NOT_FOUND,
-		_Response::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
-		_Response::Error(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
-	};
-
-	let mut io_slices = [
-		std::io::IoSlice::new(b"HTTP/1.1 "),
-		std::io::IoSlice::new(status.as_str().as_bytes()),
-		std::io::IoSlice::new(b" \r\n"),
-		std::io::IoSlice::new(b""), // headers
-		std::io::IoSlice::new(b"\r\n"),
-		std::io::IoSlice::new(b""), // body
-	];
-	match &res {
-		_Response::Ok(_) => {
-			io_slices[3] = std::io::IoSlice::new(b"content-type:application/json\r\n");
-			io_slices[5] = std::io::IoSlice::new(br#"{"Outputs":{"":""},"Logs":null,"ReturnValue":""}"#);
-		},
-
-		_Response::UnknownFunction => (),
-
-		_Response::MethodNotAllowed =>
-			io_slices[3] = std::io::IoSlice::new(b"allow:POST\r\n"),
-
-		_Response::Error(err) => {
-			io_slices[3] = std::io::IoSlice::new(b"content-type:text/plain\r\n");
-			io_slices[5] = std::io::IoSlice::new(err.as_bytes());
-		},
-	}
-
-	let to_write: usize = io_slices.iter().map(|io_slice| io_slice.len()).sum();
-
-	let written =
-		futures_util::future::poll_fn(|cx|
-			tokio::io::AsyncWrite::poll_write_vectored(std::pin::Pin::new(stream), cx, &io_slices),
-		).await.context("could not write response")?;
-	if written != to_write {
-		// TODO:
-		//
-		// Our responses are short enough that writev is unlikely to do a short write, so this works in practice.
-		// But when `std::io::IoSlice::advance()` [1] becomes stable, make this a loop that calls that.
-		//
-		// [1]: https://github.com/rust-lang/rust/issues/62726
-		return Err(anyhow::anyhow!("could not write response: short write from writev ({}/{})", written, to_write));
-	}
-
-	futures_util::future::poll_fn(|cx|
-		tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(stream), cx),
-	).await.context("could not write response")?;
-
+	write_response(stream, &res).await?;
 	Ok(())
 }

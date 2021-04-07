@@ -11,9 +11,6 @@
 
 use anyhow::Context;
 
-pub static APPLICATION_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
-	once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/json"));
-
 pub struct Client {
 	inner: hyper::Client<hyper_rustls::HttpsConnector<hyper::client::connect::HttpConnector>, hyper::Body>,
 	user_agent: http::HeaderValue,
@@ -45,79 +42,57 @@ impl Client {
 		})
 	}
 
-	pub async fn request<U, B, T>(
-		&self,
-		method: http::Method,
-		url: U,
-		authorization: http::HeaderValue,
-		body: Option<B>,
-	) -> anyhow::Result<T>
-	where
-		U: std::convert::TryInto<http::Uri>,
-		Result<http::Uri, U::Error>: anyhow::Context<http::Uri, U::Error>,
-		B: serde::Serialize,
-		T: FromResponse,
-	{
-		let mut req =
-			if let Some(body) = body {
-				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON.clone());
-				req
-			}
-			else if method == http::Method::GET {
-				hyper::Request::new(Default::default())
-			}
-			else {
-				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(http::header::CONTENT_LENGTH, 0.into());
-				req
-			};
-		*req.method_mut() = method;
-		*req.uri_mut() = url.try_into().context("could not parse request URL")?;
-		req.headers_mut().insert(http::header::AUTHORIZATION, authorization);
+	pub async fn request<T>(&self, req: hyper::Request<hyper::Body>) -> anyhow::Result<T> where T: FromResponse {
+		// This fn encapsulates the non-generic parts of `request` to reduce code size from monomorphization.
+		async fn request_inner(client: &Client, mut req: hyper::Request<hyper::Body>) ->
+			anyhow::Result<(
+				http::StatusCode,
+				http::HeaderMap,
+				Option<(http::HeaderValue, Body<impl std::io::Read>)>,
+			)>
+		{
+			req.headers_mut().insert(http::header::USER_AGENT, client.user_agent.clone());
 
-		let value = self.request_inner(req).await?;
-		Ok(value)
-	}
+			let res = client.inner.request(req).await.context("could not execute request")?;
 
-	pub async fn request_inner<T>(&self, mut req: hyper::Request<hyper::Body>) -> anyhow::Result<T> where T: FromResponse {
-		req.headers_mut().insert(http::header::USER_AGENT, self.user_agent.clone());
+			let (http::response::Parts { status, mut headers, .. }, mut body) = res.into_parts();
 
-		let res = self.inner.request(req).await.context("could not execute request")?;
-
-		let (http::response::Parts { status, mut headers, .. }, mut body) = res.into_parts();
-
-		let mut body = match headers.remove(http::header::CONTENT_TYPE) {
-			Some(content_type) => {
-				let first = hyper::body::HttpBody::data(&mut body).await.transpose().context("could not read response body")?;
-				let body =
-					if let Some(first) = first {
-						let second = hyper::body::HttpBody::data(&mut body).await.transpose().context("could not read response body")?;
-						if let Some(second) = second {
-							let rest = hyper::body::aggregate(body).await.context("could not read response body")?;
-							let rest = hyper::body::Buf::reader(hyper::body::Buf::chain(second, rest));
-							Body {
-								first,
-								rest: Some(rest),
+			let body = match headers.remove(http::header::CONTENT_TYPE) {
+				Some(content_type) => {
+					let first = hyper::body::HttpBody::data(&mut body).await.transpose().context("could not read response body")?;
+					let body =
+						if let Some(first) = first {
+							let second = hyper::body::HttpBody::data(&mut body).await.transpose().context("could not read response body")?;
+							if let Some(second) = second {
+								let rest = hyper::body::aggregate(body).await.context("could not read response body")?;
+								let rest = hyper::body::Buf::reader(hyper::body::Buf::chain(second, rest));
+								Body {
+									first,
+									rest: Some(rest),
+								}
+							}
+							else {
+								Body {
+									first,
+									rest: None,
+								}
 							}
 						}
 						else {
 							Body {
-								first,
+								first: Default::default(),
 								rest: None,
 							}
-						}
-					}
-					else {
-						Body {
-							first: Default::default(),
-							rest: None,
-						}
-					};
-				Some((content_type, body))
-			},
-			None => None,
-		};
+						};
+					Some((content_type, body))
+				},
+				None => None,
+			};
+
+			Ok((status, headers, body))
+		}
+
+		let (status, headers, mut body) = request_inner(self, req).await?;
 
 		let err = match T::from_response(status, body.as_mut().map(|(content_type, body)| (&*content_type, body)), headers) {
 			Ok(Some(value)) => return Ok(value),

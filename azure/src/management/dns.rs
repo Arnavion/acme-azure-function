@@ -36,18 +36,15 @@ impl<'a> super::Client<'a> {
 		}
 
 		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
-			let (url, authorization) =
-				self.request_parameters(format_args!(
-					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
-					dns_zone_name,
-					name,
-				)).await?;
-
 			let _: Response =
-				self.client.request(
+				crate::request(
+					self,
 					http::Method::PUT,
-					url,
-					authorization,
+					format_args!(
+						"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
+						dns_zone_name,
+						name,
+					),
 					Some(&Request {
 						properties: RequestProperties {
 							ttl: 1,
@@ -60,7 +57,7 @@ impl<'a> super::Client<'a> {
 					}),
 				).await?;
 
-			Ok::<_, anyhow::Error>(())
+			Ok(())
 		}).await?;
 
 		Ok(())
@@ -85,21 +82,18 @@ impl<'a> super::Client<'a> {
 		}
 
 		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
-			let (url, authorization) =
-				self.request_parameters(format_args!(
-					"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
-					dns_zone_name,
-					name,
-				)).await?;
-
 			let _: Response =
-				self.client.request(
+				crate::request(
+					self,
 					http::Method::DELETE,
-					url,
-					authorization,
+					format_args!(
+						"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
+						dns_zone_name,
+						name,
+					),
 					None::<&()>,
 				).await?;
-			Ok::<_, anyhow::Error>(())
+			Ok(())
 		}).await?;
 
 		Ok(())

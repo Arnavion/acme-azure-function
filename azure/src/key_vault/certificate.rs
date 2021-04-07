@@ -8,7 +8,7 @@ impl<'a> super::Client<'a> {
 		#[derive(serde::Serialize)]
 		struct RequestPolicy<'a> {
 			issuer: RequestPolicyIssuer<'a>,
-			key_props: RequestPolicyKeyProps<'a>,
+			key_props: RequestPolicyKeyProps,
 			x509_props: RequestPolicyX509Props<'a>,
 		}
 
@@ -19,20 +19,16 @@ impl<'a> super::Client<'a> {
 		}
 
 		#[derive(serde::Serialize)]
-		struct RequestPolicyKeyProps<'a> {
-			#[serde(skip_serializing_if = "Option::is_none")]
-			crv: Option<super::EcCurve>,
-			exportable: bool,
-			#[serde(skip_serializing_if = "Option::is_none")]
-			key_size: Option<u16>,
-			kty: &'a str,
+		struct RequestPolicyKeyProps {
+			#[serde(flatten)]
+			key_type: CreateCsrKeyType,
 			reuse_key: bool,
 		}
 
 		#[derive(serde::Serialize)]
 		struct RequestPolicyX509Props<'a> {
 			sans: RequestPolicyX509PropsSans<'a>,
-			subject: &'a str,
+			subject: std::fmt::Arguments<'a>,
 		}
 
 		#[derive(serde::Serialize)]
@@ -64,13 +60,11 @@ impl<'a> super::Client<'a> {
 				(self.key_vault_name, certificate_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", (common_name, key_type)) },
 				async {
-					let (url, authorization) = self.request_parameters(format_args!("/certificates/{}/create?api-version=7.1", certificate_name)).await?;
-
 					let Response { csr } =
-						self.client.request(
+						crate::request(
+							self,
 							http::Method::POST,
-							url,
-							authorization,
+							format_args!("/certificates/{}/create?api-version=7.1", certificate_name),
 							Some(&Request {
 								policy: RequestPolicy {
 									issuer: RequestPolicyIssuer {
@@ -78,18 +72,8 @@ impl<'a> super::Client<'a> {
 										name: "Unknown",
 									},
 									key_props: {
-										let (kty, crv, key_size, exportable) = match key_type {
-											CreateCsrKeyType::Ec { curve, exportable } => ("EC", Some(curve), None, exportable),
-											CreateCsrKeyType::EcHsm { curve } => ("EC-HSM", Some(curve), None, false),
-											CreateCsrKeyType::Rsa { num_bits, exportable } => ("RSA", None, Some(num_bits), exportable),
-											CreateCsrKeyType::RsaHsm { num_bits } => ("RSA-HSM", None, Some(num_bits), false),
-										};
-
 										RequestPolicyKeyProps {
-											crv,
-											exportable,
-											key_size,
-											kty,
+											key_type,
 											reuse_key: false,
 										}
 									},
@@ -97,12 +81,12 @@ impl<'a> super::Client<'a> {
 										sans: RequestPolicyX509PropsSans {
 											dns_names: &[&common_name],
 										},
-										subject: &format!("CN={}", common_name),
+										subject: format_args!("CN={}", common_name),
 									},
 								},
 							}),
 						).await?;
-					Ok::<_, anyhow::Error>(csr)
+					Ok(csr)
 				},
 			).await?;
 
@@ -138,7 +122,7 @@ impl<'a> super::Client<'a> {
 							chrono::TimeZone::ymd(&chrono::Utc, 1970, 1, 1).and_hms(0, 0, 0) +
 							chrono::Duration::seconds(exp);
 
-						let version = id.split('/').last().expect("str::split yields at least one part").to_owned();
+						let version = id.split('/').next_back().expect("str::split yields at least one part").to_owned();
 
 						Some(Response(Some(Certificate {
 							version,
@@ -155,16 +139,14 @@ impl<'a> super::Client<'a> {
 
 		let certificate =
 			self.logger.report_operation( "azure/key_vault/certificate", (self.key_vault_name, certificate_name), <log2::ScopedObjectOperation>::Get, async {
-				let (url, authorization) = self.request_parameters(format_args!("/certificates/{}?api-version=7.1", certificate_name)).await?;
-
 				let Response(certificate) =
-					self.client.request(
+					crate::request(
+						self,
 						http::Method::GET,
-						url,
-						authorization,
+						format_args!("/certificates/{}?api-version=7.1", certificate_name),
 						None::<&()>,
 					).await?;
-				Ok::<_, anyhow::Error>(certificate)
+				Ok(certificate)
 			}).await?;
 
 		Ok(certificate)
@@ -197,18 +179,16 @@ impl<'a> super::Client<'a> {
 				(self.key_vault_name, certificate_name),
 				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", certificates) },
 				async {
-					let (url, authorization) = self.request_parameters(format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name)).await?;
-
 					let _: Response =
-						self.client.request(
+						crate::request(
+							self,
 							http::Method::POST,
-							url,
-							authorization,
+							format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
 							Some(&Request {
 								x5c: certificates,
 							}),
 						).await?;
-					Ok::<_, anyhow::Error>(())
+					Ok(())
 				},
 			).await?;
 
@@ -219,12 +199,12 @@ impl<'a> super::Client<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum CreateCsrKeyType {
 	Ec {
-		curve: super::EcCurve,
+		curve: acme::EcCurve,
 		exportable: bool,
 	},
 
 	EcHsm {
-		curve: super::EcCurve,
+		curve: acme::EcCurve,
 	},
 
 	Rsa {
@@ -235,6 +215,42 @@ pub enum CreateCsrKeyType {
 	RsaHsm {
 		num_bits: u16,
 	},
+}
+
+impl serde::Serialize for CreateCsrKeyType {
+	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+		use serde::ser::SerializeMap;
+
+		let mut serializer = serializer.serialize_map(Some(3))?;
+
+		match self {
+			CreateCsrKeyType::Ec { curve, exportable } => {
+				serializer.serialize_entry("kty", "EC")?;
+				serializer.serialize_entry("crv", curve)?;
+				serializer.serialize_entry("exportable", exportable)?;
+			},
+
+			CreateCsrKeyType::EcHsm { curve } => {
+				serializer.serialize_entry("kty", "EC-HSM")?;
+				serializer.serialize_entry("crv", curve)?;
+				serializer.serialize_entry("exportable", &false)?;
+			},
+
+			CreateCsrKeyType::Rsa { num_bits, exportable } => {
+				serializer.serialize_entry("kty", "RSA")?;
+				serializer.serialize_entry("key_size", num_bits)?;
+				serializer.serialize_entry("exportable", exportable)?;
+			},
+
+			CreateCsrKeyType::RsaHsm { num_bits } => {
+				serializer.serialize_entry("kty", "RSA-HSM")?;
+				serializer.serialize_entry("key_size", num_bits)?;
+				serializer.serialize_entry("exportable", &false)?;
+			},
+		}
+
+		serializer.end()
+	}
 }
 
 #[derive(Debug)]

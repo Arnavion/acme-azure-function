@@ -31,5 +31,3 @@ serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
 webpki-roots = { version = "0.21", default-features = false }
-
-once_cell2 = { path = "../once_cell2" }
