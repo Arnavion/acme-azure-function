@@ -415,9 +415,7 @@ pub async fn _handle_request(
 
 		let to_write: usize = io_slices.iter().map(|io_slice| io_slice.len()).sum();
 
-		let written =
-			futures_util::future::poll_fn(|cx| tokio::io::AsyncWrite::poll_write_vectored(std::pin::Pin::new(stream), cx, &io_slices))
-			.await.context("could not write response")?;
+		let written = tokio::io::AsyncWriteExt::write_vectored(stream, &io_slices).await.context("could not write response")?;
 		if written != to_write {
 			// TODO:
 			//
@@ -430,9 +428,7 @@ pub async fn _handle_request(
 			return Err(anyhow::anyhow!("could not write response: short write from writev ({}/{})", written, to_write));
 		}
 
-		let () =
-			futures_util::future::poll_fn(|cx| tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(stream), cx))
-			.await.context("could not write response")?;
+		let () = tokio::io::AsyncWriteExt::flush(stream).await.context("could not write response")?;
 
 		Ok(())
 	}
