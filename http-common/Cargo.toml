@@ -16,6 +16,7 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 ct-logs = { version = "0.8", default-features = false }
 http = { version = "0.2", default-features = false }
+httpdate = { version = "1", default-features = false }
 hyper = { version = "0.14", default-features = false, features = [
 	"http1",
 	"client",
