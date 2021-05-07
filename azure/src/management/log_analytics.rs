@@ -58,7 +58,7 @@ impl<'a> super::Client<'a> {
 
 				fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
 					let key = base64::decode(s).map_err(serde::de::Error::custom)?;
-					let signer = hmac::NewMac::new_varkey(&key).expect("cannot fail to create hmac::Hmac<sha2::Sha256>");
+					let signer = hmac::NewMac::new_from_slice(&key).expect("cannot fail to create hmac::Hmac<sha2::Sha256>");
 					Ok(signer)
 				}
 			}
