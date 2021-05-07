@@ -122,7 +122,10 @@ impl<'a> super::Client<'a> {
 							chrono::TimeZone::ymd(&chrono::Utc, 1970, 1, 1).and_hms(0, 0, 0) +
 							chrono::Duration::seconds(exp);
 
-						let version = id.split('/').next_back().expect("str::split yields at least one part").to_owned();
+						let version = match id.rsplit_once('/') {
+							Some((_, version)) => version.to_owned(),
+							None => id.into_owned(),
+						};
 
 						Some(Response(Some(Certificate {
 							version,
