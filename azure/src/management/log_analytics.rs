@@ -144,11 +144,11 @@ impl LogSender<'_> {
 		let content_length_s = content_length.to_str().expect("usize HeaderValue should be convertible to str").to_owned();
 
 		let body =
-			futures_util::stream::iter(std::array::IntoIter::new([
+			futures_util::stream::iter([
 				Ok::<_, std::convert::Infallible>(BODY_PREFIX),
 				Ok(logs.into()),
 				Ok(BODY_SUFFIX),
-			]));
+			]);
 
 		self.logger.report_operation(
 			"azure/log_analytics/logs",

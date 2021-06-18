@@ -114,8 +114,10 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					_headers: http::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(http::StatusCode::OK, Some((content_type, body))) |
-						(http::StatusCode::CREATED, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
+						(
+							http::StatusCode::CREATED | http::StatusCode::OK,
+							Some((content_type, body)),
+						) if http_common::is_json(content_type) => Some(body.as_json()?),
 						_ => None,
 					})
 				}
@@ -242,10 +244,13 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
 
-					let (mut hasher, challenge_url) = match authorization {
-						AuthorizationResponse::Pending { hasher, challenge_url } => (hasher, challenge_url),
-						_ => return Err(anyhow::anyhow!("authorization has unexpected status")),
-					};
+					let (mut hasher, challenge_url) =
+						if let AuthorizationResponse::Pending { hasher, challenge_url } = authorization {
+							(hasher, challenge_url)
+						}
+						else {
+							return Err(anyhow::anyhow!("authorization has unexpected status"));
+						};
 
 					sha2::Digest::update(&mut hasher, b".");
 
@@ -601,11 +606,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			};
 
 			let signature =
-				account.account_key.sign(std::array::IntoIter::new([
+				account.account_key.sign([
 					protected.as_bytes(),
 					&b"."[..],
 					payload.as_bytes(),
-				])).await?;
+				]).await?;
 
 			// All strings are base64 so there's no need to get serde_json involved
 			let body = {
@@ -619,7 +624,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				const PART4: hyper::body::Bytes = hyper::body::Bytes::from_static(br#""}"#);
 
 				let body =
-					futures_util::stream::iter(std::array::IntoIter::new([
+					futures_util::stream::iter([
 						Ok::<_, std::convert::Infallible>(PART1),
 						Ok(payload.into()),
 						Ok(PART2),
@@ -627,7 +632,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						Ok(PART3),
 						Ok(signature.into()),
 						Ok(PART4),
-					]));
+					]);
 
 				hyper::Body::wrap_stream(body)
 			};
@@ -666,8 +671,8 @@ pub trait AccountKey {
 
 	fn sign<'a, I>(&'a self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>
 	where
-		I: Iterator,
-		<I as Iterator>::Item: AsRef<[u8]>;
+		I: IntoIterator,
+		<I as IntoIterator>::Item: AsRef<[u8]>;
 }
 
 #[derive(Clone, Copy, serde::Serialize)]
@@ -792,8 +797,10 @@ where
 		}
 
 		Ok(match (status, body) {
-			(http::StatusCode::CREATED, Some((content_type, body))) |
-			(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+			(
+				http::StatusCode::CREATED | http::StatusCode::OK,
+				Some((content_type, body)),
+			) if http_common::is_json(content_type) => Some(match body.as_json()? {
 				Order::Pending(pending) => OrderResponse::Pending(pending),
 
 				Order::Processing => {

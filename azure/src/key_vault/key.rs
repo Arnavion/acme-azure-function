@@ -106,15 +106,15 @@ impl acme::AccountKey for Key<'_> {
 
 	fn sign<'a, I>(&'a self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>
 	where
-		I: Iterator,
-		<I as Iterator>::Item: AsRef<[u8]>,
+		I: IntoIterator,
+		<I as IntoIterator>::Item: AsRef<[u8]>,
 	{
 		macro_rules! hash {
 			($crv:expr, $digest:expr, { $($crv_name:pat => $hasher:ty ,)* }) => {
 				match $crv {
 					$(
 						$crv_name => {
-							let hasher: $hasher = $digest.fold(Default::default(), sha2::Digest::chain);
+							let hasher: $hasher = $digest.into_iter().fold(Default::default(), sha2::Digest::chain);
 							let hash = sha2::Digest::finalize(hasher);
 							let hash = base64::encode_config(&hash, acme::JWS_BASE64_CONFIG);
 							hash
