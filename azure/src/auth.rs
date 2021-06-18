@@ -21,11 +21,6 @@ impl Auth {
 		resource: &str,
 		logger: &log2::Logger,
 	) -> anyhow::Result<http::HeaderValue> {
-		// TODO: Workaround for https://github.com/rust-lang/rust/issues/55779 when running
-		// `cargo build --manifest-path ./azure/Cargo.toml --features dns`
-		#[allow(unused_extern_crates)]
-		extern crate serde;
-
 		struct Response(http::HeaderValue);
 
 		impl http_common::FromResponse for Response {
