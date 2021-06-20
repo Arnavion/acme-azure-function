@@ -161,7 +161,12 @@ impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 		body: Option<(&http::HeaderValue, &mut Body<impl std::io::Read>)>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
-		let location = get_location(&headers)?;
+	let location =
+		std::convert::TryInto::try_into(
+			headers
+			.get(http::header::LOCATION).context("missing location header")?
+			.as_bytes(),
+		).context("could not parse location header")?;
 
 		match T::from_response(status, body, headers) {
 			Ok(Some(body)) => Ok(Some(ResponseWithLocation { body, location })),
@@ -173,16 +178,6 @@ impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 
 pub fn is_json(content_type: &http::HeaderValue) -> bool {
 	content_type.to_str().map(|content_type| content_type == "application/json" || content_type.starts_with("application/json;")).unwrap_or_default()
-}
-
-pub fn get_location(headers: &http::HeaderMap) -> anyhow::Result<http::Uri> {
-	let location =
-		std::convert::TryInto::try_into(
-			headers
-			.get(http::header::LOCATION).context("missing location header")?
-			.as_bytes(),
-		).context("could not parse location header")?;
-	Ok(location)
 }
 
 pub fn get_retry_after(
