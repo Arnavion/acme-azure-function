@@ -9,6 +9,8 @@
 	clippy::similar_names,
 )]
 
+use std::convert::TryInto;
+
 use anyhow::Context;
 
 pub struct Client {
@@ -162,11 +164,10 @@ impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 	let location =
-		std::convert::TryInto::try_into(
-			headers
-			.get(http::header::LOCATION).context("missing location header")?
-			.as_bytes(),
-		).context("could not parse location header")?;
+		headers
+		.get(http::header::LOCATION).context("missing location header")?
+		.as_bytes()
+		.try_into().context("could not parse location header")?;
 
 		match T::from_response(status, body, headers) {
 			Ok(Some(body)) => Ok(Some(ResponseWithLocation { body, location })),
@@ -228,11 +229,11 @@ pub fn deserialize_http_uri<'de, D>(deserializer: D) -> Result<http::Uri, D::Err
 		}
 
 		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
-			std::convert::TryInto::try_into(s).map_err(serde::de::Error::custom)
+			s.try_into().map_err(serde::de::Error::custom)
 		}
 
 		fn visit_string<E>(self, s: String) -> Result<Self::Value, E> where E: serde::de::Error {
-			std::convert::TryInto::try_into(s).map_err(serde::de::Error::custom)
+			s.try_into().map_err(serde::de::Error::custom)
 		}
 	}
 

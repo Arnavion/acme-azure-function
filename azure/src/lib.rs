@@ -11,6 +11,8 @@
 	clippy::too_many_lines,
 )]
 
+use std::convert::TryInto;
+
 use anyhow::Context;
 
 mod auth;
@@ -68,7 +70,7 @@ where
 	let url = match url.into() {
 		Url::PathAndQuery(path_and_query) =>
 			client.make_url(path_and_query)
-			.and_then(|uri| std::convert::TryInto::try_into(uri).context("could not parse request URL")),
+			.and_then(|uri| uri.try_into().context("could not parse request URL")),
 
 		Url::Uri(uri) => Ok(uri),
 	};
@@ -115,7 +117,7 @@ where
 				req
 			};
 		*req.method_mut() = method;
-		*req.uri_mut() = std::convert::TryInto::try_into(url).context("could not parse request URL")?;
+		*req.uri_mut() = url;
 		req.headers_mut().insert(http::header::AUTHORIZATION, authorization);
 
 		let value = client.request(req).await?;

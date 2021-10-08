@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 
 impl<'a> super::Client<'a> {
@@ -109,8 +111,8 @@ impl<'a> super::Client<'a> {
 		let (customer_id, log2::Secret(signer)) = futures_util::future::try_join(customer_id, signer).await?;
 
 		let uri =
-			std::convert::TryInto::try_into(format!("https://{}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01", customer_id))
-			.context("could not construct Log Analytics Data Collector API URI")?;
+			format!("https://{}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01", customer_id)
+			.try_into().context("could not construct Log Analytics Data Collector API URI")?;
 		let authorization_prefix = format!("SharedKey {}:", customer_id);
 
 		Ok(LogSender {
@@ -191,7 +193,7 @@ impl LogSender<'_> {
 						chrono::format::Item::Numeric(chrono::format::Numeric::Second, chrono::format::Pad::Zero),
 						chrono::format::Item::Literal(" GMT"),
 					].iter());
-					std::convert::TryInto::try_into(x_ms_date.to_string()).context("could not create authorization header")?
+					x_ms_date.to_string().try_into().context("could not create authorization header")?
 				};
 
 				let signature = {
@@ -206,8 +208,8 @@ impl LogSender<'_> {
 					signature
 				};
 				let authorization =
-					std::convert::TryInto::try_into(format!("{}{}", self.authorization_prefix, signature))
-					.context("could not create authorization header")?;
+					format!("{}{}", self.authorization_prefix, signature)
+					.try_into().context("could not create authorization header")?;
 
 				let mut req = http::Request::new(hyper::Body::wrap_stream(body));
 				*req.uri_mut() = self.uri.clone();

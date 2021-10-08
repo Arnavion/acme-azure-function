@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 
 impl<'a> super::Client<'a> {
@@ -207,7 +209,7 @@ impl http_common::FromResponse for CreateOrGetKeyResponse {
 
 impl<'a> Key<'a> {
 	fn new(key: KeyResponse, client: &'a super::Client<'a>) -> anyhow::Result<Self> {
-		let sign_url = std::convert::TryInto::try_into(format!("{}/sign?api-version=7.1", key.kid)).context("could not construct sign URL")?;
+		let sign_url = format!("{}/sign?api-version=7.1", key.kid).try_into().context("could not construct sign URL")?;
 
 		Ok(Key {
 			crv: key.crv,

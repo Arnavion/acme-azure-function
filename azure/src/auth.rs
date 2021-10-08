@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 
 pub enum Auth {
@@ -41,8 +43,8 @@ impl Auth {
 					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 						let ResponseInner { access_token, token_type } = body.as_json()?;
 						let header_value =
-							std::convert::TryInto::try_into(format!("{} {}", token_type, access_token))
-							.context("could not parse token as HeaderValue")?;
+							format!("{} {}", token_type, access_token)
+							.try_into().context("could not parse token as HeaderValue")?;
 						Some(Response(header_value))
 					},
 					_ => None,
@@ -59,8 +61,8 @@ impl Auth {
 					let mut req = http::Request::new(Default::default());
 					*req.method_mut() = http::Method::GET;
 					*req.uri_mut() =
-						std::convert::TryInto::try_into(format!("{}?resource={}&api-version=2017-09-01", endpoint, resource))
-						.context("could not construct authorization request URI")?;
+						format!("{}?resource={}&api-version=2017-09-01", endpoint, resource)
+						.try_into().context("could not construct authorization request URI")?;
 					req.headers_mut().insert(SECRET.clone(), secret.clone());
 					req
 				},
@@ -77,8 +79,8 @@ impl Auth {
 					let mut req = http::Request::new(body.into());
 					*req.method_mut() = http::Method::POST;
 					*req.uri_mut() =
-						std::convert::TryInto::try_into(format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id))
-						.context("could not construct authorization request URI")?;
+						format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id)
+						.try_into().context("could not construct authorization request URI")?;
 					req
 				},
 			};
@@ -95,9 +97,7 @@ impl<'de> serde::Deserialize<'de> for Auth {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
 		if let (Ok(endpoint), Ok(secret)) = (std::env::var("MSI_ENDPOINT"), std::env::var("MSI_SECRET")) {
 			let _ = deserializer;
-			let secret =
-				std::convert::TryInto::try_into(secret)
-				.map_err(|err| serde::de::Error::custom(format!("could not parse MSI_SECRET as HeaderValue: {}", err)))?;
+			let secret = secret.try_into().map_err(|err| serde::de::Error::custom(format!("could not parse MSI_SECRET as HeaderValue: {}", err)))?;
 			return Ok(Auth::ManagedIdentity {
 				endpoint,
 				secret,
