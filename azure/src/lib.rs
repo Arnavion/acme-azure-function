@@ -91,7 +91,7 @@ where
 
 					None => {
 						let authorization =
-							auth.get_authorization(&client, TClient::AUTH_RESOURCE, logger).await
+							auth.get_authorization(client, TClient::AUTH_RESOURCE, logger).await
 							.context("could not get API authorization")?;
 						*cached_authorization_write = Some(authorization.clone());
 						authorization

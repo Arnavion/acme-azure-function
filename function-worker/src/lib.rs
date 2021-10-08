@@ -188,7 +188,7 @@ pub fn _parse_settings<'a, TSettings>(settings: &'a str) -> anyhow::Result<(
 		azure_log_analytics_workspace_resource_group_name,
 		azure_log_analytics_workspace_name,
 		rest: settings,
-	} = serde_json::from_str(&settings).context("could not read SECRET_SETTINGS env var")?;
+	} = serde_json::from_str(settings).context("could not read SECRET_SETTINGS env var")?;
 	Ok((
 		azure_subscription_id,
 		azure_auth,

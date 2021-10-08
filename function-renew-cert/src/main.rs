@@ -26,7 +26,7 @@ async fn renew_cert_main(
 
 	let azure_key_vault_client = azure::key_vault::Client::new(
 		&settings.azure_key_vault_name,
-		&azure_auth,
+		azure_auth,
 		user_agent.clone(),
 		logger,
 	).context("could not initialize Azure KeyVault API client")?;
@@ -76,9 +76,9 @@ async fn renew_cert_main(
 
 	let certificates = {
 		let azure_management_client = azure::management::Client::new(
-			&azure_subscription_id,
+			azure_subscription_id,
 			&settings.azure_resource_group_name,
-			&azure_auth,
+			azure_auth,
 			user_agent,
 			logger,
 		).context("could not initialize Azure Management API client")?;

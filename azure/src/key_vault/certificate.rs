@@ -79,7 +79,7 @@ impl<'a> super::Client<'a> {
 									},
 									x509_props: RequestPolicyX509Props {
 										sans: RequestPolicyX509PropsSans {
-											dns_names: &[&common_name],
+											dns_names: &[common_name],
 										},
 										subject: format_args!("CN={}", common_name),
 									},
