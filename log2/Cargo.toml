@@ -12,7 +12,7 @@ anyhow = { version = "1", default-features = false }
 chrono = { version = "0.4", default-features = false, features = [
 	"clock", # for chrono::Utc::now()
 ] }
-http = { version = "0.2", default-features = false }
+http = { version = "0.2.5", default-features = false }
 log = { version = "0.4", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
@@ -20,5 +20,3 @@ serde = { version = "1", default-features = false, features = [
 serde_json = { version = "1", default-features = false, features = [
 	"std",
 ] }
-
-once_cell2 = { path = "../once_cell2" }

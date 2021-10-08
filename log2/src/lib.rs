@@ -127,8 +127,8 @@ pub enum ScopedObjectOperation<D = &'static str> {
 	Get,
 }
 
-pub static TIME_GENERATED_FIELD: once_cell2::race::LazyBox<http::HeaderValue> =
-	once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("TimeCollected"));
+#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
+pub const TIME_GENERATED_FIELD: http::HeaderValue = http::HeaderValue::from_static("TimeCollected");
 
 #[derive(serde::Deserialize)]
 pub struct Secret<T>(pub T);

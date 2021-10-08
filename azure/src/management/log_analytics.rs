@@ -223,9 +223,9 @@ impl LogSender<'_> {
 					let headers = req.headers_mut();
 					headers.insert(http::header::AUTHORIZATION, authorization);
 					headers.insert(http::header::CONTENT_LENGTH, content_length);
-					headers.insert(http::header::CONTENT_TYPE, crate::APPLICATION_JSON.clone());
+					headers.insert(http::header::CONTENT_TYPE, crate::APPLICATION_JSON);
 					headers.insert(LOG_TYPE.clone(), log_type);
-					headers.insert(TIME_GENERATED_FIELD.clone(), log2::TIME_GENERATED_FIELD.clone());
+					headers.insert(TIME_GENERATED_FIELD.clone(), log2::TIME_GENERATED_FIELD);
 					headers.insert(X_MS_DATE.clone(), x_ms_date);
 				}
 

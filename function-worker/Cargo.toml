@@ -17,8 +17,8 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 futures-util = { version = "0.3", default-features = false }
 hmac = { version = "0.11", default-features = false }
-http = { version = "0.2", default-features = false }
-httparse = { version = "1", default-features = false, features = [
+http = { version = "0.2.5", default-features = false }
+httparse = { version = "1.5", default-features = false, features = [
 	"std", # for httparse::Error: std::error::Error
 ] }
 log = { version = "0.4", default-features = false }
@@ -29,7 +29,7 @@ serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
 sha2 = { version = "0.9", default-features = false }
-tokio = { version = "1.5", default-features = false, features = [
+tokio = { version = "1.8", default-features = false, features = [
 	"io-util", # for tokio::io::AsyncWriteExt
 	"rt",
 	"time",
@@ -37,4 +37,3 @@ tokio = { version = "1.5", default-features = false, features = [
 
 azure = { path = "../azure" }
 log2 = { path = "../log2" }
-once_cell2 = { path = "../once_cell2" }

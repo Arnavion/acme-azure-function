@@ -20,8 +20,8 @@ pub mod key_vault;
 
 pub mod management;
 
-static APPLICATION_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
-	once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/json"));
+#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
+const APPLICATION_JSON: http::HeaderValue = http::HeaderValue::from_static("application/json");
 
 trait Client {
 	const AUTH_RESOURCE: &'static str;
@@ -103,7 +103,7 @@ where
 		let mut req =
 			if let Some(body) = body {
 				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON.clone());
+				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON);
 				req
 			}
 			else if method == http::Method::GET {

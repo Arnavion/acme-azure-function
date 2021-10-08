@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 mod certificate;
 pub use certificate::{Certificate, CreateCsrKeyType};
 
@@ -28,15 +30,7 @@ impl<'a> Client<'a> {
 			auth,
 
 			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
-			authority: {
-				// http::uri::Authority does not impl TryFrom<String>, only TryFrom<&[u8]> and TryFrom<&str> which copy.
-				// So use http::uri::Authority::from_maybe_shared with a manually-constructed bytes::Bytes instead.
-				//
-				// Ref: https://github.com/hyperium/http/pull/477
-
-				let authority: bytes::Bytes = format!("{}.vault.azure.net", key_vault_name).into();
-				http::uri::Authority::from_maybe_shared(authority).context("could not construct URL authority")?
-			},
+			authority: format!("{}.vault.azure.net", key_vault_name).try_into().context("could not construct URL authority")?,
 			cached_authorization: Default::default(),
 			logger,
 		})
@@ -50,15 +44,7 @@ impl crate::Client for Client<'_> {
 		let mut url: http::uri::Parts = Default::default();
 		url.scheme = Some(http::uri::Scheme::HTTPS);
 		url.authority = Some(self.authority.clone());
-		url.path_and_query = Some({
-			// http::uri::PathAndQuery implements TryFrom<String> by copying instead of reusing the String.
-			// So use http::uri::PathAndQuery::from_maybe_shared with a manually-constructed bytes::Bytes instead.
-			//
-			// Ref: https://github.com/hyperium/http/pull/477
-
-			let path_and_query: bytes::Bytes = path_and_query.to_string().into();
-			http::uri::PathAndQuery::from_maybe_shared(path_and_query).context("could not parse request URL")?
-		});
+		url.path_and_query = Some(path_and_query.to_string().try_into().context("could not parse request URL")?);
 		Ok(url)
 	}
 

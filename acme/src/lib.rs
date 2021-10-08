@@ -518,8 +518,8 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 	{
 		// This fn encapsulates the non-generic parts of `post` to reduce code size from monomorphization.
 		async fn make_request<K>(account: &mut Account<'_, K>, url: http::Uri, payload: String) -> anyhow::Result<http::Request<hyper::Body>> where K: AccountKey {
-			static APPLICATION_JOSE_JSON: once_cell2::race::LazyBox<http::HeaderValue> =
-				once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("application/jose+json"));
+			#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
+			const APPLICATION_JOSE_JSON: http::HeaderValue = http::HeaderValue::from_static("application/jose+json");
 
 			let nonce =
 				if let Some(nonce) = account.nonce.take() {
@@ -640,7 +640,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			let mut req = http::Request::new(body);
 			*req.method_mut() = http::Method::POST;
 			*req.uri_mut() = url;
-			req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JOSE_JSON.clone());
+			req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JOSE_JSON);
 			Ok(req)
 		}
 

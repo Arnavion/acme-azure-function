@@ -263,9 +263,10 @@ pub async fn _parse_request<'a>(
 		}
 	}
 
-	let mut headers = [httparse::EMPTY_HEADER; 16];
-	let mut req = httparse::Request::new(&mut headers);
-	let body_start = match req.parse(buf.filled()).context("malformed request")? {
+	// TODO: Replace with `std::mem::MaybeUninit::uninit_array::<16>()` when that is stabilized.
+	let mut headers = unsafe { std::mem::MaybeUninit::<[std::mem::MaybeUninit<httparse::Header<'_>>; 16]>::uninit().assume_init() };
+	let mut req = httparse::Request::new(&mut []);
+	let body_start = match req.parse_with_uninit_headers(buf.filled(), &mut headers).context("malformed request")? {
 		httparse::Status::Complete(body_start) => body_start,
 		httparse::Status::Partial => return Ok(None),
 	};
@@ -346,6 +347,7 @@ pub async fn _handle_request(
 
 		let log_sender_f = async move {
 			let mut push_timer = tokio::time::interval(std::time::Duration::from_secs(1));
+			push_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
 			loop {
 				let push_timer_tick = push_timer.tick();
@@ -356,10 +358,10 @@ pub async fn _handle_request(
 				let records = logger.take_records();
 
 				if !records.is_empty() {
-					static LOG_TYPE: once_cell2::race::LazyBox<http::HeaderValue> =
-						once_cell2::race::LazyBox::new(|| http::HeaderValue::from_static("FunctionAppLogs"));
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
+					const LOG_TYPE: http::HeaderValue = http::HeaderValue::from_static("FunctionAppLogs");
 
-					log_sender.send_logs(LOG_TYPE.clone(), records).await?;
+					log_sender.send_logs(LOG_TYPE, records).await?;
 				}
 
 				match r {

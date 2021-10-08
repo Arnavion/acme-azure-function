@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 
 mod dns;
@@ -44,16 +46,10 @@ impl crate::Client for Client<'_> {
 		let mut url: http::uri::Parts = Default::default();
 		url.scheme = Some(http::uri::Scheme::HTTPS);
 		url.authority = Some(AUTHORITY.clone());
-		url.path_and_query = Some({
-			// http::uri::PathAndQuery implements TryFrom<String> by copying instead of reusing the String.
-			// So use http::uri::PathAndQuery::from_maybe_shared with a manually-constructed bytes::Bytes instead.
-			//
-			// Ref: https://github.com/hyperium/http/pull/477
-
-			let path_and_query: bytes::Bytes =
-				format!("/subscriptions/{}/resourceGroups/{}{}", self.subscription_id, self.resource_group_name, path_and_query).into();
-			http::uri::PathAndQuery::from_maybe_shared(path_and_query).context("could not parse request URL")?
-		});
+		url.path_and_query = Some(
+			format!("/subscriptions/{}/resourceGroups/{}{}", self.subscription_id, self.resource_group_name, path_and_query)
+			.try_into().context("could not parse request URL")?,
+		);
 		Ok(url)
 	}
 

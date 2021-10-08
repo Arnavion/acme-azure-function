@@ -34,4 +34,3 @@ azure = { path = "../azure" }
 function-worker = { path = "../function-worker" }
 http-common = { path = "../http-common" }
 log2 = { path = "../log2" }
-once_cell2 = { path = "../once_cell2" }
