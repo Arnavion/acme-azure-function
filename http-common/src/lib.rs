@@ -9,8 +9,6 @@
 	clippy::similar_names,
 )]
 
-use std::convert::TryInto;
-
 use anyhow::Context;
 
 pub struct Client {

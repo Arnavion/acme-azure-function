@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 mod certificate;
 pub use certificate::{Certificate, CreateCsrKeyType};
 

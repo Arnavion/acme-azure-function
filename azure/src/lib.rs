@@ -11,8 +11,6 @@
 	clippy::too_many_lines,
 )]
 
-use std::convert::TryInto;
-
 use anyhow::Context;
 
 mod auth;

@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use anyhow::Context;
 
 mod dns;
