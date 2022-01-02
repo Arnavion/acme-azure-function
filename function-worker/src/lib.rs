@@ -246,7 +246,7 @@ pub async fn _next_stream(
 #[doc(hidden)]
 pub async fn _parse_request<'a>(
 	stream: &mut (impl tokio::io::AsyncRead + Unpin),
-	mut buf: &'a mut tokio::io::ReadBuf<'_>,
+	buf: &'a mut tokio::io::ReadBuf<'_>,
 ) -> anyhow::Result<Option<(&'a str, &'a str, log2::Logger)>> {
 	if buf.remaining() == 0 {
 		return Err(anyhow::anyhow!("request headers too large"));
@@ -255,7 +255,7 @@ pub async fn _parse_request<'a>(
 	{
 		let previous_filled = buf.filled().len();
 		let () =
-			futures_util::future::poll_fn(|cx| tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, &mut buf))
+			futures_util::future::poll_fn(|cx| tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, buf))
 			.await.context("could not read request")?;
 		let new_filled = buf.filled().len();
 		if previous_filled == new_filled {

@@ -187,6 +187,9 @@ struct CreateOrGetKeyResponse {
 struct KeyResponse {
 	crv: acme::EcCurve,
 	kid: String,
+	// rustc thinks this field is unused, but it's being used to assert the key is one of the EC types,
+	// or else the deserialization wouldn't succeed.
+	#[allow(unused)]
 	kty: EcKty,
 	x: String,
 	y: String,
