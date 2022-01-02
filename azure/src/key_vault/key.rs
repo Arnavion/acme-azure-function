@@ -114,7 +114,7 @@ impl acme::AccountKey for Key<'_> {
 				match $crv {
 					$(
 						$crv_name => {
-							let hasher: $hasher = $digest.into_iter().fold(Default::default(), sha2::Digest::chain);
+							let hasher: $hasher = $digest.into_iter().fold(Default::default(), <$hasher as sha2::Digest>::chain_update);
 							let hash = sha2::Digest::finalize(hasher);
 							let hash = base64::encode_config(&hash, acme::JWS_BASE64_CONFIG);
 							hash
