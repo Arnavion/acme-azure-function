@@ -30,9 +30,7 @@ serde = { version = "1", default-features = false, features = [
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
-sha2 = { version = "0.9", default-features = false, features = [
-	"std", # for sha2::Sha256: std::io::Write
-] }
+sha2 = { version = "0.9", default-features = false }
 tokio = { version = "1", default-features = false, features = [
 	"parking_lot", # for slimmer tokio::sync::RwLock
 	"sync",

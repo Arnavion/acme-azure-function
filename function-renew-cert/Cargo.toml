@@ -11,9 +11,6 @@ publish = false
 anyhow = { version = "1", default-features = false, features = [
 	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
 ] }
-base64 = { version = "0.13", default-features = false, features = [
-	"std", # for base64::read, base64::write
-] }
 chrono = { version = "0.4", default-features = false, features = [
 	"clock", # for chrono::Utc::now()
 ] }
@@ -24,7 +21,6 @@ serde = { version = "1", default-features = false, features = [
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
-sha2 = { version = "0.9", default-features = false }
 tokio = { version = "1", default-features = false, features = [
 	"time",
 ] }
