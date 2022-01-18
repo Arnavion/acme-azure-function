@@ -45,7 +45,7 @@ impl crate::Client for Client<'_> {
 		url.scheme = Some(http::uri::Scheme::HTTPS);
 		url.authority = Some(AUTHORITY.clone());
 		url.path_and_query = Some(
-			format!("/subscriptions/{}/resourceGroups/{}{}", self.subscription_id, self.resource_group_name, path_and_query)
+			format!("/subscriptions/{}/resourceGroups/{}{path_and_query}", self.subscription_id, self.resource_group_name)
 			.try_into().context("could not parse request URL")?,
 		);
 		Ok(url)

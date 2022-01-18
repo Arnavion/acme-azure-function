@@ -76,10 +76,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							&self,
 							http::Method::GET,
-							format_args!(
-								"/providers/Microsoft.OperationalInsights/workspaces/{}?api-version=2020-08-01",
-								workspace_name,
-							),
+							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}?api-version=2020-08-01"),
 							None::<&()>,
 						).await?;
 					Ok(customer_id)
@@ -96,10 +93,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							&self,
 							http::Method::POST,
-							format_args!(
-								"/providers/Microsoft.OperationalInsights/workspaces/{}/sharedKeys?api-version=2020-08-01",
-								workspace_name,
-							),
+							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}/sharedKeys?api-version=2020-08-01"),
 							None::<&()>,
 						).await?;
 					Ok(log2::Secret(primary_shared_key))
@@ -109,9 +103,9 @@ impl<'a> super::Client<'a> {
 		let (customer_id, log2::Secret(signer)) = futures_util::future::try_join(customer_id, signer).await?;
 
 		let uri =
-			format!("https://{}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01", customer_id)
+			format!("https://{customer_id}.ods.opinsights.azure.com/api/logs?api-version=2016-04-01")
 			.try_into().context("could not construct Log Analytics Data Collector API URI")?;
-		let authorization_prefix = format!("SharedKey {}:", customer_id);
+		let authorization_prefix = format!("SharedKey {customer_id}:");
 
 		Ok(LogSender {
 			customer_id,
@@ -153,7 +147,7 @@ impl LogSender<'_> {
 		self.logger.report_operation(
 			"azure/log_analytics/logs",
 			&self.customer_id,
-			log2::ScopedObjectOperation::Create { value: format_args!("{}B", content_length_s) },
+			log2::ScopedObjectOperation::Create { value: format_args!("{content_length_s}B") },
 			async {
 				struct Response;
 
@@ -206,7 +200,7 @@ impl LogSender<'_> {
 					signature
 				};
 				let authorization =
-					format!("{}{}", self.authorization_prefix, signature)
+					format!("{}{signature}", self.authorization_prefix)
 					.try_into().context("could not create authorization header")?;
 
 				let mut req = http::Request::new(hyper::Body::wrap_stream(body));

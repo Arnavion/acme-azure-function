@@ -61,7 +61,7 @@ impl Logger {
 			ScopedObjectOperation::Get => {
 				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetStart });
 				let result = f.await?;
-				self.report_inner(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetEnd { value: format_args!("{:?}", result) } });
+				self.report_inner(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetEnd { value: format_args!("{result:?}") } });
 				Ok(result)
 			},
 		}
@@ -113,9 +113,8 @@ impl Logger {
 
 		log::log!(
 			if matches!(report, Report::Error { .. }) { log::Level::Error } else { log::Level::Info },
-			"[{}] {:?}",
+			"[{}] {report:?}",
 			timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-			report,
 		);
 	}
 }
@@ -178,7 +177,7 @@ where
 		match report {
 			Report::Error { err } => {
 				serializer.serialize_field("Level", &SerializeWith(log::Level::Error))?;
-				serializer.serialize_field("Exception", &format_args!("{:?}", err))?;
+				serializer.serialize_field("Exception", &format_args!("{err:?}"))?;
 			},
 
 			Report::Message { message } => {
@@ -276,21 +275,21 @@ where
 
 			Report::Message { message } =>
 				f.debug_struct("Message")
-				.field("message", &format_args!("{}", message))
+				.field("message", &format_args!("{message}"))
 				.finish(),
 
 			Report::ObjectOperation { object_type, object_id, operation } =>
 				f.debug_struct("ObjectOperation")
-				.field("object_type", &format_args!("{}", object_type))
-				.field("object_id", &format_args!("{}", object_id))
+				.field("object_type", &format_args!("{object_type}"))
+				.field("object_id", &format_args!("{object_id}"))
 				.field("operation", operation)
 				.finish(),
 
 			Report::ObjectState { object_type, object_id, state } =>
 				f.debug_struct("ObjectState")
-				.field("object_type", &format_args!("{}", object_type))
-				.field("object_id", &format_args!("{}", object_id))
-				.field("state", &format_args!("{}", state))
+				.field("object_type", &format_args!("{object_type}"))
+				.field("object_id", &format_args!("{object_id}"))
+				.field("state", &format_args!("{state}"))
 				.finish(),
 		}
 	}
@@ -313,7 +312,7 @@ impl<D> std::fmt::Debug for ObjectOperation<D> where D: std::fmt::Display {
 		match self {
 			ObjectOperation::CreateStart { value } =>
 				f.debug_struct("CreateStart")
-				.field("value", &format_args!("{}", value))
+				.field("value", &format_args!("{value}"))
 				.finish(),
 
 			ObjectOperation::CreateEnd =>
@@ -334,7 +333,7 @@ impl<D> std::fmt::Debug for ObjectOperation<D> where D: std::fmt::Display {
 
 			ObjectOperation::GetEnd { value } =>
 				f.debug_struct("GetEnd")
-				.field("value", &format_args!("{}", value))
+				.field("value", &format_args!("{value}"))
 				.finish(),
 		}
 	}

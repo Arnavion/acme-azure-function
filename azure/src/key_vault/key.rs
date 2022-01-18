@@ -24,7 +24,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							self,
 							http::Method::POST,
-							format_args!("/keys/{}/create?api-version=7.1", key_name),
+							format_args!("/keys/{key_name}/create?api-version=7.1"),
 							Some(&Request {
 								crv,
 								kty,
@@ -64,7 +64,7 @@ impl<'a> super::Client<'a> {
 				crate::request(
 					self,
 					http::Method::GET,
-					format_args!("/keys/{}?api-version=7.1", key_name),
+					format_args!("/keys/{key_name}?api-version=7.1"),
 					None::<&()>,
 				).await?;
 			let key = response.map(|CreateOrGetKeyResponse { key }| key);

@@ -112,7 +112,7 @@ pub async fn _init() -> anyhow::Result<(log2::Logger, String, impl futures_util:
 				let timestamp = chrono::Utc::now();
 				let level = record.level();
 
-				eprintln!("[{}] {:5} {}", timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true), level, record.args());
+				eprintln!("[{}] {level:5} {}", timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true), record.args());
 			}
 
 			fn flush(&self) {
@@ -129,10 +129,10 @@ pub async fn _init() -> anyhow::Result<(log2::Logger, String, impl futures_util:
 	let settings = std::env::var("SECRET_SETTINGS").context("could not read SECRET_SETTINGS env var")?;
 
 	let port = match std::env::var("FUNCTIONS_CUSTOMHANDLER_PORT") {
-		Ok(value) => value.parse().with_context(|| format!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {:?}", value))?,
+		Ok(value) => value.parse().with_context(|| format!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {value:?}"))?,
 		Err(std::env::VarError::NotPresent) => 8080,
 		Err(std::env::VarError::NotUnicode(value)) =>
-			return Err(anyhow::anyhow!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {:?}", value)),
+			return Err(anyhow::anyhow!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {value:?}")),
 	};
 
 	let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::new(127, 0, 0, 1), port)).await?;
@@ -427,7 +427,7 @@ pub async fn _handle_request(
 			//
 			// [1]: https://github.com/rust-lang/rust/issues/62726
 			// [2]: https://github.com/tokio-rs/tokio/issues/3679
-			return Err(anyhow::anyhow!("could not write response: short write from writev ({}/{})", written, to_write));
+			return Err(anyhow::anyhow!("could not write response: short write from writev ({written}/{to_write})"));
 		}
 
 		let () = tokio::io::AsyncWriteExt::flush(stream).await.context("could not write response")?;
@@ -436,21 +436,21 @@ pub async fn _handle_request(
 	}
 
 	let res_f = async {
-		logger.report_state("function_invocation", "", format_args!("Request {{ method: {:?}, path: {:?} }}", method, path));
+		logger.report_state("function_invocation", "", format_args!("Request {{ method: {method:?}, path: {path:?} }}"));
 
 		let res =
 			if method == "POST" {
 				match res_f.await {
 					Ok(Some(message)) => Response::Ok(message),
 					Ok(None) => Response::UnknownFunction,
-					Err(err) => Response::Error(format!("{:?}", err)),
+					Err(err) => Response::Error(format!("{err:?}")),
 				}
 			}
 			else {
 				Response::MethodNotAllowed
 			};
 
-		logger.report_state("function_invocation", "", format_args!("Response {{ {:?} }}", res));
+		logger.report_state("function_invocation", "", format_args!("Response {{ {res:?} }}"));
 		res
 	};
 	futures_util::pin_mut!(res_f);

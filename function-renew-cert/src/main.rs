@@ -40,7 +40,7 @@ async fn renew_cert_main(
 					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
 					"does not need to be renewed",
 				);
-				return Ok(format!("certificate does not need to be renewed: {:?}", certificate).into());
+				return Ok(format!("certificate does not need to be renewed: {certificate:?}").into());
 			}
 		}
 	}
@@ -164,7 +164,7 @@ async fn renew_cert_main(
 		azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?
 		.context("newly-created certificate does not exist")?;
 
-	Ok(format!("certificate has been renewed: {:?}", certificate).into())
+	Ok(format!("certificate has been renewed: {certificate:?}").into())
 }
 
 #[derive(serde::Deserialize)]

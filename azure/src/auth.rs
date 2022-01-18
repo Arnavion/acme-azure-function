@@ -41,7 +41,7 @@ impl Auth {
 					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 						let ResponseInner { access_token, token_type } = body.as_json()?;
 						let header_value =
-							format!("{} {}", token_type, access_token)
+							format!("{token_type} {access_token}")
 							.try_into().context("could not parse token as HeaderValue")?;
 						Some(Response(header_value))
 					},
@@ -59,7 +59,7 @@ impl Auth {
 					let mut req = http::Request::new(Default::default());
 					*req.method_mut() = http::Method::GET;
 					*req.uri_mut() =
-						format!("{}?resource={}&api-version=2017-09-01", endpoint, resource)
+						format!("{endpoint}?resource={resource}&api-version=2017-09-01")
 						.try_into().context("could not construct authorization request URI")?;
 					req.headers_mut().insert(SECRET.clone(), secret.clone());
 					req
@@ -77,7 +77,7 @@ impl Auth {
 					let mut req = http::Request::new(body.into());
 					*req.method_mut() = http::Method::POST;
 					*req.uri_mut() =
-						format!("https://login.microsoftonline.com/{}/oauth2/token", tenant_id)
+						format!("https://login.microsoftonline.com/{tenant_id}/oauth2/token")
 						.try_into().context("could not construct authorization request URI")?;
 					req
 				},
@@ -95,7 +95,7 @@ impl<'de> serde::Deserialize<'de> for Auth {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
 		if let (Ok(endpoint), Ok(secret)) = (std::env::var("MSI_ENDPOINT"), std::env::var("MSI_SECRET")) {
 			let _ = deserializer;
-			let secret = secret.try_into().map_err(|err| serde::de::Error::custom(format!("could not parse MSI_SECRET as HeaderValue: {}", err)))?;
+			let secret = secret.try_into().map_err(|err| serde::de::Error::custom(format!("could not parse MSI_SECRET as HeaderValue: {err}")))?;
 			return Ok(Auth::ManagedIdentity {
 				endpoint,
 				secret,

@@ -40,11 +40,7 @@ impl<'a> super::Client<'a> {
 				crate::request(
 					self,
 					http::Method::PUT,
-					format_args!(
-						"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
-						dns_zone_name,
-						name,
-					),
+					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}/TXT/{name}?api-version=2018-05-01"),
 					Some(&Request {
 						properties: RequestProperties {
 							ttl: 1,
@@ -86,11 +82,7 @@ impl<'a> super::Client<'a> {
 				crate::request(
 					self,
 					http::Method::DELETE,
-					format_args!(
-						"/providers/Microsoft.Network/dnsZones/{}/TXT/{}?api-version=2018-05-01",
-						dns_zone_name,
-						name,
-					),
+					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}/TXT/{name}?api-version=2018-05-01"),
 					None::<&()>,
 				).await?;
 			Ok(())

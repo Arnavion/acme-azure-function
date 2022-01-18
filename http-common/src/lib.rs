@@ -100,8 +100,8 @@ impl Client {
 		});
 
 		match err {
-			Some(err) => Err(err).context(format!("unexpected response {}: {:?}", status, body)),
-			None => Err(anyhow::anyhow!("unexpected response {}: {:?}", status, body)),
+			Some(err) => Err(err).context(format!("unexpected response {status}: {body:?}")),
+			None => Err(anyhow::anyhow!("unexpected response {status}: {body:?}")),
 		}
 	}
 }

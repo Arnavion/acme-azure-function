@@ -64,7 +64,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							self,
 							http::Method::POST,
-							format_args!("/certificates/{}/create?api-version=7.1", certificate_name),
+							format_args!("/certificates/{certificate_name}/create?api-version=7.1"),
 							Some(&Request {
 								policy: RequestPolicy {
 									issuer: RequestPolicyIssuer {
@@ -81,7 +81,7 @@ impl<'a> super::Client<'a> {
 										sans: RequestPolicyX509PropsSans {
 											dns_names: &[common_name],
 										},
-										subject: format_args!("CN={}", common_name),
+										subject: format_args!("CN={common_name}"),
 									},
 								},
 							}),
@@ -146,7 +146,7 @@ impl<'a> super::Client<'a> {
 					crate::request(
 						self,
 						http::Method::GET,
-						format_args!("/certificates/{}?api-version=7.1", certificate_name),
+						format_args!("/certificates/{certificate_name}?api-version=7.1"),
 						None::<&()>,
 					).await?;
 				Ok(certificate)
@@ -180,13 +180,13 @@ impl<'a> super::Client<'a> {
 			self.logger.report_operation(
 				"azure/key_vault/certificate",
 				(self.key_vault_name, certificate_name),
-				log2::ScopedObjectOperation::Create { value: format_args!("{:?}", certificates) },
+				log2::ScopedObjectOperation::Create { value: format_args!("{certificates:?}") },
 				async {
 					let _: Response =
 						crate::request(
 							self,
 							http::Method::POST,
-							format_args!("/certificates/{}/pending/merge?api-version=7.1", certificate_name),
+							format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.1"),
 							Some(&Request {
 								x5c: certificates,
 							}),

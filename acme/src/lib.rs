@@ -135,10 +135,10 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				Ok((account_url.to_string(), status))
 			}).await?;
 
-			logger.report_state("acme/account", &account_url, format_args!("{:?}", status));
+			logger.report_state("acme/account", &account_url, format_args!("{status:?}"));
 
 			if !matches!(status, AccountStatus::Valid) {
-				return Err(anyhow::anyhow!("Account has {:?} status", status));
+				return Err(anyhow::anyhow!("Account has {status:?} status"));
 			}
 
 			Some(account_url)
@@ -180,7 +180,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		}).await?;
 
 		let order = loop {
-			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
+			self.logger.report_state("acme/order", &order_url, format_args!("{order:?}"));
 
 			match order {
 				OrderResponse::Pending(OrderObjPending { mut authorization_urls }) => {
@@ -242,7 +242,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 					let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
 
-					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
+					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
 
 					let (mut hasher, challenge_url) =
 						if let AuthorizationResponse::Pending { hasher, challenge_url } = authorization {
@@ -279,7 +279,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				},
 
 				OrderResponse::Processing { retry_after } => {
-					self.logger.report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking order..."));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -366,23 +366,23 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			}
 		}
 
-		self.logger.report_message(format_args!("Completing challenge {} ...", challenge_url));
+		self.logger.report_message(format_args!("Completing challenge {challenge_url} ..."));
 
 		let mut body = Some(&ChallengeCompleteRequest { });
 		loop {
 			let challenge = self.post(challenge_url.clone(), body.take()).await.context("could not complete challenge")?;
 
-			self.logger.report_state("acme/challenge", &challenge_url, format_args!("{:?}", challenge));
+			self.logger.report_state("acme/challenge", &challenge_url, format_args!("{challenge:?}"));
 
 			match challenge {
 				ChallengeResponse::Pending => {
 					let retry_after = std::time::Duration::from_secs(1);
-					self.logger.report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking challenge..."));
 					tokio::time::sleep(retry_after).await;
 				},
 
 				ChallengeResponse::Processing { retry_after } => {
-					self.logger.report_message(format_args!("Waiting for {:?} before rechecking challenge...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking challenge..."));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -390,16 +390,16 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			};
 		}
 
-		self.logger.report_message(format_args!("Waiting for authorization {} ...", authorization_url));
+		self.logger.report_message(format_args!("Waiting for authorization {authorization_url} ..."));
 
 		loop {
 			let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
 
-			self.logger.report_state("acme/authorization", &authorization_url, format_args!("{:?}", authorization));
+			self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
 
 			match authorization {
 				AuthorizationResponse::Pending { retry_after } => {
-					self.logger.report_message(format_args!("Waiting for {:?} before rechecking authorization...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking authorization..."));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -426,18 +426,18 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			finalize_url: http::Uri,
 		}
 
-		self.logger.report_message(format_args!("Finalizing order {} ...", order_url));
+		self.logger.report_message(format_args!("Finalizing order {order_url} ..."));
 
 		let order = loop {
 			let order = self.post(order_url.clone(), None::<&()>).await.context("could not get order")?;
 
-			self.logger.report_state("acme/order", &order_url, format_args!("{:?}", order));
+			self.logger.report_state("acme/order", &order_url, format_args!("{order:?}"));
 
 			match order {
 				OrderResponse::Pending(serde::de::IgnoredAny) => return Err(anyhow::anyhow!("order is still pending")),
 
 				OrderResponse::Processing { retry_after } => {
-					self.logger.report_message(format_args!("Waiting for {:?} before rechecking order...", retry_after));
+					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking order..."));
 					tokio::time::sleep(retry_after).await;
 				},
 
@@ -598,7 +598,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 							alg,
 							jwk_or_kid,
 							nonce: &nonce,
-							url: format_args!("{}", url),
+							url: format_args!("{url}"),
 						},
 						&mut serializer,
 					).context("could not serialize `protected`")?;

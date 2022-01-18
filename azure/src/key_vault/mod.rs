@@ -28,7 +28,7 @@ impl<'a> Client<'a> {
 			auth,
 
 			client: http_common::Client::new(user_agent).context("could not create HTTP client")?,
-			authority: format!("{}.vault.azure.net", key_vault_name).try_into().context("could not construct URL authority")?,
+			authority: format!("{key_vault_name}.vault.azure.net").try_into().context("could not construct URL authority")?,
 			cached_authorization: Default::default(),
 			logger,
 		})
