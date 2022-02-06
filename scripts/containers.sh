@@ -5,18 +5,19 @@ set -euo pipefail
 uid="$(id -u)"
 username="$(id -un)"
 
-if ! docker image inspect 'azure-function-build-rust' >/dev/null; then
+if ! podman image exists localhost/azure-function-build-rust; then
     (
         directory="$(mktemp -d)"
         trap "rm -rf '$directory'" EXIT
 
-        >"$directory/Dockerfile" cat <<-EOF
-FROM alpine
+        >"$directory/Containerfile" cat <<-EOF
+FROM docker.io/library/alpine
 
 COPY build.sh /
 COPY rust-toolchain /
 RUN /build.sh
 ENV PATH "\$PATH:$HOME/.cargo/bin"
+USER $uid
 
 CMD ["/bin/sh"]
 EOF
@@ -45,23 +46,26 @@ EOF
 
         cp ./rust-toolchain "$directory/"
 
-        docker build \
-            -t 'azure-function-build-rust' \
+        podman image build \
+            --layers=false \
+            --tag=localhost/azure-function-build-rust \
             "$directory"
+        podman image rm docker.io/library/alpine || :
     ) & :
 fi
 
-if ! docker image inspect 'azure-function-build-func' >/dev/null; then
+if ! podman image exists localhost/azure-function-build-func >/dev/null; then
     (
         directory="$(mktemp -d)"
         trap "rm -rf '$directory'" EXIT
 
-        >"$directory/Dockerfile" cat <<-EOF
-FROM debian:10-slim
+        >"$directory/Containerfile" cat <<-EOF
+FROM docker.io/library/debian:11-slim
 
 COPY build.sh /
 RUN /build.sh
 ENV PATH "\$PATH:/usr/local/bin/func"
+USER $uid
 
 CMD ["/bin/bash"]
 EOF
@@ -73,7 +77,7 @@ set -euo pipefail
 
 apt-get update -y
 
-apt-get install -y apt-transport-https curl gpg libicu63 lsb-release unzip
+apt-get install -y apt-transport-https curl gpg libicu67 lsb-release unzip
 curl -L 'https://packages.microsoft.com/keys/microsoft.asc' | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.asc.gpg
 echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ \$(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list
 apt-get update -y
@@ -94,9 +98,11 @@ apt-get clean -y
 EOF
         chmod +x "$directory/build.sh"
 
-        docker build \
-            -t 'azure-function-build-func' \
+        podman image build \
+            --layers=false \
+            --tag=localhost/azure-function-build-func \
             "$directory"
+        podman image rm docker.io/library/debian:11-slim || :
     ) & :
 fi
 

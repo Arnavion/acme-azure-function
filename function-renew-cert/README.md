@@ -7,9 +7,9 @@ Build-time tools:
 
 - `azure-cli`
 - `curl`
-- `docker`
 - `jq`
 - `openssl`
+- `podman`
 
 This Function is implemented in Rust and runs as [a custom handler.](https://docs.microsoft.com/en-us/azure/azure-functions/functions-custom-handlers)
 

@@ -60,7 +60,7 @@ case "$target" in
         ;;
 esac
 
-./scripts/docker.sh
+./scripts/containers.sh
 
 secret_settings="$(
     jq --null-input --sort-keys --compact-output \
@@ -173,52 +173,48 @@ esac
 
 case "$target" in
     debug-*)
-        docker run \
-            -it \
-            --rm \
-            -v "$PWD:$PWD" \
-            -v "$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
-            -v "$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
-            -u "$(id -u)" \
-            -w "$PWD" \
-            'azure-function-build-rust' \
+        podman container run \
+            --interactive --tty --rm \
+            --userns=keep-id \
+            "--volume=$PWD:$PWD" \
+            "--volume=$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
+            "--volume=$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
+            "--workdir=$PWD" \
+            localhost/azure-function-build-rust \
             sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl"'
         cp -f "./target/x86_64-unknown-linux-musl/debug/$func_dir_name" "./$func_dir_name/dist/main"
 
-        docker run \
-            -it \
-            --rm \
-            -p '7071:7071' \
-            -v "$PWD:$PWD" \
-            -u "$(id -u)" \
-            -w "$PWD" \
-            'azure-function-build-func' \
+        podman container run \
+            --interactive --tty --rm \
+            --publish=7071:7071 \
+            --userns=keep-id \
+            "--volume=$PWD:$PWD" \
+            "--workdir=$PWD" \
+            localhost/azure-function-build-func \
             sh -c "cd './$func_dir_name/dist/' && func start -p 7071"
         ;;
 
     'publish')
-        docker run \
-            -it \
-            --rm \
-            -v "$PWD:$PWD" \
-            -v "$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
-            -v "$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
-            -u "$(id -u)" \
-            -w "$PWD" \
-            'azure-function-build-rust' \
+        podman container run \
+            --interactive --tty --rm \
+            --userns=keep-id \
+            "--volume=$PWD:$PWD" \
+            "--volume=$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
+            "--volume=$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
+            "--workdir=$PWD" \
+            localhost/azure-function-build-rust \
             sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl --release"'
         cp -f "./target/x86_64-unknown-linux-musl/release/$func_dir_name" "./$func_dir_name/dist/main"
 
         [ -d ~/.azure ]
 
-        docker run \
-            -it \
-            --rm \
-            -v "$PWD:$PWD" \
-            -v "$HOME/.azure:$HOME/.azure" \
-            -u "$(id -u)" \
-            -w "$PWD" \
-            'azure-function-build-func' \
+        podman container run \
+            --interactive --tty --rm \
+            --userns=keep-id \
+            "--volume=$PWD:$PWD" \
+            "--volume=$HOME/.azure:$HOME/.azure" \
+            "--workdir=$PWD" \
+            localhost/azure-function-build-func \
             bash -c "
                 set -euo pipefail
 
