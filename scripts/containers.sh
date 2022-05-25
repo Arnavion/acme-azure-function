@@ -14,7 +14,7 @@ if ! podman image exists localhost/azure-function-build-rust; then
 FROM docker.io/library/alpine
 
 COPY build.sh /
-COPY rust-toolchain /
+COPY rust-toolchain.toml /
 RUN /build.sh
 ENV PATH "\$PATH:$HOME/.cargo/bin"
 USER $uid
@@ -38,13 +38,13 @@ sudo -u '$username' chmod +x '$HOME/.cargo/bin/rustup'
 
 sudo -u '$username' sh -c 'export PATH="\$PATH:$HOME/.cargo/bin"; rustup self update && rustup set profile minimal && cd / && rustc -vV'
 
-rm -f /rust-toolchain
+rm -f /rust-toolchain.toml
 
 apk del curl sudo
 EOF
         chmod +x "$directory/build.sh"
 
-        cp ./rust-toolchain "$directory/"
+        cp ./rust-toolchain.toml "$directory/"
 
         podman image build \
             --layers=false \
