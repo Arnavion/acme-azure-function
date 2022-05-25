@@ -3,9 +3,7 @@
 #![allow(
 	clippy::default_trait_access,
 	clippy::let_and_return,
-	clippy::let_unit_value,
 	clippy::missing_errors_doc,
-	clippy::must_use_candidate,
 	clippy::similar_names,
 )]
 

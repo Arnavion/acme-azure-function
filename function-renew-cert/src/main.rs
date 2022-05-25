@@ -1,10 +1,7 @@
 #![deny(rust_2018_idioms, warnings)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
-	clippy::default_trait_access,
 	clippy::let_unit_value,
-	clippy::let_and_return,
-	clippy::too_many_arguments,
 	clippy::too_many_lines,
 )]
 

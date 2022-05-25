@@ -4,7 +4,6 @@
 	clippy::let_unit_value,
 	clippy::missing_errors_doc,
 	clippy::must_use_candidate,
-	clippy::shadow_unrelated,
 )]
 
 mod object_id;

@@ -1,12 +1,7 @@
 #![deny(rust_2018_idioms, warnings)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
-	clippy::default_trait_access,
-	clippy::let_underscore_drop,
 	clippy::let_unit_value,
-	clippy::missing_errors_doc,
-	clippy::shadow_unrelated,
-	clippy::similar_names,
 	clippy::too_many_lines,
 	clippy::type_complexity,
 )]
@@ -242,7 +237,6 @@ pub async fn _next_stream(
 	}
 }
 
-#[allow(clippy::needless_lifetimes)] // TODO: https://github.com/rust-lang/rust-clippy/issues/5787
 #[doc(hidden)]
 pub async fn _parse_request<'a>(
 	stream: &mut (impl tokio::io::AsyncRead + Unpin),

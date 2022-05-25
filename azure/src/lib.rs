@@ -6,7 +6,6 @@
 	clippy::let_underscore_drop,
 	clippy::let_unit_value,
 	clippy::missing_errors_doc,
-	clippy::must_use_candidate,
 	clippy::similar_names,
 	clippy::too_many_lines,
 )]
