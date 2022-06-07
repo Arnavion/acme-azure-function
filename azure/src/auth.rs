@@ -53,15 +53,15 @@ impl Auth {
 		let log2::Secret(authorization) = logger.report_operation("azure/authorization", resource, <log2::ScopedObjectOperation>::Get, async {
 			let req = match self {
 				Auth::ManagedIdentity { endpoint, secret } => {
-					static SECRET: once_cell2::race::LazyBox<http::header::HeaderName> =
-						once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("secret"));
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+					const SECRET: http::header::HeaderName = http::header::HeaderName::from_static("secret");
 
 					let mut req = http::Request::new(Default::default());
 					*req.method_mut() = http::Method::GET;
 					*req.uri_mut() =
 						format!("{endpoint}?resource={resource}&api-version=2017-09-01")
 						.try_into().context("could not construct authorization request URI")?;
-					req.headers_mut().insert(SECRET.clone(), secret.clone());
+					req.headers_mut().insert(SECRET, secret.clone());
 					req
 				},
 

@@ -15,7 +15,7 @@ base64 = { version = "0.13", default-features = false, features = [
 	"std", # for base64::read, base64::write
 ] }
 futures-util = { version = "0.3", default-features = false }
-http = { version = "0.2.5", default-features = false }
+http = { version = "0.2.7", default-features = false }
 hyper = { version = "0.14", default-features = false, features = [
 	"stream",
 ] }
@@ -34,4 +34,3 @@ tokio = { version = "1", default-features = false, features = [
 
 http-common = { path = "../http-common" }
 log2 = { path = "../log2" }
-once_cell2 = { path = "../once_cell2" }

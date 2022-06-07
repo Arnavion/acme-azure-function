@@ -13,7 +13,6 @@ dependencies = [
  "http-common",
  "hyper",
  "log2",
- "once_cell2",
  "serde",
  "serde_json",
  "sha2",

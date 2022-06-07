@@ -207,20 +207,20 @@ impl LogSender<'_> {
 				*req.uri_mut() = self.uri.clone();
 				*req.method_mut() = http::Method::POST;
 				{
-					static LOG_TYPE: once_cell2::race::LazyBox<http::header::HeaderName> =
-						once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("log-type"));
-					static TIME_GENERATED_FIELD: once_cell2::race::LazyBox<http::header::HeaderName> =
-						once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("time-generated-field"));
-					static X_MS_DATE: once_cell2::race::LazyBox<http::header::HeaderName> =
-						once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("x-ms-date"));
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+					const LOG_TYPE: http::header::HeaderName = http::header::HeaderName::from_static("log-type");
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+					const TIME_GENERATED_FIELD: http::header::HeaderName = http::header::HeaderName::from_static("time-generated-field");
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+					const X_MS_DATE: http::header::HeaderName = http::header::HeaderName::from_static("x-ms-date");
 
 					let headers = req.headers_mut();
 					headers.insert(http::header::AUTHORIZATION, authorization);
 					headers.insert(http::header::CONTENT_LENGTH, content_length);
 					headers.insert(http::header::CONTENT_TYPE, crate::APPLICATION_JSON);
-					headers.insert(LOG_TYPE.clone(), log_type);
-					headers.insert(TIME_GENERATED_FIELD.clone(), log2::TIME_GENERATED_FIELD);
-					headers.insert(X_MS_DATE.clone(), x_ms_date);
+					headers.insert(LOG_TYPE, log_type);
+					headers.insert(TIME_GENERATED_FIELD, log2::TIME_GENERATED_FIELD);
+					headers.insert(X_MS_DATE, x_ms_date);
 				}
 
 				let _: Response = self.client.request(req).await?;

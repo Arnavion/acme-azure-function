@@ -739,10 +739,11 @@ impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> wh
 		body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
 		mut headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
-		static REPLAY_NONCE: once_cell2::race::LazyBox<http::header::HeaderName> =
-			once_cell2::race::LazyBox::new(|| http::header::HeaderName::from_static("replay-nonce"));
+		#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+		const REPLAY_NONCE: http::header::HeaderName = http::header::HeaderName::from_static("replay-nonce");
 
-		let new_nonce = headers.remove(&*REPLAY_NONCE);
+		#[allow(clippy::borrow_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+		let new_nonce = headers.remove(&REPLAY_NONCE);
 		match TResponse::from_response(status, body, headers) {
 			Ok(Some(body)) => Ok(Some(ResponseWithNewNonce { body, new_nonce })),
 			Ok(None) => Ok(None),
