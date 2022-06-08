@@ -21,7 +21,7 @@ esac
     "$AZURE_ACME_CLIENT_SECRET" \
     "$AZURE_ACME_STORAGE_ACCOUNT_CONNECTION_STRING" \
     "$AZURE_ACME_FUNCTION_APP_NAME" \
-    '0 0 0 * * *' \
+    '0 17 1 * * *' \
     "$(
         jq --null-input --sort-keys --compact-output \
             --arg ACME_DIRECTORY_URL "$acme_directory_url" \
