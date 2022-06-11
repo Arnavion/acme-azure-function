@@ -118,9 +118,7 @@ impl<'a> super::Client<'a> {
 					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
 
-						let not_after =
-							chrono::TimeZone::ymd(&chrono::Utc, 1970, 1, 1).and_hms(0, 0, 0) +
-							chrono::Duration::seconds(exp);
+						let not_after = chrono::TimeZone::timestamp(&chrono::Utc, exp, 0);
 
 						let version = match id.rsplit_once('/') {
 							Some((_, version)) => version.to_owned(),

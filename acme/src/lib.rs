@@ -31,17 +31,14 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 	) -> anyhow::Result<Account<'a, K>> {
 		#[derive(Debug, serde::Deserialize)]
 		struct DirectoryResponse {
-			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 			#[serde(rename = "newAccount")]
-			new_account_url: http::Uri,
+			new_account_url: http_common::DeserializableUri,
 
-			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 			#[serde(rename = "newNonce")]
-			new_nonce_url: http::Uri,
+			new_nonce_url: http_common::DeserializableUri,
 
-			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 			#[serde(rename = "newOrder")]
-			new_order_url: http::Uri,
+			new_order_url: http_common::DeserializableUri,
 		}
 
 		impl http_common::FromResponse for DirectoryResponse {
@@ -60,9 +57,9 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
 
 		let (DirectoryResponse {
-			new_account_url,
-			new_nonce_url,
-			new_order_url,
+			new_account_url: http_common::DeserializableUri(new_account_url),
+			new_nonce_url: http_common::DeserializableUri(new_nonce_url),
+			new_order_url: http_common::DeserializableUri(new_order_url),
 		}, log2::Secret(nonce)) = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
 			let mut req = http::Request::new(Default::default());
 			*req.method_mut() = http::Method::GET;
@@ -208,8 +205,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 								token: std::borrow::Cow<'a, str>,
 								#[serde(borrow)]
 								r#type: std::borrow::Cow<'a, str>,
-								#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-								url: http::Uri,
+								url: http_common::DeserializableUri,
 							}
 
 							Ok(match (status, body) {
@@ -218,8 +214,10 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 										let (token, challenge_url) =
 											challenges.into_iter()
 											.find_map(|challenge| match challenge {
-												Challenge::Pending(ChallengePending { token, r#type, url }) => (r#type == "dns-01").then(|| (token, url)),
-												_ => None,
+												Challenge::Pending(ChallengePending { token, r#type, url: http_common::DeserializableUri(url) }) =>
+													(r#type == "dns-01").then(|| (token, url)),
+												Challenge::Processing |
+												Challenge::Valid => None,
 											})
 											.context("did not find any pending dns-01 challenges")?;
 										let mut hasher: sha2::Sha256 = sha2::Digest::new();
@@ -257,7 +255,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					let jwk_thumbprint = {
 						let mut hasher: sha2::Sha256 = sha2::Digest::new();
 						let mut serializer = serde_json::Serializer::new(&mut hasher);
-						let () = serde::Serialize::serialize(&self.account_key.jwk(), &mut serializer).expect("cannot fail to serialize JWK");
+						let () = serde::Serialize::serialize(&self.account_key.as_jwk(), &mut serializer).expect("cannot fail to serialize JWK");
 						sha2::Digest::finalize(hasher)
 					};
 
@@ -421,9 +419,8 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 	) -> anyhow::Result<OrderValid> {
 		#[derive(Debug, serde::Deserialize)]
 		struct OrderObjReady {
-			#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 			#[serde(rename = "finalize")]
-			finalize_url: http::Uri,
+			finalize_url: http_common::DeserializableUri,
 		}
 
 		self.logger.report_message(format_args!("Finalizing order {order_url} ..."));
@@ -441,13 +438,13 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					tokio::time::sleep(retry_after).await;
 				},
 
-				OrderResponse::Ready(OrderObjReady { finalize_url }) => {
+				OrderResponse::Ready(OrderObjReady { finalize_url: http_common::DeserializableUri(finalize_url) }) => {
 					#[derive(serde::Serialize)]
 					struct FinalizeOrderRequest<'a> {
 						csr: &'a str,
 					}
 
-					// libstd has no way to in-place replace some ASCII chars in a String with other ASCII chars.
+					// SAFETY: libstd has no way to in-place replace some ASCII chars in a String with other ASCII chars.
 					// `str::replace` always copies into a new String so it's wasteful for multiple replacements,
 					// and `String::replace_range` requires a more complicated loop to find the next replacement site
 					// and perform the replacement in a single pass.
@@ -585,7 +582,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					serializer.serialize_str(header_value)
 				}
 
-				let jwk = account.account_key.jwk();
+				let jwk = account.account_key.as_jwk();
 				let alg = jwk.crv.jws_sign_alg();
 
 				let jwk_or_kid = account.account_url.as_deref().map_or_else(|| JwkOrKid::Jwk(jwk), JwkOrKid::Kid);
@@ -667,7 +664,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 }
 
 pub trait AccountKey {
-	fn jwk(&self) -> Jwk<'_>;
+	fn as_jwk(&self) -> Jwk<'_>;
 
 	fn sign<'a, I>(&'a self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>
 	where
@@ -696,7 +693,7 @@ pub enum EcCurve {
 }
 
 impl EcCurve {
-	pub fn jws_sign_alg(self) -> &'static str {
+	pub const fn jws_sign_alg(self) -> &'static str {
 		match self {
 			EcCurve::P256 => "ES256",
 			EcCurve::P384 => "ES384",
@@ -791,9 +788,8 @@ where
 
 			#[serde(rename = "valid")]
 			Valid {
-				#[serde(deserialize_with = "http_common::deserialize_http_uri")]
 				#[serde(rename = "certificate")]
-				certificate_url: http::Uri,
+				certificate_url: http_common::DeserializableUri,
 			},
 		}
 
@@ -811,7 +807,7 @@ where
 
 				Order::Ready(ready) => OrderResponse::Ready(ready),
 
-				Order::Valid { certificate_url } => OrderResponse::Valid { certificate_url },
+				Order::Valid { certificate_url: http_common::DeserializableUri(certificate_url) } => OrderResponse::Valid { certificate_url },
 			}),
 
 			_ => None,

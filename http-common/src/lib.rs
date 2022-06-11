@@ -205,27 +205,34 @@ pub fn get_retry_after(
 	Ok(retry_after.clamp(min, max))
 }
 
-pub fn deserialize_http_uri<'de, D>(deserializer: D) -> Result<http::Uri, D::Error> where D: serde::Deserializer<'de> {
-	struct Visitor;
+pub struct DeserializableUri(pub http::Uri);
 
-	impl serde::de::Visitor<'_> for Visitor {
-		type Value = http::Uri;
-
-		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-			f.write_str("http::Uri")
-		}
-
-		fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
-			s.try_into().map_err(serde::de::Error::custom)
-		}
-
-		fn visit_string<E>(self, s: String) -> Result<Self::Value, E> where E: serde::de::Error {
-			s.try_into().map_err(serde::de::Error::custom)
-		}
+impl std::fmt::Debug for DeserializableUri {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		self.0.fmt(f)
 	}
-
-	deserializer.deserialize_string(Visitor)
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct DeserializableUri(#[serde(deserialize_with = "deserialize_http_uri")] pub http::Uri);
+impl<'de> serde::Deserialize<'de> for DeserializableUri {
+	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
+		struct Visitor;
+
+		impl serde::de::Visitor<'_> for Visitor {
+			type Value = http::Uri;
+
+			fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				f.write_str("http::Uri")
+			}
+
+			fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+				s.try_into().map_err(serde::de::Error::custom)
+			}
+
+			fn visit_string<E>(self, s: String) -> Result<Self::Value, E> where E: serde::de::Error {
+				s.try_into().map_err(serde::de::Error::custom)
+			}
+		}
+
+		Ok(DeserializableUri(deserializer.deserialize_string(Visitor)?))
+	}
+}

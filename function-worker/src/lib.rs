@@ -257,7 +257,7 @@ pub async fn _parse_request<'a>(
 		}
 	}
 
-	// TODO: Replace with `std::mem::MaybeUninit::uninit_array::<16>()` when that is stabilized.
+	// SAFETY: TODO: Replace with `std::mem::MaybeUninit::uninit_array::<16>()` when that is stabilized.
 	let mut headers = unsafe { std::mem::MaybeUninit::<[std::mem::MaybeUninit<httparse::Header<'_>>; 16]>::uninit().assume_init() };
 	let mut req = httparse::Request::new(&mut []);
 	let body_start = match req.parse_with_uninit_headers(buf.filled(), &mut headers).context("malformed request")? {

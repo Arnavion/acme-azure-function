@@ -60,7 +60,7 @@ async fn renew_cert_main(
 	};
 
 	let mut acme_account = acme::Account::new(
-		settings.acme_directory_url.clone(),
+		settings.acme_directory_url.0.clone(),
 		&settings.acme_contact_url,
 		&account_key,
 		user_agent.clone(),
@@ -167,8 +167,7 @@ async fn renew_cert_main(
 #[derive(serde::Deserialize)]
 struct Settings<'a> {
 	/// The directory URL of the ACME server
-	#[serde(deserialize_with = "http_common::deserialize_http_uri")]
-	acme_directory_url: http::Uri,
+	acme_directory_url: http_common::DeserializableUri,
 
 	/// The contact URL of the ACME account
 	#[serde(borrow)]

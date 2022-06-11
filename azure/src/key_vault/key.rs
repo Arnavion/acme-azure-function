@@ -95,7 +95,7 @@ pub struct Key<'a> {
 }
 
 impl acme::AccountKey for Key<'_> {
-	fn jwk(&self) -> acme::Jwk<'_> {
+	fn as_jwk(&self) -> acme::Jwk<'_> {
 		acme::Jwk {
 			crv: self.crv,
 			kty: "EC",
