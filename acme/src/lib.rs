@@ -215,7 +215,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 											challenges.into_iter()
 											.find_map(|challenge| match challenge {
 												Challenge::Pending(ChallengePending { token, r#type, url: http_common::DeserializableUri(url) }) =>
-													(r#type == "dns-01").then(|| (token, url)),
+													(r#type == "dns-01").then_some((token, url)),
 												Challenge::Processing |
 												Challenge::Valid => None,
 											})
