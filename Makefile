@@ -6,7 +6,7 @@ default:
 	cargo build -p function-renew-cert ${CARGOFLAGS}
 
 test:
-	cargo clippy --all
+	cargo clippy --all --tests --examples
 
 clean:
 	cargo clean
