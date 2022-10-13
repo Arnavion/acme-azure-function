@@ -266,7 +266,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					};
 
 					let hash = sha2::Digest::finalize(hasher);
-					let dns_txt_record_content = base64::encode_config(&hash, JWS_BASE64_CONFIG);
+					let dns_txt_record_content = base64::encode_config(hash, JWS_BASE64_CONFIG);
 
 					break Order::Pending(OrderPending {
 						order_url,

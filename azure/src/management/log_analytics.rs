@@ -196,7 +196,7 @@ impl LogSender<'_> {
 					hmac::Mac::update(&mut signer, x_ms_date.as_bytes());
 					hmac::Mac::update(&mut signer, b"\n/api/logs");
 					let signature = hmac::Mac::finalize(signer).into_bytes();
-					let signature = base64::encode(&signature);
+					let signature = base64::encode(signature);
 					signature
 				};
 				let authorization =
