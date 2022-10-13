@@ -87,7 +87,7 @@ apt-get install -y azure-cli
 useradd -u '$uid' -d '$HOME' -m '$username'
 
 mkdir -p '/usr/local/bin/func/'
-curl -Lo '/usr/local/bin/func/func.zip' 'https://github.com/Azure/azure-functions-core-tools/releases/download/4.0.4590/Azure.Functions.Cli.linux-x64.4.0.4590.zip'
+curl -Lo '/usr/local/bin/func/func.zip' 'https://github.com/Azure/azure-functions-core-tools/releases/download/4.0.4785/Azure.Functions.Cli.linux-x64.4.0.4785.zip'
 unzip -d '/usr/local/bin/func/' '/usr/local/bin/func/func.zip'
 rm '/usr/local/bin/func/func.zip'
 chmod +x '/usr/local/bin/func/func' '/usr/local/bin/func/gozip'

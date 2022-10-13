@@ -14,7 +14,9 @@ anyhow = { version = "1", default-features = false, features = [
 chrono = { version = "0.4", default-features = false, features = [
 	"clock", # for chrono::Utc::now()
 ] }
-futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
+futures-util = { version = "0.3", default-features = false, features = [
+	"alloc", # for futures_util::stream::FuturesUnordered
+] }
 http = { version = "0.2.5", default-features = false }
 httparse = { version = "1.5", default-features = false, features = [
 	"std", # for httparse::Error: std::error::Error
