@@ -1,3 +1,5 @@
+use anyhow::Context;
+
 impl<'a> super::Client<'a> {
 	pub async fn csr_create(&self, certificate_name: &str, common_name: &str, key_type: CreateCsrKeyType) -> anyhow::Result<String> {
 		#[derive(serde::Serialize)]
@@ -118,7 +120,7 @@ impl<'a> super::Client<'a> {
 					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
 						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
 
-						let not_after = chrono::TimeZone::timestamp(&chrono::Utc, exp, 0);
+						let not_after = chrono::TimeZone::timestamp_opt(&chrono::Utc, exp, 0).single().context("certificate expiry overflowed")?;
 
 						let version = match id.rsplit_once('/') {
 							Some((_, version)) => version.to_owned(),
