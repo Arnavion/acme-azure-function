@@ -260,13 +260,13 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					};
 
 					let hasher = {
-						let mut writer = base64::write::EncoderWriter::new(hasher, JWS_BASE64_CONFIG);
+						let mut writer = base64::write::EncoderWriter::new(hasher, &JWS_BASE64_ENGINE);
 						let () = std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
 						writer.finish().expect("cannot fail to base64-encode JWK hash")
 					};
 
 					let hash = sha2::Digest::finalize(hasher);
-					let dns_txt_record_content = base64::encode_config(hash, JWS_BASE64_CONFIG);
+					let dns_txt_record_content = base64::Engine::encode(&JWS_BASE64_ENGINE, hash);
 
 					break Order::Pending(OrderPending {
 						order_url,
@@ -587,7 +587,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 				let jwk_or_kid = account.account_url.as_deref().map_or_else(|| JwkOrKid::Jwk(jwk), JwkOrKid::Kid);
 
-				let mut writer = base64::write::EncoderStringWriter::from(String::with_capacity(1024), JWS_BASE64_CONFIG);
+				let mut writer = base64::write::EncoderStringWriter::from_consumer(String::with_capacity(1024), &JWS_BASE64_ENGINE);
 				let mut serializer = serde_json::Serializer::new(&mut writer);
 				let () =
 					serde::Serialize::serialize(
@@ -643,7 +643,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		let payload =
 			if let Some(payload) = body {
-				let mut writer = base64::write::EncoderStringWriter::new(JWS_BASE64_CONFIG);
+				let mut writer = base64::write::EncoderStringWriter::new(&JWS_BASE64_ENGINE);
 				let mut serializer = serde_json::Serializer::new(&mut writer);
 				let () = serde::Serialize::serialize(payload, &mut serializer).context("could not serialize `payload`")?;
 				writer.into_inner()
@@ -723,7 +723,11 @@ pub struct OrderValid {
 	certificate_url: http::Uri,
 }
 
-pub const JWS_BASE64_CONFIG: base64::Config = base64::Config::new(base64::CharacterSet::UrlSafe, false);
+pub const JWS_BASE64_ENGINE: base64::engine::GeneralPurpose =
+	base64::engine::GeneralPurpose::new(
+		&base64::alphabet::URL_SAFE,
+		base64::engine::general_purpose::NO_PAD,
+	);
 
 struct ResponseWithNewNonce<TResponse> {
 	body: TResponse,

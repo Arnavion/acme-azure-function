@@ -11,7 +11,7 @@ publish = false
 anyhow = { version = "1", default-features = false, features = [
 	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
 ] }
-base64 = { version = "0.13", default-features = false, features = [
+base64 = { version = "0.21", default-features = false, features = [
 	"std", # for base64::read, base64::write
 ] }
 futures-util = { version = "0.3", default-features = false }
