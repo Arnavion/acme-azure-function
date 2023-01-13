@@ -173,13 +173,7 @@ pub fn get_retry_after(
 	min: std::time::Duration,
 	max: std::time::Duration,
 ) -> anyhow::Result<std::time::Duration> {
-	let retry_after =
-		if let Some(retry_after) = headers.get(http::header::RETRY_AFTER) {
-			retry_after
-		}
-		else {
-			return Ok(min);
-		};
+	let Some(retry_after) = headers.get(http::header::RETRY_AFTER) else { return Ok(min); };
 
 	let retry_after = retry_after.to_str().context("could not parse retry-after header")?;
 

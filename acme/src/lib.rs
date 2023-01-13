@@ -242,13 +242,9 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
 
-					let (mut hasher, challenge_url) =
-						if let AuthorizationResponse::Pending { hasher, challenge_url } = authorization {
-							(hasher, challenge_url)
-						}
-						else {
-							return Err(anyhow::anyhow!("authorization has unexpected status"));
-						};
+					let AuthorizationResponse::Pending { mut hasher, challenge_url } = authorization else {
+						return Err(anyhow::anyhow!("authorization has unexpected status"));
+					};
 
 					sha2::Digest::update(&mut hasher, b".");
 
