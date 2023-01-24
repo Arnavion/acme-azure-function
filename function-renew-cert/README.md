@@ -229,12 +229,12 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     This is only needed for testing locally with the Azure Functions host `func`. When deployed to Azure, the Function app will use its Managed Service Identity instead.
 
     ```sh
-    export AZURE_ACME_SP_NAME="http://${TOP_LEVEL_DOMAIN_NAME//./-}-local-testing"
+    export AZURE_ACME_SP_NAME="${TOP_LEVEL_DOMAIN_NAME//./-}-local-testing"
 
-    az ad sp create-for-rbac --name "$AZURE_ACME_SP_NAME" --skip-assignment
+    az ad sp create-for-rbac --name "$AZURE_ACME_SP_NAME"
 
     export AZURE_ACME_CLIENT_SECRET='...' # Save `password` - it will not appear again
-    export AZURE_ACME_CLIENT_ID="$(az ad sp show --id "$AZURE_ACME_SP_NAME" --query appId --output tsv)"
+    export AZURE_ACME_CLIENT_ID="$(az ad sp list --display-name "$AZURE_ACME_SP_NAME" --query '[0].appId' --output tsv)"
     ```
 
 1. Grant the SP access to the Azure resources.
@@ -252,7 +252,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://doc
     do
         az role assignment create \
             --role "$AZURE_ACME_ROLE_NAME" \
-            --assignee "$AZURE_ACME_SP_NAME" \
+            --assignee "$AZURE_ACME_CLIENT_ID" \
             --scope "$scope"
     done
     ```
