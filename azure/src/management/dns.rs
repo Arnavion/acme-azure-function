@@ -1,5 +1,5 @@
 impl<'a> super::Client<'a> {
-	pub async fn dns_txt_record_create(&self, dns_zone_name: &str, name: &str, content: &str) -> anyhow::Result<()> {
+	pub async fn dns_txt_record_create(&self, dns_zone_name: &str, name: &str, content: impl IntoIterator<Item = &str>) -> anyhow::Result<()> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {
 			properties: RequestProperties<'a>,
@@ -11,12 +11,12 @@ impl<'a> super::Client<'a> {
 			ttl: u64,
 
 			#[serde(rename = "TXTRecords")]
-			txt_records: &'a [RequestPropertiesTxtRecord<'a>]
+			txt_records: &'a [RequestPropertiesTxtRecord<'a>],
 		}
 
 		#[derive(serde::Serialize)]
 		struct RequestPropertiesTxtRecord<'a> {
-			value: &'a [&'a str],
+			value: [&'a str; 1],
 		}
 
 		struct Response;
@@ -35,7 +35,9 @@ impl<'a> super::Client<'a> {
 			}
 		}
 
-		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async {
+		let txt_records: Vec<_> = content.into_iter().map(|content| RequestPropertiesTxtRecord { value: [content] }).collect();
+
+		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async move {
 			let _: Response =
 				crate::request(
 					self,
@@ -44,11 +46,7 @@ impl<'a> super::Client<'a> {
 					Some(&Request {
 						properties: RequestProperties {
 							ttl: 1,
-							txt_records: &[
-								RequestPropertiesTxtRecord {
-									value: &[content],
-								},
-							],
+							txt_records: &txt_records,
 						},
 					}),
 				).await?;

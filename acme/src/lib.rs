@@ -168,10 +168,16 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				body: order,
 			} =
 				self.post(self.new_order_url.clone(), Some(&NewOrderRequest {
-					identifiers: &[NewOrderRequestIdentifier {
-						r#type: "dns",
-						value: domain_name,
-					}],
+					identifiers: &[
+						NewOrderRequestIdentifier {
+							r#type: "dns",
+							value: domain_name,
+						},
+						NewOrderRequestIdentifier {
+							r#type: "dns",
+							value: &format!("*.{domain_name}"),
+						},
+					],
 				})).await.context("could not create / get order")?;
 			Ok((order_url, order))
 		}).await?;
@@ -180,7 +186,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			self.logger.report_state("acme/order", &order_url, format_args!("{order:?}"));
 
 			match order {
-				OrderResponse::Pending(OrderObjPending { mut authorization_urls }) => {
+				OrderResponse::Pending(OrderObjPending { authorization_urls }) => {
 					#[derive(Debug)]
 					enum AuthorizationResponse {
 						Pending { hasher: sha2::Sha256, challenge_url: http::Uri },
@@ -233,42 +239,46 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						}
 					}
 
-					let http_common::DeserializableUri(authorization_url) = authorization_urls.pop().context("no authorizations")?;
-					if !authorization_urls.is_empty() {
-						return Err(anyhow::anyhow!("more than one authorization"));
+					let mut authorizations = Vec::with_capacity(authorization_urls.len());
+
+					for http_common::DeserializableUri(authorization_url) in authorization_urls {
+						let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
+
+						self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
+
+						let (mut hasher, challenge_url) = match authorization {
+							AuthorizationResponse::Pending { hasher, challenge_url } => (hasher, challenge_url),
+							AuthorizationResponse::Valid => continue,
+						};
+
+						sha2::Digest::update(&mut hasher, b".");
+
+						let jwk_thumbprint = {
+							let mut hasher: sha2::Sha256 = sha2::Digest::new();
+							let mut serializer = serde_json::Serializer::new(&mut hasher);
+							let () = serde::Serialize::serialize(&self.account_key.as_jwk(), &mut serializer).expect("cannot fail to serialize JWK");
+							sha2::Digest::finalize(hasher)
+						};
+
+						let hasher = {
+							let mut writer = base64::write::EncoderWriter::new(hasher, &JWS_BASE64_ENGINE);
+							let () = std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
+							writer.finish().expect("cannot fail to base64-encode JWK hash")
+						};
+
+						let hash = sha2::Digest::finalize(hasher);
+						let dns_txt_record_content = base64::Engine::encode(&JWS_BASE64_ENGINE, hash);
+
+						authorizations.push(OrderPendingAuthorization {
+							authorization_url,
+							challenge_url,
+							dns_txt_record_content,
+						});
 					}
-
-					let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
-
-					self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
-
-					let AuthorizationResponse::Pending { mut hasher, challenge_url } = authorization else {
-						return Err(anyhow::anyhow!("authorization has unexpected status"));
-					};
-
-					sha2::Digest::update(&mut hasher, b".");
-
-					let jwk_thumbprint = {
-						let mut hasher: sha2::Sha256 = sha2::Digest::new();
-						let mut serializer = serde_json::Serializer::new(&mut hasher);
-						let () = serde::Serialize::serialize(&self.account_key.as_jwk(), &mut serializer).expect("cannot fail to serialize JWK");
-						sha2::Digest::finalize(hasher)
-					};
-
-					let hasher = {
-						let mut writer = base64::write::EncoderWriter::new(hasher, &JWS_BASE64_ENGINE);
-						let () = std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
-						writer.finish().expect("cannot fail to base64-encode JWK hash")
-					};
-
-					let hash = sha2::Digest::finalize(hasher);
-					let dns_txt_record_content = base64::Engine::encode(&JWS_BASE64_ENGINE, hash);
 
 					break Order::Pending(OrderPending {
 						order_url,
-						authorization_url,
-						challenge_url,
-						dns_txt_record_content,
+						authorizations,
 					});
 				},
 
@@ -296,9 +306,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		&mut self,
 		OrderPending {
 			order_url,
-			authorization_url,
-			challenge_url,
-			dns_txt_record_content: _,
+			authorizations,
 		}: OrderPending,
 	) -> anyhow::Result<OrderReady> {
 		#[derive(serde::Serialize)]
@@ -360,45 +368,51 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			}
 		}
 
-		self.logger.report_message(format_args!("Completing challenge {challenge_url} ..."));
+		for OrderPendingAuthorization {
+			authorization_url,
+			challenge_url,
+			dns_txt_record_content: _,
+		} in authorizations {
+			self.logger.report_message(format_args!("Completing challenge {challenge_url} ..."));
 
-		let mut body = Some(&ChallengeCompleteRequest { });
-		loop {
-			let challenge = self.post(challenge_url.clone(), body.take()).await.context("could not complete challenge")?;
+			let mut body = Some(&ChallengeCompleteRequest { });
+			loop {
+				let challenge = self.post(challenge_url.clone(), body.take()).await.context("could not complete challenge")?;
 
-			self.logger.report_state("acme/challenge", &challenge_url, format_args!("{challenge:?}"));
+				self.logger.report_state("acme/challenge", &challenge_url, format_args!("{challenge:?}"));
 
-			match challenge {
-				ChallengeResponse::Pending => {
-					let retry_after = std::time::Duration::from_secs(1);
-					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking challenge..."));
-					tokio::time::sleep(retry_after).await;
-				},
+				match challenge {
+					ChallengeResponse::Pending => {
+						let retry_after = std::time::Duration::from_secs(1);
+						self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking challenge..."));
+						tokio::time::sleep(retry_after).await;
+					},
 
-				ChallengeResponse::Processing { retry_after } => {
-					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking challenge..."));
-					tokio::time::sleep(retry_after).await;
-				},
+					ChallengeResponse::Processing { retry_after } => {
+						self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking challenge..."));
+						tokio::time::sleep(retry_after).await;
+					},
 
-				ChallengeResponse::Valid => break,
-			};
-		}
+					ChallengeResponse::Valid => break,
+				};
+			}
 
-		self.logger.report_message(format_args!("Waiting for authorization {authorization_url} ..."));
+			self.logger.report_message(format_args!("Waiting for authorization {authorization_url} ..."));
 
-		loop {
-			let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
+			loop {
+				let authorization = self.post(authorization_url.clone(), None::<&()>).await.context("could not get authorization")?;
 
-			self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
+				self.logger.report_state("acme/authorization", &authorization_url, format_args!("{authorization:?}"));
 
-			match authorization {
-				AuthorizationResponse::Pending { retry_after } => {
-					self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking authorization..."));
-					tokio::time::sleep(retry_after).await;
-				},
+				match authorization {
+					AuthorizationResponse::Pending { retry_after } => {
+						self.logger.report_message(format_args!("Waiting for {retry_after:?} before rechecking authorization..."));
+						tokio::time::sleep(retry_after).await;
+					},
 
-				AuthorizationResponse::Valid => break,
-			};
+					AuthorizationResponse::Valid => break,
+				};
+			}
 		}
 
 		Ok(OrderReady {
@@ -706,6 +720,10 @@ pub enum Order {
 
 pub struct OrderPending {
 	order_url: http::Uri,
+	pub authorizations: Vec<OrderPendingAuthorization>,
+}
+
+pub struct OrderPendingAuthorization {
 	authorization_url: http::Uri,
 	challenge_url: http::Uri,
 	pub dns_txt_record_content: String,

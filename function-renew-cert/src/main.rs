@@ -68,9 +68,7 @@ async fn renew_cert_main(
 		logger,
 	).await.context("could not initialize ACME API client")?;
 
-	let domain_name = format!("*.{}", settings.top_level_domain_name);
-
-	let mut acme_order = acme_account.place_order(&domain_name).await?;
+	let mut acme_order = acme_account.place_order(&settings.top_level_domain_name).await?;
 
 	let certificates = {
 		let azure_management_client = azure::management::Client::new(
@@ -88,7 +86,7 @@ async fn renew_cert_main(
 						azure_management_client.dns_txt_record_create(
 							&settings.top_level_domain_name,
 							"_acme-challenge",
-							&pending.dns_txt_record_content,
+							pending.authorizations.iter().map(|authorization| &*authorization.dns_txt_record_content),
 						).await?;
 
 					// Don't use `?` to fail immediately. Delete the TXT record first.
@@ -107,7 +105,7 @@ async fn renew_cert_main(
 					let csr =
 						azure_key_vault_client.csr_create(
 							&settings.azure_key_vault_certificate_name,
-							&domain_name,
+							&settings.top_level_domain_name,
 							settings.azure_key_vault_certificate_key_type,
 						).await?;
 					acme_order = acme::Order::Valid(acme_account.finalize_order(ready, csr).await?);
