@@ -1,17 +1,31 @@
 impl<'a> super::Client<'a> {
-	pub async fn dns_txt_record_create(&self, dns_zone_name: &str, name: &str, content: impl IntoIterator<Item = &str>) -> anyhow::Result<()> {
+	pub async fn dns_txt_record_create<'b, I>(&self, dns_zone_name: &str, name: &str, content: I) -> anyhow::Result<()>
+	where
+		I: IntoIterator<Item = &'b str>,
+		I::IntoIter: Clone,
+	{
 		#[derive(serde::Serialize)]
-		struct Request<'a> {
-			properties: RequestProperties<'a>,
+		#[serde(bound = "RequestProperties<I>: serde::Serialize")]
+		struct Request<I> {
+			properties: RequestProperties<I>,
 		}
 
 		#[derive(serde::Serialize)]
-		struct RequestProperties<'a> {
+		#[serde(bound = "RequestPropertiesTxtRecords<I>: serde::Serialize")]
+		struct RequestProperties<I> {
 			#[serde(rename = "TTL")]
 			ttl: u64,
 
 			#[serde(rename = "TXTRecords")]
-			txt_records: &'a [RequestPropertiesTxtRecord<'a>],
+			txt_records: RequestPropertiesTxtRecords<I>,
+		}
+
+		struct RequestPropertiesTxtRecords<I>(I);
+
+		impl<'a, I> serde::Serialize for RequestPropertiesTxtRecords<I> where I: Clone + Iterator<Item = RequestPropertiesTxtRecord<'a>> {
+			fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+				serializer.collect_seq(self.0.clone())
+			}
 		}
 
 		#[derive(serde::Serialize)]
@@ -35,8 +49,6 @@ impl<'a> super::Client<'a> {
 			}
 		}
 
-		let txt_records: Vec<_> = content.into_iter().map(|content| RequestPropertiesTxtRecord { value: [content] }).collect();
-
 		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async move {
 			let _: Response =
 				crate::request(
@@ -46,7 +58,7 @@ impl<'a> super::Client<'a> {
 					Some(&Request {
 						properties: RequestProperties {
 							ttl: 1,
-							txt_records: &txt_records,
+							txt_records: RequestPropertiesTxtRecords(content.into_iter().map(|content| RequestPropertiesTxtRecord { value: [content] })),
 						},
 					}),
 				).await?;
