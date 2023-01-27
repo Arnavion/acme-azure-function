@@ -76,7 +76,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							&self,
 							http::Method::GET,
-							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}?api-version=2020-08-01"),
+							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}?api-version=2022-10-01"),
 							None::<&()>,
 						).await?;
 					Ok(customer_id)
@@ -93,7 +93,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							&self,
 							http::Method::POST,
-							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}/sharedKeys?api-version=2020-08-01"),
+							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}/sharedKeys?api-version=2022-10-01"),
 							None::<&()>,
 						).await?;
 					Ok(log2::Secret(primary_shared_key))

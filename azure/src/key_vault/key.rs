@@ -24,7 +24,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							self,
 							http::Method::POST,
-							format_args!("/keys/{key_name}/create?api-version=7.1"),
+							format_args!("/keys/{key_name}/create?api-version=7.3"),
 							Some(&Request {
 								crv,
 								kty,
@@ -64,7 +64,7 @@ impl<'a> super::Client<'a> {
 				crate::request(
 					self,
 					http::Method::GET,
-					format_args!("/keys/{key_name}?api-version=7.1"),
+					format_args!("/keys/{key_name}?api-version=7.3"),
 					None::<&()>,
 				).await?;
 			let key = response.map(|CreateOrGetKeyResponse { key }| key);
@@ -210,7 +210,7 @@ impl http_common::FromResponse for CreateOrGetKeyResponse {
 
 impl<'a> Key<'a> {
 	fn new(key: KeyResponse, client: &'a super::Client<'a>) -> anyhow::Result<Self> {
-		let sign_url = format!("{}/sign?api-version=7.1", key.kid).try_into().context("could not construct sign URL")?;
+		let sign_url = format!("{}/sign?api-version=7.3", key.kid).try_into().context("could not construct sign URL")?;
 
 		Ok(Key {
 			crv: key.crv,

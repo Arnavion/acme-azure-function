@@ -54,14 +54,14 @@ impl Auth {
 			let req = match self {
 				Auth::ManagedIdentity { endpoint, secret } => {
 					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
-					const SECRET: http::header::HeaderName = http::header::HeaderName::from_static("secret");
+					const X_IDENTITY_HEADER: http::header::HeaderName = http::header::HeaderName::from_static("x-identity-header");
 
 					let mut req = http::Request::new(Default::default());
 					*req.method_mut() = http::Method::GET;
 					*req.uri_mut() =
-						format!("{endpoint}?resource={resource}&api-version=2017-09-01")
+						format!("{endpoint}?resource={resource}&api-version=2019-08-01")
 						.try_into().context("could not construct authorization request URI")?;
-					req.headers_mut().insert(SECRET, secret.clone());
+					req.headers_mut().insert(X_IDENTITY_HEADER, secret.clone());
 					req
 				},
 
@@ -72,12 +72,12 @@ impl Auth {
 						.append_pair("grant_type", "client_credentials")
 						.append_pair("client_id", client_id)
 						.append_pair("client_secret", client_secret)
-						.append_pair("resource", resource)
+						.append_pair("scope", &format!("{resource}/.default"))
 						.finish();
 					let mut req = http::Request::new(body.into());
 					*req.method_mut() = http::Method::POST;
 					*req.uri_mut() =
-						format!("https://login.microsoftonline.com/{tenant_id}/oauth2/token")
+						format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token")
 						.try_into().context("could not construct authorization request URI")?;
 					req
 				},
@@ -93,9 +93,9 @@ impl Auth {
 
 impl<'de> serde::Deserialize<'de> for Auth {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
-		if let (Ok(endpoint), Ok(secret)) = (std::env::var("MSI_ENDPOINT"), std::env::var("MSI_SECRET")) {
+		if let (Ok(endpoint), Ok(secret)) = (std::env::var("IDENTITY_ENDPOINT"), std::env::var("IDENTITY_HEADER")) {
 			let _ = deserializer;
-			let secret = secret.try_into().map_err(|err| serde::de::Error::custom(format!("could not parse MSI_SECRET as HeaderValue: {err}")))?;
+			let secret = secret.try_into().map_err(|err| serde::de::Error::custom(format!("could not parse IDENTITY_HEADER as HeaderValue: {err}")))?;
 			return Ok(Auth::ManagedIdentity {
 				endpoint,
 				secret,

@@ -66,18 +66,16 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							self,
 							http::Method::POST,
-							format_args!("/certificates/{certificate_name}/create?api-version=7.1"),
+							format_args!("/certificates/{certificate_name}/create?api-version=7.3"),
 							Some(&Request {
 								policy: RequestPolicy {
 									issuer: RequestPolicyIssuer {
 										cert_transparency: false,
 										name: "Unknown",
 									},
-									key_props: {
-										RequestPolicyKeyProps {
-											key_type,
-											reuse_key: false,
-										}
+									key_props: RequestPolicyKeyProps {
+										key_type,
+										reuse_key: false,
 									},
 									x509_props: RequestPolicyX509Props {
 										sans: RequestPolicyX509PropsSans {
@@ -149,7 +147,7 @@ impl<'a> super::Client<'a> {
 					crate::request(
 						self,
 						http::Method::GET,
-						format_args!("/certificates/{certificate_name}?api-version=7.1"),
+						format_args!("/certificates/{certificate_name}?api-version=7.3"),
 						None::<&()>,
 					).await?;
 				Ok(certificate)
@@ -189,7 +187,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							self,
 							http::Method::POST,
-							format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.1"),
+							format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.3"),
 							Some(&Request {
 								x5c: certificates,
 							}),
