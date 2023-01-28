@@ -8,6 +8,6 @@ publish = false
 
 
 [dependencies]
-once_cell = { version = "1", default-features = false, features = [
+once_cell = { version = "1.6", default-features = false, features = [
 	"alloc", # for once_cell::race::OnceBox
 ] }
