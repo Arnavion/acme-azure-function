@@ -46,11 +46,11 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::ACCEPTED, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
+					(http::StatusCode::ACCEPTED, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -102,7 +102,7 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
@@ -118,7 +118,7 @@ impl<'a> super::Client<'a> {
 				}
 
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => {
+					(http::StatusCode::OK, Some(body)) => {
 						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
 
 						let not_after = chrono::TimeZone::timestamp_opt(&chrono::Utc, exp, 0).single().context("certificate expiry overflowed")?;
@@ -167,7 +167,7 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for Response {
 			fn from_response(
 				status: http::StatusCode,
-				_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				_body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {

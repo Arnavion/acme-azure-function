@@ -43,11 +43,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		impl http_common::FromResponse for DirectoryResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
+					(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -106,14 +106,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			impl http_common::FromResponse for NewAccountResponse {
 				fn from_response(
 					status: http::StatusCode,
-					body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+					body: Option<&mut http_common::Body<impl std::io::Read>>,
 					_headers: http::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(
-							http::StatusCode::CREATED | http::StatusCode::OK,
-							Some((content_type, body)),
-						) if http_common::is_json(content_type) => Some(body.as_json()?),
+						(http::StatusCode::CREATED | http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 						_ => None,
 					})
 				}
@@ -195,7 +192,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					impl http_common::FromResponse for AuthorizationResponse {
 						fn from_response(
 							status: http::StatusCode,
-							body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+							body: Option<&mut http_common::Body<impl std::io::Read>>,
 							_headers: http::HeaderMap,
 						) -> anyhow::Result<Option<Self>> {
 							#[derive(serde::Deserialize)]
@@ -214,7 +211,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 							}
 
 							Ok(match (status, body) {
-								(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+								(http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 									Authorization::Pending(AuthorizationPending { challenges }) => {
 										let (token, challenge_url) =
 											challenges.into_iter()
@@ -321,11 +318,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		impl http_common::FromResponse for ChallengeResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+					(http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 						Challenge::Pending(serde::de::IgnoredAny) => ChallengeResponse::Pending,
 
 						Challenge::Processing => {
@@ -349,11 +346,11 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		impl http_common::FromResponse for AuthorizationResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(match body.as_json()? {
+					(http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 						Authorization::Pending(serde::de::IgnoredAny) => {
 							let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
 							AuthorizationResponse::Pending { retry_after }
@@ -492,12 +489,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		impl http_common::FromResponse for CertificateResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if content_type == "application/pem-certificate-chain" => {
-						let certificate = body.as_str()?.into_owned();
+					(http::StatusCode::OK, Some(body)) => {
+						let certificate = body.as_str("application/pem-certificate-chain")?.into_owned();
 						Some(CertificateResponse(certificate))
 					},
 					_ => None,
@@ -537,7 +534,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					impl http_common::FromResponse for NewNonceResponse {
 						fn from_response(
 							status: http::StatusCode,
-							_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+							_body: Option<&mut http_common::Body<impl std::io::Read>>,
 							_headers: http::HeaderMap,
 						) -> anyhow::Result<Option<Self>> {
 							Ok(match status {
@@ -750,7 +747,7 @@ struct ResponseWithNewNonce<TResponse> {
 impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> where TResponse: http_common::FromResponse {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+		body: Option<&mut http_common::Body<impl std::io::Read>>,
 		mut headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
@@ -788,7 +785,7 @@ where
 {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+		body: Option<&mut http_common::Body<impl std::io::Read>>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		#[derive(serde::Deserialize)]
@@ -811,10 +808,7 @@ where
 		}
 
 		Ok(match (status, body) {
-			(
-				http::StatusCode::CREATED | http::StatusCode::OK,
-				Some((content_type, body)),
-			) if http_common::is_json(content_type) => Some(match body.as_json()? {
+			(http::StatusCode::CREATED | http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 				Order::Pending(pending) => OrderResponse::Pending(pending),
 
 				Order::Processing => {

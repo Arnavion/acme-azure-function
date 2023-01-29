@@ -37,7 +37,7 @@ impl Client {
 			anyhow::Result<(
 				http::StatusCode,
 				http::HeaderMap,
-				Option<(http::HeaderValue, Body<impl std::io::Read>)>,
+				Option<Body<impl std::io::Read>>,
 			)>
 		{
 			req.headers_mut().insert(http::header::USER_AGENT, client.user_agent.clone());
@@ -56,12 +56,14 @@ impl Client {
 								let rest = hyper::body::aggregate(body).await.context("could not read response body")?;
 								let rest = hyper::body::Buf::reader(hyper::body::Buf::chain(second, rest));
 								Body {
+									content_type,
 									first,
 									rest: Some(rest),
 								}
 							}
 							else {
 								Body {
+									content_type,
 									first,
 									rest: None,
 								}
@@ -69,12 +71,14 @@ impl Client {
 						}
 						else {
 							Body {
+								content_type,
 								first: Default::default(),
 								rest: None,
 							}
 						};
-					Some((content_type, body))
+					Some(body)
 				},
+
 				None => None,
 			};
 
@@ -83,18 +87,18 @@ impl Client {
 
 		let (status, headers, mut body) = request_inner(self, req).await?;
 
-		let err = match T::from_response(status, body.as_mut().map(|(content_type, body)| (&*content_type, body)), headers) {
+		let err = match T::from_response(status, body.as_mut(), headers) {
 			Ok(Some(value)) => return Ok(value),
 			Ok(None) => None,
 			Err(err) => Some(err),
 		};
 
-		let body = body.map(|(content_type, mut body)| {
+		let body = body.map(|mut body| {
 			let mut body_vec = body.first.to_vec();
 			if let Some(rest) = &mut body.rest {
 				std::io::Read::read_to_end(rest, &mut body_vec).expect("cannot fail to read Buf to end");
 			}
-			(content_type, hyper::body::Bytes::from(body_vec))
+			(body.content_type, hyper::body::Bytes::from(body_vec))
 		});
 
 		match err {
@@ -107,26 +111,43 @@ impl Client {
 pub trait FromResponse: Sized {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut Body<impl std::io::Read>)>,
+		body: Option<&mut Body<impl std::io::Read>>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>>;
 }
 
 pub struct Body<R> {
+	content_type: http::HeaderValue,
 	first: hyper::body::Bytes,
 	rest: Option<R>,
 }
 
 impl<R> Body<R> where R: std::io::Read {
-	pub fn as_json<'de, T>(&'de mut self) -> serde_json::Result<T> where T: serde::Deserialize<'de> {
-		let first = &self.first[..];
-		match &mut self.rest {
-			Some(rest) => serde::Deserialize::deserialize(&mut serde_json::Deserializer::from_reader(std::io::Read::chain(first, rest))),
-			None => serde::Deserialize::deserialize(&mut serde_json::Deserializer::from_slice(first)),
+	pub fn as_json<'de, T>(&'de mut self) -> anyhow::Result<T> where T: serde::Deserialize<'de> {
+		let is_json =
+			self.content_type.to_str()
+			.map(|content_type| content_type == "application/json" || content_type.starts_with("application/json;"))
+			.unwrap_or_default();
+		if !is_json {
+			return Err(anyhow::anyhow!("response body does not have content-type:application/json"));
 		}
+
+		let first = &self.first[..];
+		Ok(match &mut self.rest {
+			Some(rest) => serde::Deserialize::deserialize(&mut serde_json::Deserializer::from_reader(std::io::Read::chain(first, rest)))?,
+			None => serde::Deserialize::deserialize(&mut serde_json::Deserializer::from_slice(first))?,
+		})
 	}
 
-	pub fn as_str(&mut self) -> anyhow::Result<std::borrow::Cow<'_, str>> {
+	pub fn as_str(&mut self, expected_content_type: &str) -> anyhow::Result<std::borrow::Cow<'_, str>> {
+		let content_type_matches =
+			self.content_type.to_str()
+			.map(|content_type| content_type == expected_content_type)
+			.unwrap_or_default();
+		if !content_type_matches {
+			return Err(anyhow::anyhow!("response body does not have content-type:{expected_content_type}"));
+		}
+
 		let first = &self.first[..];
 		match &mut self.rest {
 			Some(rest) => {
@@ -147,7 +168,7 @@ pub struct ResponseWithLocation<T> {
 impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 	fn from_response(
 		status: http::StatusCode,
-		body: Option<(&http::HeaderValue, &mut Body<impl std::io::Read>)>,
+		body: Option<&mut Body<impl std::io::Read>>,
 		headers: http::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 	let location =
@@ -162,10 +183,6 @@ impl<T> FromResponse for ResponseWithLocation<T> where T: FromResponse {
 			Err(err) => Err(err),
 		}
 	}
-}
-
-pub fn is_json(content_type: &http::HeaderValue) -> bool {
-	content_type.to_str().map(|content_type| content_type == "application/json" || content_type.starts_with("application/json;")).unwrap_or_default()
 }
 
 pub fn get_retry_after(

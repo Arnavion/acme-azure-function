@@ -16,11 +16,11 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for GetResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
+					(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -36,11 +36,11 @@ impl<'a> super::Client<'a> {
 		impl http_common::FromResponse for SharedKeysResponse {
 			fn from_response(
 				status: http::StatusCode,
-				body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
 				_headers: http::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some((content_type, body))) if http_common::is_json(content_type) => Some(body.as_json()?),
+					(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -154,7 +154,7 @@ impl LogSender<'_> {
 				impl http_common::FromResponse for Response {
 					fn from_response(
 						status: http::StatusCode,
-						_body: Option<(&http::HeaderValue, &mut http_common::Body<impl std::io::Read>)>,
+						_body: Option<&mut http_common::Body<impl std::io::Read>>,
 						_headers: http::HeaderMap,
 					) -> anyhow::Result<Option<Self>> {
 						Ok(match status {
