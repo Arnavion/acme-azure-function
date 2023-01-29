@@ -672,7 +672,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 pub trait AccountKey {
 	fn as_jwk(&self) -> Jwk<'_>;
 
-	fn sign<'a, I>(&'a self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>
+	fn sign<I>(&self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + '_>>
 	where
 		I: IntoIterator,
 		<I as IntoIterator>::Item: AsRef<[u8]>;

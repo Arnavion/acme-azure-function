@@ -104,7 +104,7 @@ impl acme::AccountKey for Key<'_> {
 		}
 	}
 
-	fn sign<'a, I>(&'a self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + 'a>>
+	fn sign<I>(&self, digest: I) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<String>> + '_>>
 	where
 		I: IntoIterator,
 		<I as IntoIterator>::Item: AsRef<[u8]>,
@@ -114,7 +114,7 @@ impl acme::AccountKey for Key<'_> {
 				match $crv {
 					$(
 						$crv_name => {
-							let hasher: $hasher = $digest.into_iter().fold(Default::default(), <$hasher as sha2::Digest>::chain_update);
+							let hasher: $hasher = $digest.into_iter().fold(Default::default(), sha2::Digest::chain_update);
 							let hash = sha2::Digest::finalize(hasher);
 							let hash = base64::Engine::encode(&acme::JWS_BASE64_ENGINE, hash);
 							hash
