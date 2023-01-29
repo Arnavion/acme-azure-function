@@ -12,7 +12,7 @@ pub struct Client<'a> {
 
 	client: http_common::Client,
 	authority: http::uri::Authority,
-	cached_authorization: tokio::sync::RwLock<Option<http::HeaderValue>>,
+	cached_authorization: tokio::sync::OnceCell<http::HeaderValue>,
 	logger: &'a log2::Logger,
 }
 
@@ -49,7 +49,7 @@ impl crate::Client for Client<'_> {
 	fn request_parameters(&self) -> (
 		&crate::Auth,
 		&http_common::Client,
-		&tokio::sync::RwLock<Option<http::HeaderValue>>,
+		&tokio::sync::OnceCell<http::HeaderValue>,
 		&log2::Logger,
 	) {
 		(

@@ -29,7 +29,7 @@ trait Client {
 	fn request_parameters(&self) -> (
 		&Auth,
 		&http_common::Client,
-		&tokio::sync::RwLock<Option<http::HeaderValue>>,
+		&tokio::sync::OnceCell<http::HeaderValue>,
 		&log2::Logger,
 	);
 }
@@ -75,28 +75,13 @@ where
 		let (auth, client, cached_authorization, logger) = client.request_parameters();
 		let url = url?;
 
-		let authorization = {
-			let cached_authorization_read = cached_authorization.read().await;
-			if let Some(authorization) = &*cached_authorization_read {
-				authorization.clone()
-			}
-			else {
-				drop(cached_authorization_read);
-
-				let mut cached_authorization_write = cached_authorization.write().await;
-				match &mut *cached_authorization_write {
-					Some(authorization) => authorization.clone(),
-
-					None => {
-						let authorization =
-							auth.get_authorization(client, TClient::AUTH_RESOURCE, logger).await
-							.context("could not get API authorization")?;
-						*cached_authorization_write = Some(authorization.clone());
-						authorization
-					},
-				}
-			}
-		};
+		let authorization =
+			cached_authorization.get_or_try_init(|| async {
+				let authorization =
+					auth.get_authorization(client, TClient::AUTH_RESOURCE, logger).await
+					.context("could not get API authorization")?;
+				Ok::<_, anyhow::Error>(authorization)
+			}).await?.clone();
 
 		let mut req =
 			if let Some(body) = body {
