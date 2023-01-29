@@ -520,7 +520,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		TResponse: http_common::FromResponse,
 	{
 		// This fn encapsulates the non-generic parts of `post` to reduce code size from monomorphization.
-		async fn make_request<K>(account: &mut Account<'_, K>, url: http::Uri, payload: String) -> anyhow::Result<http::Request<hyper::Body>> where K: AccountKey {
+		async fn make_request<K>(account: &mut Account<'_, K>, url: http::Uri, payload: Vec<u8>) -> anyhow::Result<http::Request<hyper::Body>> where K: AccountKey {
 			#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
 			const APPLICATION_JOSE_JSON: http::HeaderValue = http::HeaderValue::from_static("application/jose+json");
 
@@ -593,7 +593,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 				let jwk_or_kid = account.account_url.as_deref().map_or_else(|| JwkOrKid::Jwk(jwk), JwkOrKid::Kid);
 
-				let mut writer = base64::write::EncoderStringWriter::from_consumer(String::with_capacity(1024), &JWS_BASE64_ENGINE);
+				let mut writer = base64::write::EncoderWriter::new(Vec::with_capacity(1024), &JWS_BASE64_ENGINE);
 				let mut serializer = serde_json::Serializer::new(&mut writer);
 				let () =
 					serde::Serialize::serialize(
@@ -605,14 +605,14 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						},
 						&mut serializer,
 					).context("could not serialize `protected`")?;
-				writer.into_inner()
+				writer.finish().expect("cannot fail to write to Vec<u8>")
 			};
 
 			let signature =
 				account.account_key.sign([
-					protected.as_bytes(),
+					&protected,
 					&b"."[..],
-					payload.as_bytes(),
+					&payload,
 				]).await?;
 
 			// All strings are base64 so there's no need to get serde_json involved
@@ -649,13 +649,13 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		let payload =
 			if let Some(payload) = body {
-				let mut writer = base64::write::EncoderStringWriter::new(&JWS_BASE64_ENGINE);
+				let mut writer = base64::write::EncoderWriter::new(vec![], &JWS_BASE64_ENGINE);
 				let mut serializer = serde_json::Serializer::new(&mut writer);
 				let () = serde::Serialize::serialize(payload, &mut serializer).context("could not serialize `payload`")?;
-				writer.into_inner()
+				writer.finish().expect("cannot fail to write to Vec<u8>")
 			}
 			else {
-				String::new()
+				vec![]
 			};
 
 		let req = make_request(self, url, payload).await?;
