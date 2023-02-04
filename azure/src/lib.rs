@@ -60,9 +60,41 @@ fn request<'client, 'url, TClient, TUrl, TBody, TResponse>(
 where
 	TClient: Client,
 	TUrl: Into<Url<'url>>,
-	TBody: serde::Serialize + 'client,
+	TBody: serde::Serialize,
 	TResponse: http_common::FromResponse,
 {
+	// This fn encapsulates the non-generic parts of `request` to reduce code size from monomorphization.
+	fn make_request(
+		method: http::Method,
+		url: anyhow::Result<http::Uri>,
+		authorization: anyhow::Result<&http::HeaderValue>,
+		body: Option<serde_json::Result<Vec<u8>>>,
+	) -> anyhow::Result<hyper::Request<hyper::Body>> {
+		let url = url?;
+		let authorization = authorization.context("could not get API authorization")?.clone();
+
+		let mut req =
+			if let Some(body) = body {
+				let mut req = hyper::Request::new(body.context("could not serialize request body")?.into());
+				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON);
+				req
+			}
+			else {
+				let mut req = hyper::Request::new(Default::default());
+				if method != http::Method::GET {
+					req.headers_mut().insert(http::header::CONTENT_LENGTH, 0.into());
+				}
+				req
+			};
+
+		*req.method_mut() = method;
+		*req.uri_mut() = url;
+
+		req.headers_mut().insert(http::header::AUTHORIZATION, authorization);
+
+		Ok(req)
+	}
+
 	let url = match url.into() {
 		Url::PathAndQuery(path_and_query) =>
 			client.make_url(path_and_query)
@@ -71,36 +103,12 @@ where
 		Url::Uri(uri) => Ok(uri),
 	};
 
+	let body = body.map(|body| serde_json::to_vec(&body));
+
 	async move {
 		let (auth, client, cached_authorization, logger) = client.request_parameters();
-		let url = url?;
-
-		let authorization =
-			cached_authorization.get_or_try_init(|| async {
-				let authorization =
-					auth.get_authorization(client, TClient::AUTH_RESOURCE, logger).await
-					.context("could not get API authorization")?;
-				Ok::<_, anyhow::Error>(authorization)
-			}).await?.clone();
-
-		let mut req =
-			if let Some(body) = body {
-				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON);
-				req
-			}
-			else if method == http::Method::GET {
-				hyper::Request::new(Default::default())
-			}
-			else {
-				let mut req = hyper::Request::new(serde_json::to_vec(&body).context("could not serialize request body")?.into());
-				req.headers_mut().insert(http::header::CONTENT_LENGTH, 0.into());
-				req
-			};
-		*req.method_mut() = method;
-		*req.uri_mut() = url;
-		req.headers_mut().insert(http::header::AUTHORIZATION, authorization);
-
+		let authorization = cached_authorization.get_or_try_init(|| auth.get_authorization(client, TClient::AUTH_RESOURCE, logger)).await;
+		let req = make_request(method, url, authorization, body)?;
 		let value = client.request(req).await?;
 		Ok(value)
 	}
