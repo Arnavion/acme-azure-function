@@ -322,7 +322,7 @@ FunctionAppLogs_CL
 
 # Misc
 
-- The ACME account key is generated with an ECDSA P-384 key by default. This is the most secure algorithm supported by Let's Encrypt; Let's Encrypt does not support P-521 or [EdSDA keys.](https://github.com/letsencrypt/boulder/issues/4213)
+- The ACME account key is generated with an ECDSA P-384 key by default. This is the most secure algorithm supported by Let's Encrypt; Let's Encrypt does not support [P-521](https://github.com/letsencrypt/boulder/blob/e55a276efef324adf20c6bb47a539b8d1f2473b8/goodkey/good_key.go#L273) or [EdDSA keys.](https://github.com/letsencrypt/boulder/issues/4213)
 
   You can change the key algorithm in `build.sh` by changing the value of `"azure_key_vault_acme_account_key_type"` in the Function app secret settings.
 
