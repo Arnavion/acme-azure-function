@@ -1,0 +1,13 @@
+[package]
+name = "time2"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Arnavion <me@arnavion.dev>"]
+edition = "2021"
+publish = false
+
+
+[dependencies]
+time = { version = "0.3.4", default-features = false, features = [
+	"formatting", # for time::format_description
+] }

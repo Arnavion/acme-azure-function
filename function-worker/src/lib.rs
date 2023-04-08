@@ -104,10 +104,14 @@ pub async fn _init() -> anyhow::Result<(log2::Logger, String, impl futures_util:
 					return;
 				}
 
-				let timestamp = chrono::Utc::now();
+				let timestamp = time::OffsetDateTime::now_utc();
 				let level = record.level();
 
-				eprintln!("[{}] {level:5} {}", timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true), record.args());
+				eprintln!(
+					"[{}] {level:5} {}",
+					timestamp.format(time2::RFC3339_MILLISECONDS).expect("could not format time"),
+					record.args(),
+				);
 			}
 
 			fn flush(&self) {

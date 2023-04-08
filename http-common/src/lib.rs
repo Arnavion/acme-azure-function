@@ -204,9 +204,8 @@ pub fn get_retry_after(
 			std::time::Duration::from_secs(secs)
 		}
 		else if let Ok(date) = httpdate::parse_http_date(retry_after) {
-			let date: chrono::DateTime<chrono::Utc> = date.into();
-			let diff = date - chrono::Utc::now();
-			let diff = diff.to_std().context("could not parse retry-after header as HTTP-date")?;
+			let diff = date - time::OffsetDateTime::now_utc();
+			let diff = diff.try_into().context("could not parse retry-after header as HTTP-date")?;
 			diff
 		}
 		else {

@@ -5,6 +5,7 @@ members = [
 	"function-worker",
 	"http-common",
 	"log2",
+	"time2",
 
 	"function-renew-cert",
 ]

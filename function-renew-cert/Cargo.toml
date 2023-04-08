@@ -11,15 +11,15 @@ publish = false
 anyhow = { version = "1", default-features = false, features = [
 	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
 ] }
-chrono = { version = "0.4", default-features = false, features = [
-	"clock", # for chrono::Utc::now()
-] }
 http = { version = "0.2", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
 ] }
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
+] }
+time = { version = "0.3", default-features = false, features = [
+	"std", # for time::OffsetDateTime::now_utc()
 ] }
 tokio = { version = "1", default-features = false, features = [
 	"time",

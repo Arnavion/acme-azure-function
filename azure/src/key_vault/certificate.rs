@@ -121,7 +121,7 @@ impl<'a> super::Client<'a> {
 					(http::StatusCode::OK, Some(body)) => {
 						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
 
-						let not_after = chrono::TimeZone::timestamp_opt(&chrono::Utc, exp, 0).single().context("certificate expiry overflowed")?;
+						let not_after = time::OffsetDateTime::from_unix_timestamp(exp).context("certificate expiry out of range")?;
 
 						let version = match id.rsplit_once('/') {
 							Some((_, version)) => version.to_owned(),
@@ -260,5 +260,5 @@ impl serde::Serialize for CreateCsrKeyType {
 #[derive(Debug)]
 pub struct Certificate {
 	pub version: String,
-	pub not_after: chrono::DateTime<chrono::Utc>,
+	pub not_after: time::OffsetDateTime,
 }

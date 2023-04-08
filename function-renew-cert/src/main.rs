@@ -32,7 +32,7 @@ async fn renew_cert_main(
 	{
 		let certificate = azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?;
 		if let Some(certificate) = certificate {
-			if certificate.not_after > chrono::Utc::now() + chrono::Duration::days(30) {
+			if certificate.not_after > time::OffsetDateTime::now_utc() + time::Duration::days(30) {
 				logger.report_state(
 					"azure/key_vault/certificate",
 					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),

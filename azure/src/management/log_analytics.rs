@@ -164,29 +164,41 @@ impl LogSender<'_> {
 					}
 				}
 
-				let x_ms_date: http::HeaderValue = {
-					// Ref: https://tools.ietf.org/html/rfc822#section-5.1
-					//
-					// chrono's `to_rfc2822()` comes close, but it uses `+00:00` at the end instead of `GMT` which Azure doesn't like.
-					let x_ms_date = chrono::Utc::now();
-					let x_ms_date = x_ms_date.format_with_items([
-						chrono::format::Item::Fixed(chrono::format::Fixed::ShortWeekdayName),
-						chrono::format::Item::Literal(", "),
-						chrono::format::Item::Numeric(chrono::format::Numeric::Day, chrono::format::Pad::Zero),
-						chrono::format::Item::Literal(" "),
-						chrono::format::Item::Fixed(chrono::format::Fixed::ShortMonthName),
-						chrono::format::Item::Literal(" "),
-						chrono::format::Item::Numeric(chrono::format::Numeric::Year, chrono::format::Pad::Zero),
-						chrono::format::Item::Literal(" "),
-						chrono::format::Item::Numeric(chrono::format::Numeric::Hour, chrono::format::Pad::Zero),
-						chrono::format::Item::Literal(":"),
-						chrono::format::Item::Numeric(chrono::format::Numeric::Minute, chrono::format::Pad::Zero),
-						chrono::format::Item::Literal(":"),
-						chrono::format::Item::Numeric(chrono::format::Numeric::Second, chrono::format::Pad::Zero),
-						chrono::format::Item::Literal(" GMT"),
-					].iter());
-					x_ms_date.to_string().try_into().context("could not create authorization header")?
-				};
+				// Ref: https://tools.ietf.org/html/rfc822#section-5.1
+				//
+				// time's `time::format_description::well_known::Rfc2822` comes close, but it uses `+00:00` at the end
+				// instead of `GMT` which Azure doesn't like.
+				const RFC2822: &[time::format_description::FormatItem<'_>] = &[
+					time::format_description::FormatItem::Component(time::format_description::Component::Weekday({
+						let mut weekday = time::format_description::modifier::Weekday::default();
+						weekday.repr = time::format_description::modifier::WeekdayRepr::Short;
+						weekday
+					})),
+					time::format_description::FormatItem::Literal(b", "),
+					time::format_description::FormatItem::Component(time::format_description::Component::Day(time::format_description::modifier::Day::default())),
+					time::format_description::FormatItem::Literal(b" "),
+					time::format_description::FormatItem::Component(time::format_description::Component::Month({
+						let mut month = time::format_description::modifier::Month::default();
+						month.repr = time::format_description::modifier::MonthRepr::Short;
+						month
+					})),
+					time::format_description::FormatItem::Literal(b" "),
+					time::format_description::FormatItem::Component(time::format_description::Component::Year(time::format_description::modifier::Year::default())),
+					time::format_description::FormatItem::Literal(b" "),
+					time::format_description::FormatItem::Component(time::format_description::Component::Hour(time::format_description::modifier::Hour::default())),
+					time::format_description::FormatItem::Literal(b":"),
+					time::format_description::FormatItem::Component(time::format_description::Component::Minute(time::format_description::modifier::Minute::default())),
+					time::format_description::FormatItem::Literal(b":"),
+					time::format_description::FormatItem::Component(time::format_description::Component::Second(time::format_description::modifier::Second::default())),
+					time::format_description::FormatItem::Literal(b" GMT"),
+				];
+
+				let x_ms_date: http::HeaderValue =
+					time::OffsetDateTime::now_utc()
+					.format(RFC2822)
+					.expect("could not format date")
+					.try_into()
+					.context("could not create authorization header")?;
 
 				let signature = {
 					let mut signer = self.signer.clone();

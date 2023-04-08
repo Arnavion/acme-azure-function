@@ -13,9 +13,6 @@ anyhow = { version = "1", default-features = false, features = [
 ] }
 base64 = { version = "0.21", default-features = false }
 bytes = { version = "1", default-features = false }
-chrono = { version = "0.4.10", default-features = false, features = [
-	"clock", # for chrono::Utc::now()
-] }
 form_urlencoded = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 hmac = { version = "0.12", default-features = false }
@@ -34,6 +31,10 @@ serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
 sha2 = { version = "0.10", default-features = false }
+time = { version = "0.3.4", default-features = false, features = [
+	"formatting", # for time::format_description
+	"std", # for time::OffsetDateTime::now_utc()
+] }
 tokio = { version = "1.5", default-features = false, features = [
 	"parking_lot", # for slimmer tokio::sync::OnceCell
 	"sync",

@@ -85,7 +85,7 @@ impl Logger {
 		for<'a> Record<'a, ID, D>: serde::Serialize,
 		for<'a> Report<'a, ID, D>: Copy + std::fmt::Debug,
 	{
-		let timestamp = chrono::Utc::now();
+		let timestamp = time::OffsetDateTime::now_utc();
 
 		let mut inner = self.inner.borrow_mut();
 		let LoggerInner { function_invocation_id, sequence_number, records } = &mut *inner;
@@ -113,7 +113,7 @@ impl Logger {
 		log::log!(
 			if matches!(report, Report::Error { .. }) { log::Level::Error } else { log::Level::Info },
 			"[{}] {report:?}",
-			timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+			timestamp.format(time2::RFC3339_MILLISECONDS).expect("could not format time"),
 		);
 	}
 }
@@ -144,7 +144,7 @@ struct LoggerInner {
 }
 
 struct Record<'a, ID, D> {
-	pub timestamp: chrono::DateTime<chrono::Utc>,
+	pub timestamp: time::OffsetDateTime,
 	pub function_invocation_id: Option<&'a str>,
 	pub sequence_number: usize,
 	pub report: Report<'a, ID, D>,
@@ -340,9 +340,9 @@ impl<D> std::fmt::Debug for ObjectOperation<D> where D: std::fmt::Display {
 
 struct SerializeWith<T>(T);
 
-impl serde::Serialize for SerializeWith<&'_ chrono::DateTime<chrono::Utc>> {
+impl serde::Serialize for SerializeWith<&'_ time::OffsetDateTime> {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
-		serializer.serialize_str(&self.0.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+		serializer.serialize_str(&self.0.format(time2::RFC3339_MILLISECONDS).map_err(serde::ser::Error::custom)?)
 	}
 }
 
