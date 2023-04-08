@@ -11,7 +11,7 @@ Build-time tools:
 - `openssl`
 - `podman`
 
-This Function is implemented in Rust and runs as [a custom handler.](https://docs.microsoft.com/en-us/azure/azure-functions/functions-custom-handlers)
+This Function is implemented in Rust and runs as [a custom handler.](https://learn.microsoft.com/en-us/azure/azure-functions/functions-custom-handlers)
 
 
 # Setup
