@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, warnings)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
+	clippy::let_underscore_untyped,
 	clippy::let_unit_value,
 	clippy::too_many_lines,
 	clippy::type_complexity,
