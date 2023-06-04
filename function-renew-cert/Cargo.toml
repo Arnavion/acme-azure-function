@@ -24,6 +24,9 @@ time = { version = "0.3", default-features = false, features = [
 tokio = { version = "1", default-features = false, features = [
 	"time",
 ] }
+trust-dns-resolver = { version = "0.22", default-features = false, features = [
+	"tokio-runtime",
+] }
 
 acme = { path = "../acme" }
 azure = { path = "../azure" }

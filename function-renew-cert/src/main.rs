@@ -1,6 +1,7 @@
 #![deny(rust_2018_idioms, warnings)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
+	clippy::default_trait_access,
 	clippy::let_and_return,
 	clippy::let_unit_value,
 	clippy::too_many_lines,
@@ -90,7 +91,38 @@ async fn renew_cert_main(
 						).await?;
 
 					// Don't use `?` to fail immediately. Delete the TXT record first.
-					let new_acme_order = acme_account.complete_authorization(pending).await;
+					let new_acme_order = async {
+						const MAX_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+
+						let name: trust_dns_resolver::Name = "_acme-challenge".parse().expect("hard-coded name is valid");
+						let name = name.append_domain(&settings.top_level_domain_name.parse()?)?;
+
+						let name_str = name.to_utf8();
+
+						let resolver = trust_dns_resolver::AsyncResolver::tokio(Default::default(), Default::default())?;
+
+						let mut retry_delay = std::time::Duration::from_millis(100);
+
+						loop {
+							let created = logger.report_operation("dns/lookup", &name_str, <log2::ScopedObjectOperation>::Get, async {
+								match resolver.txt_lookup(name.clone()).await {
+									Ok(_) => Ok(true),
+									Err(err) if matches!(err.kind(), trust_dns_resolver::error::ResolveErrorKind::NoRecordsFound { .. }) => Ok(false),
+									Err(err) => Err(err.into()),
+								}
+							}).await?;
+							if created {
+								break;
+							}
+
+							tokio::time::sleep(retry_delay).await;
+							retry_delay = MAX_RETRY_DELAY.min(retry_delay * 2);
+						}
+
+						let new_acme_order = acme_account.complete_authorization(pending).await?;
+						Ok::<_, anyhow::Error>(new_acme_order)
+					};
+					let new_acme_order = new_acme_order.await;
 
 					let () =
 						azure_management_client.dns_txt_record_delete(
