@@ -212,6 +212,7 @@ dependencies = [
  "anyhow",
  "azure",
  "function-worker",
+ "futures-util",
  "http",
  "http-common",
  "log2",

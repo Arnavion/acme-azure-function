@@ -94,17 +94,37 @@ async fn renew_cert_main(
 					let new_acme_order = async {
 						const MAX_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
+						let name_servers = azure_management_client.dns_zone_name_servers_get(&settings.top_level_domain_name).await?;
+						let name_servers: futures_util::future::JoinAll<_> =
+							name_servers.into_iter()
+							.map(|name_server| tokio::net::lookup_host((name_server, 53)))
+							.collect();
+						let name_servers: Vec<_> =
+							name_servers.await.into_iter()
+							.flatten()
+							.flatten()
+							.flat_map(|socket_addr| [
+								trust_dns_resolver::config::NameServerConfig::new(socket_addr, trust_dns_resolver::config::Protocol::Udp),
+								trust_dns_resolver::config::NameServerConfig::new(socket_addr, trust_dns_resolver::config::Protocol::Tcp),
+							])
+							.collect();
+
 						let name: trust_dns_resolver::Name = "_acme-challenge".parse().expect("hard-coded name is valid");
 						let name = name.append_domain(&settings.top_level_domain_name.parse()?)?;
 
 						let name_str = name.to_utf8();
 
-						let resolver = trust_dns_resolver::AsyncResolver::tokio(Default::default(), Default::default())?;
+						let resolver =
+							trust_dns_resolver::AsyncResolver::tokio(
+								trust_dns_resolver::config::ResolverConfig::from_parts(None, vec![], name_servers),
+								Default::default(),
+							)?;
 
 						let mut retry_delay = std::time::Duration::from_millis(100);
 
 						loop {
 							let created = logger.report_operation("dns/lookup", &name_str, <log2::ScopedObjectOperation>::Get, async {
+								resolver.clear_cache();
 								match resolver.txt_lookup(name.clone()).await {
 									Ok(_) => Ok(true),
 									Err(err) if matches!(err.kind(), trust_dns_resolver::error::ResolveErrorKind::NoRecordsFound { .. }) => Ok(false),

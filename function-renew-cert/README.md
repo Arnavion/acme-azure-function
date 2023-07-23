@@ -159,6 +159,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://lea
                     "/subscriptions/\($AZURE_SUBSCRIPTION_ID)"
                 ],
                 "Actions": [
+                    "Microsoft.Network/dnszones/read",
                     "Microsoft.Network/dnszones/TXT/delete",
                     "Microsoft.Network/dnszones/TXT/write",
                     "Microsoft.OperationalInsights/workspaces/read",
@@ -182,6 +183,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://lea
             --query principalId --output tsv
     )"
     for scope in \
+        "$(az network dns zone show --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)" \
         "$(az network dns zone show --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/keys/$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \
@@ -241,6 +243,7 @@ This Function is implemented in Rust and runs as [a custom handler.](https://lea
 
     ```sh
     for scope in \
+        "$(az network dns zone show --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)" \
         "$(az network dns zone show --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" --query id --output tsv)/TXT/_acme-challenge" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/keys/$AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME" \
         "$(az keyvault show --name "$AZURE_KEY_VAULT_NAME" --query id --output tsv)/certificates/$AZURE_KEY_VAULT_CERTIFICATE_NAME" \

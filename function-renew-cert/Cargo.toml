@@ -11,6 +11,9 @@ publish = false
 anyhow = { version = "1", default-features = false, features = [
 	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
 ] }
+futures-util = { version = "0.3", default-features = false, features = [
+	"alloc", # for futures_util::future::JoinAll
+] }
 http = { version = "0.2", default-features = false }
 serde = { version = "1", default-features = false, features = [
 	"derive",
@@ -22,6 +25,7 @@ time = { version = "0.3", default-features = false, features = [
 	"std", # for time::OffsetDateTime::now_utc()
 ] }
 tokio = { version = "1", default-features = false, features = [
+	"net", # for tokio::net::lookup_host
 	"time",
 ] }
 trust-dns-resolver = { version = "0.22", default-features = false, features = [

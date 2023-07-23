@@ -1,4 +1,49 @@
 impl<'a> super::Client<'a> {
+	pub async fn dns_zone_name_servers_get(&self, dns_zone_name: &str) -> anyhow::Result<Vec<String>> {
+		struct Response(Vec<String>);
+
+		impl http_common::FromResponse for Response {
+			fn from_response(
+				status: http::StatusCode,
+				body: Option<&mut http_common::Body<impl std::io::Read>>,
+				_headers: http::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				#[derive(serde::Deserialize)]
+				struct ResponseInner {
+					properties: ResponseProperties,
+				}
+
+				#[derive(serde::Deserialize)]
+				struct ResponseProperties {
+					#[serde(rename = "nameServers")]
+					name_servers: Vec<String>,
+				}
+
+				Ok(match (status, body) {
+					(http::StatusCode::OK, Some(body)) => {
+						let ResponseInner { properties: ResponseProperties { name_servers } } = body.as_json()?;
+						Some(Response(name_servers))
+					},
+
+					_ => None,
+				})
+			}
+		}
+
+		let name_servers = self.logger.report_operation("azure/dns", dns_zone_name, <log2::ScopedObjectOperation>::Get, async move {
+			let Response(name_servers) =
+				crate::request(
+					self,
+					http::Method::GET,
+					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}?api-version=2018-05-01"),
+					None::<&()>,
+				).await?;
+			Ok(name_servers)
+		}).await?;
+
+		Ok(name_servers)
+	}
+
 	pub async fn dns_txt_record_create<'b, I>(&self, dns_zone_name: &str, name: &str, content: I) -> anyhow::Result<()>
 	where
 		I: IntoIterator<Item = &'b str>,
