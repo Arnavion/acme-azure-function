@@ -28,7 +28,7 @@ macro_rules! run {
 					settings,
 					incoming,
 				) = $crate::_init().await?;
-				$crate::_reexports::futures_util::pin_mut!(incoming);
+				let mut incoming = std::pin::pin!(incoming);
 
 				let (
 					azure_subscription_id,
@@ -349,8 +349,7 @@ pub async fn _handle_request(
 			push_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
 			loop {
-				let push_timer_tick = push_timer.tick();
-				futures_util::pin_mut!(push_timer_tick);
+				let push_timer_tick = std::pin::pin!(push_timer.tick());
 
 				let r = futures_util::future::select(push_timer_tick, stop_log_sender_rx).await;
 
@@ -434,7 +433,7 @@ pub async fn _handle_request(
 		Ok(())
 	}
 
-	let res_f = async {
+	let res_f = std::pin::pin!(async {
 		logger.report_state("function_invocation", "", format_args!("Request {{ method: {method:?}, path: {path:?} }}"));
 
 		let res =
@@ -451,11 +450,10 @@ pub async fn _handle_request(
 
 		logger.report_state("function_invocation", "", format_args!("Response {{ {res:?} }}"));
 		res
-	};
-	futures_util::pin_mut!(res_f);
+	});
 
 	let (stop_log_sender_tx, log_sender_f) = make_log_sender(logger, log_sender);
-	futures_util::pin_mut!(log_sender_f);
+	let log_sender_f = std::pin::pin!(log_sender_f);
 
 	let res = match futures_util::future::select(res_f, log_sender_f).await {
 		futures_util::future::Either::Left((res, log_sender_f)) => {
