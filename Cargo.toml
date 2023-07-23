@@ -9,6 +9,7 @@ members = [
 
 	"function-renew-cert",
 ]
+resolver = "2"
 
 [profile.release]
 codegen-units = 1
