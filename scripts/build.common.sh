@@ -174,42 +174,50 @@ esac
 case "$target" in
     debug-*)
         podman container run \
-            --interactive --tty --rm \
+            --interactive \
+            --rm \
+            --tty \
             --userns=keep-id \
             "--volume=$PWD:$PWD" \
             "--volume=$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
             "--volume=$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
             "--workdir=$PWD" \
             localhost/azure-function-build-rust \
-            sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl"'
+            make 'CARGOFLAGS=--target x86_64-unknown-linux-musl'
         cp -f "./target/x86_64-unknown-linux-musl/debug/$func_dir_name" "./$func_dir_name/dist/main"
 
         podman container run \
-            --interactive --tty --rm \
+            --interactive \
+            --rm \
+            --tty \
             --publish=7071:7071 \
             --userns=keep-id \
             "--volume=$PWD:$PWD" \
-            "--workdir=$PWD" \
+            "--workdir=$PWD/$func_dir_name/dist/" \
             localhost/azure-function-build-func \
-            sh -c "cd './$func_dir_name/dist/' && func start -p 7071"
+            func start -p 7071
         ;;
 
     'publish')
         podman container run \
-            --interactive --tty --rm \
+            --interactive \
+            --rm \
+            --tty \
             --userns=keep-id \
             "--volume=$PWD:$PWD" \
             "--volume=$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
             "--volume=$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
             "--workdir=$PWD" \
             localhost/azure-function-build-rust \
-            sh -c 'make CARGOFLAGS="--target x86_64-unknown-linux-musl --release"'
+            make 'CARGOFLAGS=--target x86_64-unknown-linux-musl --release'
         cp -f "./target/x86_64-unknown-linux-musl/release/$func_dir_name" "./$func_dir_name/dist/main"
 
         [ -d ~/.azure ]
 
         podman container run \
-            --interactive --tty --rm \
+            --interactive \
+            --rm \
+            --tty \
             --userns=keep-id \
             "--volume=$PWD:$PWD" \
             "--volume=$HOME/.azure:$HOME/.azure" \
