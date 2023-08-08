@@ -200,14 +200,13 @@ This Function is implemented in Rust and runs as [a custom handler.](https://lea
     done
     ```
 
-1. Create an NS record with your DNS registrar for the dns-01 challenge.
+1. If the Azure DNS zone is not your domain's primary nameserver, create NS records on your primary nameserver for the dns-01 challenge.
 
     ```sh
-    echo "Create NS record for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to $(
-        az network dns zone show \
-            --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" \
-            --query 'nameServers[0]' --output tsv
-    )"
+    echo "Create NS records for _acme-challenge.$TOP_LEVEL_DOMAIN_NAME. to:"; \
+    az network dns zone show \
+        --resource-group "$AZURE_COMMON_RESOURCE_GROUP_NAME" --name "$TOP_LEVEL_DOMAIN_NAME" \
+        --query 'nameServers' --output tsv
     ```
 
 1. Prepare the Log Analytics table schema.
@@ -316,7 +315,7 @@ FunctionAppLogs_CL
         strcat(
             ObjectType_s,
             iff(isempty(ObjectId_s), "", strcat("/", ObjectId_s)),
-            iff(isnotempty(ObjectOperation_s), strcat(" does ", ObjectOperation_s, " ", ObjectValue_s), strcat(" is ", ObjectState_s))
+            iff(isempty(ObjectOperation_s), strcat(" is ", ObjectState_s), strcat(" does ", ObjectOperation_s, " ", ObjectValue_s))
         )
     )
 | project TimeGenerated, Level, Record
@@ -325,7 +324,7 @@ FunctionAppLogs_CL
 
 # Misc
 
-- The ACME account key is generated with an ECDSA P-384 key by default. This is the most secure algorithm supported by Let's Encrypt; Let's Encrypt does not support [P-521](https://github.com/letsencrypt/boulder/blob/e55a276efef324adf20c6bb47a539b8d1f2473b8/goodkey/good_key.go#L273) or [EdDSA keys.](https://github.com/letsencrypt/boulder/issues/4213)
+- The ACME account key is generated with an ECDSA P-384 key by default. This is the most secure algorithm supported by Let's Encrypt; Let's Encrypt does not support [P-521](https://github.com/letsencrypt/boulder/blob/9a4f0ca678e8c178e46200e7ef7599101851deeb/goodkey/good_key.go#L272) or [EdDSA keys.](https://github.com/letsencrypt/boulder/issues/4213)
 
   You can change the key algorithm in `build.sh` by changing the value of `"azure_key_vault_acme_account_key_type"` in the Function app secret settings.
 
