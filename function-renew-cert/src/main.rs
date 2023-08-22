@@ -118,7 +118,7 @@ async fn renew_cert_main(
 							trust_dns_resolver::AsyncResolver::tokio(
 								trust_dns_resolver::config::ResolverConfig::from_parts(None, vec![], name_servers),
 								Default::default(),
-							)?;
+							);
 
 						let mut retry_delay = std::time::Duration::from_millis(100);
 
