@@ -104,19 +104,19 @@ async fn renew_cert_main(
 							.flatten()
 							.flatten()
 							.flat_map(|socket_addr| [
-								trust_dns_resolver::config::NameServerConfig::new(socket_addr, trust_dns_resolver::config::Protocol::Udp),
-								trust_dns_resolver::config::NameServerConfig::new(socket_addr, trust_dns_resolver::config::Protocol::Tcp),
+								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::config::Protocol::Udp),
+								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::config::Protocol::Tcp),
 							])
 							.collect();
 
-						let name: trust_dns_resolver::Name = "_acme-challenge".parse().expect("hard-coded name is valid");
+						let name: hickory_resolver::Name = "_acme-challenge".parse().expect("hard-coded name is valid");
 						let name = name.append_domain(&settings.top_level_domain_name.parse()?)?;
 
 						let name_str = name.to_utf8();
 
 						let resolver =
-							trust_dns_resolver::AsyncResolver::tokio(
-								trust_dns_resolver::config::ResolverConfig::from_parts(None, vec![], name_servers),
+							hickory_resolver::AsyncResolver::tokio(
+								hickory_resolver::config::ResolverConfig::from_parts(None, vec![], name_servers),
 								Default::default(),
 							);
 
@@ -127,7 +127,7 @@ async fn renew_cert_main(
 								resolver.clear_cache();
 								match resolver.txt_lookup(name.clone()).await {
 									Ok(_) => Ok(true),
-									Err(err) if matches!(err.kind(), trust_dns_resolver::error::ResolveErrorKind::NoRecordsFound { .. }) => Ok(false),
+									Err(err) if matches!(err.kind(), hickory_resolver::error::ResolveErrorKind::NoRecordsFound { .. }) => Ok(false),
 									Err(err) => Err(err.into()),
 								}
 							}).await?;
