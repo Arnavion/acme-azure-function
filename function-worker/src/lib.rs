@@ -252,12 +252,8 @@ pub async fn _parse_request<'a>(
 	}
 
 	{
-		let previous_filled = buf.filled().len();
-		let () =
-			futures_util::future::poll_fn(|cx| tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, buf))
-			.await.context("could not read request")?;
-		let new_filled = buf.filled().len();
-		if previous_filled == new_filled {
+		let read = tokio::io::AsyncReadExt::read_buf(stream, buf).await.context("could not read request")?;
+		if read == 0 {
 			return Err(anyhow::anyhow!("malformed request: EOF"));
 		}
 	}
@@ -301,10 +297,7 @@ pub async fn _parse_request<'a>(
 			while remaining > 0 {
 				buf.clear();
 
-				let () =
-					futures_util::future::poll_fn(|cx| tokio::io::AsyncRead::poll_read(std::pin::Pin::new(stream), cx, &mut buf))
-					.await.context("could not read request body")?;
-				let read = buf.filled().len();
+				let read = tokio::io::AsyncReadExt::read_buf(stream, &mut buf).await.context("could not read request body")?;
 				if read == 0 {
 					return Err(anyhow::anyhow!("malformed request: EOF"));
 				}
