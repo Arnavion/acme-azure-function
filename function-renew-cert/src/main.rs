@@ -267,7 +267,7 @@ where
 		type Value = (azure::key_vault::EcKty, acme::EcCurve);
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-			f.write_str(r#"one of "#)?;
+			f.write_str("one of ")?;
 			f.write_str(r#""ec:p256", "ec-hsm:p256", "#)?;
 			f.write_str(r#""ec:p384", "ec-hsm:p384", "#)?;
 			f.write_str(r#""ec:p521", "ec-hsm:p521""#)?;
@@ -301,7 +301,7 @@ where
 		type Value = azure::key_vault::CreateCsrKeyType;
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-			f.write_str(r#"one of "#)?;
+			f.write_str("one of ")?;
 			f.write_str(r#""rsa:2048", "rsa:2048:exportable", "rsa-hsm:2048", "#)?;
 			f.write_str(r#""rsa:4096", "rsa:4096:exportable", "rsa-hsm:4096", "#)?;
 			f.write_str(r#""ec:p256", "ec:p256:exportable", "ec-hsm:p256", "#)?;
