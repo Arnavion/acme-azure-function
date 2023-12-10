@@ -2,6 +2,8 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
 	clippy::default_trait_access,
+	clippy::missing_errors_doc,
+	clippy::missing_panics_doc,
 	clippy::let_and_return,
 	clippy::let_unit_value,
 	clippy::too_many_lines,
@@ -9,11 +11,7 @@
 
 use anyhow::Context;
 
-function_worker::run! {
-	"renew-cert" => renew_cert_main,
-}
-
-async fn renew_cert_main(
+pub async fn main(
 	azure_subscription_id: &str,
 	azure_auth: &azure::Auth,
 	settings: &Settings<'_>,
@@ -216,7 +214,7 @@ async fn renew_cert_main(
 }
 
 #[derive(serde::Deserialize)]
-struct Settings<'a> {
+pub struct Settings<'a> {
 	/// The directory URL of the ACME server
 	acme_directory_url: http_common::DeserializableUri,
 

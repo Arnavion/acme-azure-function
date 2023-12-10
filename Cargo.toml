@@ -1,3 +1,21 @@
+[package]
+name = "acme-azure-function"
+version = "0.1.0"
+license = "AGPL-3.0-only"
+authors = ["Arnav Singh <me@arnavion.dev>"]
+edition = "2021"
+publish = false
+
+
+[dependencies]
+anyhow = { version = "1", default-features = false }
+
+azure = { path = "azure" }
+function-worker = { path = "function-worker" }
+function-renew-cert = { path = "function-renew-cert" }
+log2 = { path = "log2" }
+
+
 [workspace]
 members = [
 	"acme",
@@ -10,6 +28,7 @@ members = [
 	"function-renew-cert",
 ]
 resolver = "2"
+
 
 [profile.release]
 codegen-units = 1

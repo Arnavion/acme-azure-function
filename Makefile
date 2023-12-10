@@ -3,7 +3,7 @@
 CARGOFLAGS =
 
 default:
-	cargo build -p function-renew-cert ${CARGOFLAGS}
+	cargo build -p acme-azure-function ${CARGOFLAGS}
 
 clean:
 	cargo clean
