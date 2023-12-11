@@ -177,24 +177,23 @@ impl<'a> super::Client<'a> {
 			}
 		}
 
-		let () =
-			self.logger.report_operation(
-				"azure/key_vault/certificate",
-				(self.key_vault_name, certificate_name),
-				log2::ScopedObjectOperation::Create { value: format_args!("{certificates:?}") },
-				async {
-					let _: Response =
-						crate::request(
-							self,
-							http::Method::POST,
-							format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.3"),
-							Some(&Request {
-								x5c: certificates,
-							}),
-						).await?;
-					Ok(())
-				},
-			).await?;
+		self.logger.report_operation(
+			"azure/key_vault/certificate",
+			(self.key_vault_name, certificate_name),
+			log2::ScopedObjectOperation::Create { value: format_args!("{certificates:?}") },
+			async {
+				let _: Response =
+					crate::request(
+						self,
+						http::Method::POST,
+						format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.3"),
+						Some(&Request {
+							x5c: certificates,
+						}),
+					).await?;
+				Ok(())
+			},
+		).await?;
 
 		Ok(())
 	}

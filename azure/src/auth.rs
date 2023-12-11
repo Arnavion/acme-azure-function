@@ -94,7 +94,7 @@ impl Auth {
 impl<'de> serde::Deserialize<'de> for Auth {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
 		if let (Ok(endpoint), Ok(secret)) = (std::env::var("IDENTITY_ENDPOINT"), std::env::var("IDENTITY_HEADER")) {
-			let _ = deserializer;
+			_ = deserializer;
 			let secret = secret.try_into().map_err(|err| serde::de::Error::custom(format!("could not parse IDENTITY_HEADER as HeaderValue: {err}")))?;
 			return Ok(Auth::ManagedIdentity {
 				endpoint,

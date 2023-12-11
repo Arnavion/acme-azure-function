@@ -38,13 +38,11 @@ pub async fn main(
 		}
 		else {
 			let (kty, crv) = settings.azure_key_vault_acme_account_key_type;
-			let account_key =
-				azure_key_vault_client.key_create(
-					&settings.azure_key_vault_acme_account_key_name,
-					kty,
-					crv,
-				).await?;
-			account_key
+			azure_key_vault_client.key_create(
+				&settings.azure_key_vault_acme_account_key_name,
+				kty,
+				crv,
+			).await?
 		}
 	};
 
@@ -70,12 +68,11 @@ pub async fn main(
 		let certificate = loop {
 			match acme_order {
 				acme::Order::Pending(pending) => {
-					let () =
-						azure_management_client.dns_txt_record_create(
-							&settings.top_level_domain_name,
-							"_acme-challenge",
-							pending.authorizations.iter().map(|authorization| &*authorization.dns_txt_record_content),
-						).await?;
+					azure_management_client.dns_txt_record_create(
+						&settings.top_level_domain_name,
+						"_acme-challenge",
+						pending.authorizations.iter().map(|authorization| &*authorization.dns_txt_record_content),
+					).await?;
 
 					// Don't use `?` to fail immediately. Delete the TXT record first.
 					let new_acme_order = async {
@@ -131,11 +128,10 @@ pub async fn main(
 					};
 					let new_acme_order = new_acme_order.await;
 
-					let () =
-						azure_management_client.dns_txt_record_delete(
-							&settings.top_level_domain_name,
-							"_acme-challenge",
-						).await?;
+					azure_management_client.dns_txt_record_delete(
+						&settings.top_level_domain_name,
+						"_acme-challenge",
+					).await?;
 
 					acme_order = acme::Order::Ready(new_acme_order?);
 				},
@@ -183,11 +179,10 @@ pub async fn main(
 		certificates
 	};
 
-	let () =
-		azure_key_vault_client.certificate_merge(
-			&settings.azure_key_vault_certificate_name,
-			&certificates,
-		).await?;
+	azure_key_vault_client.certificate_merge(
+		&settings.azure_key_vault_certificate_name,
+		&certificates,
+	).await?;
 
 	logger.report_state(
 		"azure/key_vault/certificate",

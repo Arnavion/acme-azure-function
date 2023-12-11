@@ -90,16 +90,15 @@ impl Logger {
 			}
 
 			let mut serializer = serde_json::Serializer::new(records);
-			let () =
-				serde::Serialize::serialize(
-					&Record {
-						timestamp,
-						function_invocation_id: function_invocation_id.as_deref(),
-						sequence_number: *sequence_number,
-						report,
-					},
-					&mut serializer,
-				).expect("could not serialize log record");
+			serde::Serialize::serialize(
+				&Record {
+					timestamp,
+					function_invocation_id: function_invocation_id.as_deref(),
+					sequence_number: *sequence_number,
+					report,
+				},
+				&mut serializer,
+			).expect("could not serialize log record");
 		}
 
 		log::log!(

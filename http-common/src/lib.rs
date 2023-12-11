@@ -196,8 +196,7 @@ pub fn get_retry_after(
 		}
 		else if let Ok(date) = httpdate::parse_http_date(retry_after) {
 			let diff = date - time::OffsetDateTime::now_utc();
-			let diff = diff.try_into().context("could not parse retry-after header as HTTP-date")?;
-			diff
+			diff.try_into().context("could not parse retry-after header as HTTP-date")?
 		}
 		else {
 			return Err(anyhow::anyhow!("could not parse retry-after header as delay-seconds or HTTP-date"));

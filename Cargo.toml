@@ -38,9 +38,6 @@ warnings = "deny"
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 default_trait_access = "allow"
-let_and_return = "allow"
-let_underscore_untyped = "allow"
-let_unit_value = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"

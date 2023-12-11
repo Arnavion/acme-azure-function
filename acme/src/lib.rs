@@ -242,13 +242,13 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						let jwk_thumbprint = {
 							let mut hasher: sha2::Sha256 = sha2::Digest::new();
 							let mut serializer = serde_json::Serializer::new(&mut hasher);
-							let () = serde::Serialize::serialize(&self.account_key.as_jwk(), &mut serializer).expect("cannot fail to serialize JWK");
+							serde::Serialize::serialize(&self.account_key.as_jwk(), &mut serializer).expect("cannot fail to serialize JWK");
 							sha2::Digest::finalize(hasher)
 						};
 
 						let hasher = {
 							let mut writer = base64::write::EncoderWriter::new(hasher, &JWS_BASE64_ENGINE);
-							let () = std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
+							std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
 							writer.finish().expect("cannot fail to base64-encode JWK hash")
 						};
 
@@ -585,16 +585,15 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 				let mut writer = base64::write::EncoderWriter::new(Vec::with_capacity(1024), &JWS_BASE64_ENGINE);
 				let mut serializer = serde_json::Serializer::new(&mut writer);
-				let () =
-					serde::Serialize::serialize(
-						&Protected {
-							alg,
-							jwk_or_kid,
-							nonce: &nonce,
-							url: format_args!("{url}"),
-						},
-						&mut serializer,
-					).context("could not serialize `protected`")?;
+				serde::Serialize::serialize(
+					&Protected {
+						alg,
+						jwk_or_kid,
+						nonce: &nonce,
+						url: format_args!("{url}"),
+					},
+					&mut serializer,
+				).context("could not serialize `protected`")?;
 				writer.finish().expect("cannot fail to write to Vec<u8>")
 			};
 
@@ -641,7 +640,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			if let Some(payload) = body {
 				let mut writer = base64::write::EncoderWriter::new(vec![], &JWS_BASE64_ENGINE);
 				let mut serializer = serde_json::Serializer::new(&mut writer);
-				let () = serde::Serialize::serialize(payload, &mut serializer).context("could not serialize `payload`")?;
+				serde::Serialize::serialize(payload, &mut serializer).context("could not serialize `payload`")?;
 				writer.finish().expect("cannot fail to write to Vec<u8>")
 			}
 			else {

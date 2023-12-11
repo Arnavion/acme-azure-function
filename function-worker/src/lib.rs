@@ -36,7 +36,7 @@ pub fn run(handler: impl Handler) -> anyhow::Result<()> {
 		.build()?;
 	let local_set = tokio::task::LocalSet::new();
 
-	let () = local_set.block_on(&runtime, run_inner(handler))?;
+	local_set.block_on(&runtime, run_inner(handler))?;
 
 	Ok(())
 }
@@ -304,7 +304,7 @@ async fn handle_request(
 
 	let res = match futures_util::future::select(res_f, log_sender_f).await {
 		futures_util::future::Either::Left((res, log_sender_f)) => {
-			let _ = stop_log_sender_tx.send(());
+			_ = stop_log_sender_tx.send(());
 
 			if let Err(err) = log_sender_f.await {
 				log::error!("{:?}", err.context("log sender failed"));
@@ -421,7 +421,7 @@ impl Response {
 			return Err(anyhow::anyhow!("could not write response: short write from writev ({written}/{to_write})"));
 		}
 
-		let () = tokio::io::AsyncWriteExt::flush(stream).await.context("could not write response")?;
+		tokio::io::AsyncWriteExt::flush(stream).await.context("could not write response")?;
 
 		Ok(())
 	}

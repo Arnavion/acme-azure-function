@@ -94,7 +94,7 @@ impl<'a> super::Client<'a> {
 			}
 		}
 
-		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async move {
+		self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), log2::ScopedObjectOperation::Create { value: "******" }, async move {
 			let _: Response =
 				crate::request(
 					self,
@@ -132,7 +132,7 @@ impl<'a> super::Client<'a> {
 			}
 		}
 
-		let () = self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
+		self.logger.report_operation("azure/dns/txtrecord", (dns_zone_name, name), <log2::ScopedObjectOperation>::Delete, async {
 			let _: Response =
 				crate::request(
 					self,
