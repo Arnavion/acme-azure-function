@@ -24,36 +24,36 @@ impl Logger {
 		self.report_inner::<&str, _>(Report::Message { message });
 	}
 
-	pub async fn report_operation<IID, D, F, ID, T>(&self, object_type: &str, object_id: IID, operation: ScopedObjectOperation<D>, f: F) -> F::Output
+	pub async fn report_operation<IID, D, F, ID>(&self, object_type: &str, object_id: IID, operation: ScopedObjectOperation<D>, f: F) -> F::Output
 	where
 		IID: Into<ObjectId<ID>>,
 		ObjectId<ID>: Copy + std::fmt::Display,
 		D: Copy + std::fmt::Display + serde::Serialize,
-		F: std::future::Future<Output = anyhow::Result<T>>,
-		T: std::fmt::Debug,
+		F: std::future::Future,
+		F::Output: std::fmt::Debug,
 	{
 		let object_id = object_id.into();
 
 		match operation {
 			ScopedObjectOperation::Create { value } => {
 				self.report_inner::<_, D>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateStart { value } });
-				let result = f.await?;
+				let result = f.await;
 				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::CreateEnd });
-				Ok(result)
+				result
 			},
 
 			ScopedObjectOperation::Delete => {
 				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteStart });
-				let result = f.await?;
+				let result = f.await;
 				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::DeleteEnd });
-				Ok(result)
+				result
 			},
 
 			ScopedObjectOperation::Get => {
 				self.report_inner::<_, &str>(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetStart });
-				let result = f.await?;
+				let result = f.await;
 				self.report_inner(Report::ObjectOperation { object_type, object_id, operation: ObjectOperation::GetEnd { value: format_args!("{result:?}") } });
-				Ok(result)
+				result
 			},
 		}
 	}

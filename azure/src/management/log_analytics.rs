@@ -79,7 +79,7 @@ impl<'a> super::Client<'a> {
 							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}?api-version=2022-10-01"),
 							None::<&()>,
 						).await?;
-					Ok(customer_id)
+					Ok::<_, anyhow::Error>(customer_id)
 				},
 			);
 
@@ -235,7 +235,7 @@ impl LogSender<'_> {
 				}
 
 				let _: Response = self.client.request(req).await?;
-				Ok(())
+				Ok::<_, anyhow::Error>(())
 			},
 		).await?;
 

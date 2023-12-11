@@ -112,7 +112,7 @@ pub async fn main(
 								match resolver.txt_lookup(name.clone()).await {
 									Ok(_) => Ok(true),
 									Err(err) if matches!(err.kind(), hickory_resolver::error::ResolveErrorKind::NoRecordsFound { .. }) => Ok(false),
-									Err(err) => Err(err.into()),
+									Err(err) => Err(anyhow::Error::from(err)),
 								}
 							}).await?;
 							if created {

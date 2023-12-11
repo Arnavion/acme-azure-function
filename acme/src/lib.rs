@@ -55,7 +55,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			*req.uri_mut() = acme_directory_url;
 
 			let ResponseWithNewNonce { body, new_nonce } = client.request(req).await.context("could not execute HTTP request")?;
-			Ok((body, log2::Secret(new_nonce)))
+			Ok::<_, anyhow::Error>((body, log2::Secret(new_nonce)))
 		}).await.context("could not query ACME directory")?;
 
 		let mut account = Account {
@@ -115,7 +115,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						contact_urls: &[acme_contact_url],
 						terms_of_service_agreed: true,
 					})).await.context("could not create / get account")?;
-				Ok((account_url.to_string(), status))
+				Ok::<_, anyhow::Error>((account_url.to_string(), status))
 			}).await?;
 
 			logger.report_state("acme/account", &account_url, format_args!("{status:?}"));
@@ -165,7 +165,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						},
 					],
 				})).await.context("could not create / get order")?;
-			Ok((order_url, order))
+			Ok::<_, anyhow::Error>((order_url, order))
 		}).await?;
 
 		let order = loop {
@@ -494,7 +494,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		let certificate = self.logger.report_operation("acme/certificate", &certificate_url.clone(), <log2::ScopedObjectOperation>::Get, async {
 			let CertificateResponse(certificate) = self.post(certificate_url, None::<&()>).await.context("could not download certificate")?;
-			Ok(certificate)
+			Ok::<_, anyhow::Error>(certificate)
 		}).await?;
 
 		Ok(certificate)
@@ -545,7 +545,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 							.context("newNonce URL did not return new nonce")?;
 
 						let nonce = new_nonce.context("newNonce URL did not return new nonce")?;
-						Ok(log2::Secret(nonce))
+						Ok::<_, anyhow::Error>(log2::Secret(nonce))
 					}).await?;
 					nonce
 				};

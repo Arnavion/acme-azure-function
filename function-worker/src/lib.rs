@@ -72,26 +72,7 @@ async fn run_inner(handler: impl Handler) -> anyhow::Result<()> {
 
 	loop {
 		let stream = next_stream(&listener, &mut pending_requests, &misc_logger).await;
-
-		pending_requests.push(async {
-			let mut stream = stream;
-			let (mut read, mut write) = stream.split();
-
-			let mut buf = [std::mem::MaybeUninit::uninit(); 8192];
-			let mut buf = tokio::io::ReadBuf::uninit(&mut buf);
-			let (method, path, logger) = loop {
-				if let Some(req) = parse_request(&mut read, &mut buf).await? {
-					break req;
-				}
-			};
-
-			handle_request(method, path, &logger, &log_sender, &mut write, async {
-				let result = handler.handle(path, &azure_subscription_id, &azure_auth, &settings, &logger).await?;
-				Ok(result)
-			}).await?;
-
-			Ok(())
-		});
+		pending_requests.push(handle_request(stream, &handler, &azure_subscription_id, &azure_auth, &settings, &log_sender));
 	}
 }
 
@@ -175,26 +156,85 @@ async fn next_stream(
 	pending_requests: &mut (impl futures_util::stream::Stream<Item = anyhow::Result<()>> + Unpin),
 	misc_logger: &log2::Logger,
 ) -> tokio::net::TcpStream {
-	let mut stream = std::pin::pin!(async {
-		let (stream, _) = listener.accept().await.context("could not accept connection")?;
-		Ok(stream)
-	});
-
-	// FuturesUnordered repeatedly yields Poll::Ready(None) when it's empty, but we want to treat it like it yields Poll::Pending.
-	// So chain(stream::pending()) to it.
-	let mut pending_requests = futures_util::StreamExt::chain(pending_requests, futures_util::stream::pending());
-
 	loop {
-		let next = futures_util::future::try_select(&mut stream, futures_util::TryStreamExt::try_next(&mut pending_requests));
-		match next.await {
-			Ok(futures_util::future::Either::Left((stream, _))) => break stream,
-			Ok(futures_util::future::Either::Right(_)) => (),
-			Err(err) => {
-				let (err, _) = err.factor_first();
-				misc_logger.report_error(&err);
-			},
+		let stream = std::pin::pin!(listener.accept());
+		let next = futures_util::future::select(stream, futures_util::TryStreamExt::try_collect(&mut *pending_requests));
+		let stream = match next.await {
+			futures_util::future::Either::Left((stream, _)) => stream.context("could not accept connection"),
+
+			// `pending_requests` is empty.
+			futures_util::future::Either::Right((Ok(()), stream)) => stream.await.context("could not accept connection"),
+
+			futures_util::future::Either::Right((Err(err), _)) => Err(err),
+		};
+		match stream {
+			Ok((stream, _)) => break stream,
+			Err(err) => misc_logger.report_error(&err),
 		}
 	}
+}
+
+async fn handle_request<H>(
+	mut stream: tokio::net::TcpStream,
+	handler: &H,
+	azure_subscription_id: &str,
+	azure_auth: &azure::Auth,
+	settings: &H::Settings<'_>,
+	log_sender: &azure::management::log_analytics::LogSender<'_>,
+) -> anyhow::Result<()>
+where
+	H: Handler,
+{
+	let (mut read, mut write) = stream.split();
+
+	let mut buf = [std::mem::MaybeUninit::uninit(); 8192];
+	let mut buf = tokio::io::ReadBuf::uninit(&mut buf);
+	let (method, path, logger) = loop {
+		if let Some(req) = parse_request(&mut read, &mut buf).await? {
+			break req;
+		}
+	};
+
+	let res_f = std::pin::pin!(logger.report_operation("function_invocation/request", (method, path), <log2::ScopedObjectOperation>::Get, async {
+		if method == "POST" {
+			let result = handler.handle(path, azure_subscription_id, azure_auth, settings, &logger).await;
+			match result {
+				Ok(Some(message)) => Response::Ok(message),
+				Ok(None) => Response::UnknownFunction,
+				Err(err) => Response::Error(format!("{err:?}")),
+			}
+		}
+		else {
+			Response::MethodNotAllowed
+		}
+	}));
+
+	let (stop_log_sender_tx, log_sender_f) = make_log_sender(&logger, log_sender);
+	let log_sender_f = std::pin::pin!(log_sender_f);
+
+	let res = match futures_util::future::select(res_f, log_sender_f).await {
+		futures_util::future::Either::Left((res, log_sender_f)) => {
+			_ = stop_log_sender_tx.send(());
+
+			if let Err(err) = log_sender_f.await {
+				log::error!("{:?}", err.context("log sender failed"));
+			}
+
+			res
+		},
+
+		futures_util::future::Either::Right((Ok(()), _)) =>
+			unreachable!("log sender completed before scoped future"),
+
+		futures_util::future::Either::Right((Err(err), res_f)) => {
+			log::error!("{:?}", err.context("log sender failed"));
+			res_f.await
+		},
+	};
+
+	res.write_to(&mut write).await?;
+
+	Ok(())
 }
 
 async fn parse_request<'a>(
@@ -255,7 +295,7 @@ async fn parse_request<'a>(
 				if read == 0 {
 					return Err(anyhow::anyhow!("malformed request: EOF"));
 				}
-				remaining = remaining.checked_sub(read).unwrap_or_default();
+				remaining = remaining.saturating_sub(read);
 			}
 		}
 		else if name.eq_ignore_ascii_case(X_AZURE_FUNCTIONS_INVOCATIONID) {
@@ -270,61 +310,6 @@ async fn parse_request<'a>(
 		path,
 		logger,
 	)))
-}
-
-async fn handle_request(
-	method: &str,
-	path: &str,
-	logger: &log2::Logger,
-	log_sender: &azure::management::log_analytics::LogSender<'_>,
-	stream: &mut (impl tokio::io::AsyncWrite + Unpin),
-	res_f: impl std::future::Future<Output = anyhow::Result<Option<std::borrow::Cow<'static, str>>>>,
-) -> anyhow::Result<()> {
-	let res_f = std::pin::pin!(async {
-		logger.report_state("function_invocation", "", format_args!("Request {{ method: {method:?}, path: {path:?} }}"));
-
-		let res =
-			if method == "POST" {
-				match res_f.await {
-					Ok(Some(message)) => Response::Ok(message),
-					Ok(None) => Response::UnknownFunction,
-					Err(err) => Response::Error(format!("{err:?}")),
-				}
-			}
-			else {
-				Response::MethodNotAllowed
-			};
-
-		logger.report_state("function_invocation", "", format_args!("Response {{ {res:?} }}"));
-		res
-	});
-
-	let (stop_log_sender_tx, log_sender_f) = make_log_sender(logger, log_sender);
-	let log_sender_f = std::pin::pin!(log_sender_f);
-
-	let res = match futures_util::future::select(res_f, log_sender_f).await {
-		futures_util::future::Either::Left((res, log_sender_f)) => {
-			_ = stop_log_sender_tx.send(());
-
-			if let Err(err) = log_sender_f.await {
-				log::error!("{:?}", err.context("log sender failed"));
-			}
-
-			res
-		},
-
-		futures_util::future::Either::Right((Ok(()), _)) =>
-			unreachable!("log sender completed before scoped future"),
-
-		futures_util::future::Either::Right((Err(err), res_f)) => {
-			log::error!("{:?}", err.context("log sender failed"));
-			res_f.await
-		},
-	};
-
-	res.write_to(stream).await?;
-
-	Ok(())
 }
 
 fn make_log_sender<'a>(
@@ -343,7 +328,7 @@ fn make_log_sender<'a>(
 		loop {
 			let push_timer_tick = std::pin::pin!(push_timer.tick());
 
-			let r = futures_util::future::select(push_timer_tick, stop_log_sender_rx).await;
+			let r = futures_util::future::select(push_timer_tick, &mut stop_log_sender_rx).await;
 
 			let records = logger.take_records();
 
@@ -355,7 +340,7 @@ fn make_log_sender<'a>(
 			}
 
 			match r {
-				futures_util::future::Either::Left((_, stop_log_sender_rx_)) => stop_log_sender_rx = stop_log_sender_rx_,
+				futures_util::future::Either::Left(_) => (),
 				futures_util::future::Either::Right(_) => break Ok(()),
 			}
 		}

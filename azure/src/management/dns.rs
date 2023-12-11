@@ -38,7 +38,7 @@ impl<'a> super::Client<'a> {
 					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}?api-version=2018-05-01"),
 					None::<&()>,
 				).await?;
-			Ok(name_servers)
+			Ok::<_, anyhow::Error>(name_servers)
 		}).await?;
 
 		Ok(name_servers)
@@ -108,7 +108,7 @@ impl<'a> super::Client<'a> {
 					}),
 				).await?;
 
-			Ok(())
+			Ok::<_, anyhow::Error>(())
 		}).await?;
 
 		Ok(())
@@ -140,7 +140,7 @@ impl<'a> super::Client<'a> {
 					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}/TXT/{name}?api-version=2018-05-01"),
 					None::<&()>,
 				).await?;
-			Ok(())
+			Ok::<_, anyhow::Error>(())
 		}).await?;
 
 		Ok(())

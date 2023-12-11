@@ -31,7 +31,7 @@ impl<'a> super::Client<'a> {
 								key_ops: &["sign", "verify"],
 							}),
 						).await?;
-					Ok(key)
+					Ok::<_, anyhow::Error>(key)
 				},
 			).await?;
 
@@ -68,7 +68,7 @@ impl<'a> super::Client<'a> {
 					None::<&()>,
 				).await?;
 			let key = response.map(|CreateOrGetKeyResponse { key }| key);
-			Ok(key)
+			Ok::<_, anyhow::Error>(key)
 		}).await?;
 
 		let key = key.map(|key| Key::new(key, self)).transpose()?;
@@ -163,7 +163,7 @@ impl acme::AccountKey for Key<'_> {
 							value: &digest,
 						}),
 					).await?;
-				Ok(signature)
+				Ok::<_, anyhow::Error>(signature)
 			}).await?;
 			Ok(signature)
 		}

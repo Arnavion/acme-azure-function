@@ -89,7 +89,7 @@ impl<'a> super::Client<'a> {
 								},
 							}),
 						).await?;
-					Ok(csr)
+					Ok::<_, anyhow::Error>(csr)
 				},
 			).await?;
 
@@ -150,7 +150,7 @@ impl<'a> super::Client<'a> {
 						format_args!("/certificates/{certificate_name}?api-version=7.3"),
 						None::<&()>,
 					).await?;
-				Ok(certificate)
+				Ok::<_, anyhow::Error>(certificate)
 			}).await?;
 
 		Ok(certificate)
@@ -191,7 +191,7 @@ impl<'a> super::Client<'a> {
 							x5c: certificates,
 						}),
 					).await?;
-				Ok(())
+				Ok::<_, anyhow::Error>(())
 			},
 		).await?;
 
