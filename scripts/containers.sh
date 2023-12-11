@@ -60,7 +60,7 @@ if ! podman image exists localhost/azure-function-build-func >/dev/null; then
         trap "rm -rf '$directory'" EXIT
 
         >"$directory/Containerfile" cat <<-EOF
-FROM docker.io/library/debian:11-slim
+FROM docker.io/library/debian:12-slim
 
 COPY build.sh /
 RUN /build.sh
@@ -77,7 +77,7 @@ set -euo pipefail
 
 apt-get update -y
 
-apt-get install -y apt-transport-https curl gpg libicu67 lsb-release unzip
+apt-get install -y apt-transport-https curl gpg libicu72 lsb-release unzip
 curl -L 'https://packages.microsoft.com/keys/microsoft.asc' | gpg --dearmor > /etc/apt/trusted.gpg.d/microsoft.asc.gpg
 echo "deb [arch=amd64] https://packages.microsoft.com/repos/azure-cli/ \$(lsb_release -cs) main" > /etc/apt/sources.list.d/azure-cli.list
 apt-get update -y
@@ -103,7 +103,7 @@ EOF
             --layers=false \
             --tag=localhost/azure-function-build-func \
             "$directory"
-        podman image rm docker.io/library/debian:11-slim || :
+        podman image rm docker.io/library/debian:12-slim || :
     ) & :
 fi
 
