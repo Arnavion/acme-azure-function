@@ -37,3 +37,7 @@ tokio = { version = "1.8", default-features = false, features = [
 azure = { path = "../azure" }
 log2 = { path = "../log2" }
 time2 = { path = "../time2" }
+
+
+[lints]
+workspace = true

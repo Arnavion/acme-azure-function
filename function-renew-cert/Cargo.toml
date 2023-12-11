@@ -33,3 +33,7 @@ acme = { path = "../acme" }
 azure = { path = "../azure" }
 http-common = { path = "../http-common" }
 log2 = { path = "../log2" }
+
+
+[lints]
+workspace = true

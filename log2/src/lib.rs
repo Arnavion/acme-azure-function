@@ -1,11 +1,3 @@
-#![deny(rust_2018_idioms, warnings)]
-#![deny(clippy::all, clippy::pedantic)]
-#![allow(
-	clippy::let_unit_value,
-	clippy::missing_errors_doc,
-	clippy::must_use_candidate,
-)]
-
 mod object_id;
 pub use object_id::ObjectId;
 

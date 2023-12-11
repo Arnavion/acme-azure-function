@@ -1,6 +1,3 @@
-#![deny(rust_2018_idioms, warnings)]
-#![deny(clippy::all, clippy::pedantic)]
-
 pub const RFC3339_MILLISECONDS: &[time::format_description::FormatItem<'_>] = &[
 	time::format_description::FormatItem::Component(time::format_description::Component::Year(time::format_description::modifier::Year::default())),
 	time::format_description::FormatItem::Literal(b"-"),

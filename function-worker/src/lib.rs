@@ -1,11 +1,3 @@
-#![deny(rust_2018_idioms, warnings)]
-#![deny(clippy::all, clippy::pedantic)]
-#![allow(
-	clippy::let_unit_value,
-	clippy::missing_errors_doc,
-	clippy::type_complexity,
-)]
-
 use anyhow::Context;
 
 pub trait Handler {

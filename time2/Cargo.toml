@@ -11,3 +11,7 @@ publish = false
 time = { version = "0.3.4", default-features = false, features = [
 	"formatting", # for time::format_description
 ] }
+
+
+[lints]
+workspace = true

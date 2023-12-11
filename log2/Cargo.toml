@@ -22,3 +22,7 @@ time = { version = "0.3.4", default-features = false, features = [
 ] }
 
 time2 = { path = "../time2" }
+
+
+[lints]
+workspace = true

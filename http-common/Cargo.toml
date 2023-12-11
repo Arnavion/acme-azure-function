@@ -30,3 +30,7 @@ serde_json = { version = "1", default-features = false, features = [
 time = { version = "0.3", default-features = false, features = [
 	"std", # for time::OffsetDateTime::now_utc(), time::OffsetDateTime: From<std::time::SystemTime>
 ] }
+
+
+[lints]
+workspace = true
