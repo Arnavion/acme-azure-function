@@ -14,19 +14,19 @@ impl function_worker::Handler for Handler {
 		azure_auth: &'this azure::Auth,
 		settings: &'this function_renew_cert::Settings<'_>,
 		logger: &'this log2::Logger,
-	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<std::borrow::Cow<'static, str>>>> + 'this>> {
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + 'this>> {
 		Box::pin(async move {
 			if path == "renew-cert" {
-				let result = function_renew_cert::main(
+				function_renew_cert::main(
 					azure_subscription_id,
 					azure_auth,
 					settings,
 					logger,
 				).await?;
-				return Ok(Some(result));
+				return Ok(true);
 			}
 
-			Ok(None)
+			Ok(false)
 		})
 	}
 }

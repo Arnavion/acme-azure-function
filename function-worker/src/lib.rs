@@ -10,7 +10,7 @@ pub trait Handler {
 		azure_auth: &'this azure::Auth,
 		settings: &'this Self::Settings<'_>,
 		logger: &'this log2::Logger,
-	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<std::borrow::Cow<'static, str>>>> + 'this>>;
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + 'this>>;
 }
 
 impl<'h, H> Handler for &'h H where H: Handler {
@@ -23,7 +23,7 @@ impl<'h, H> Handler for &'h H where H: Handler {
 		azure_auth: &'this azure::Auth,
 		settings: &'this Self::Settings<'_>,
 		logger: &'this log2::Logger,
-	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Option<std::borrow::Cow<'static, str>>>> + 'this>> {
+	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + 'this>> {
 		<H as Handler>::handle(*self, path, azure_subscription_id, azure_auth, settings, logger)
 	}
 }
@@ -199,8 +199,8 @@ where
 		if method == "POST" {
 			let result = handler.handle(path, azure_subscription_id, azure_auth, settings, &logger).await;
 			match result {
-				Ok(Some(message)) => Response::Ok(message),
-				Ok(None) => Response::UnknownFunction,
+				Ok(true) => Response::Ok,
+				Ok(false) => Response::UnknownFunction,
 				Err(err) => Response::Error(format!("{err:?}")),
 			}
 		}
@@ -351,7 +351,7 @@ fn make_log_sender<'a>(
 
 #[derive(Debug)]
 enum Response {
-	Ok(std::borrow::Cow<'static, str>),
+	Ok,
 	UnknownFunction,
 	MethodNotAllowed,
 	Error(String),
@@ -360,7 +360,7 @@ enum Response {
 impl Response {
 	async fn write_to(&self, stream: &mut (impl tokio::io::AsyncWrite + Unpin)) -> anyhow::Result<()> {
 		let status = match self {
-			Response::Ok(_) => http::StatusCode::OK,
+			Response::Ok => http::StatusCode::OK,
 			Response::UnknownFunction => http::StatusCode::NOT_FOUND,
 			Response::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
 			Response::Error(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -375,7 +375,7 @@ impl Response {
 			std::io::IoSlice::new(b""), // body
 		];
 		match self {
-			Response::Ok(_) => {
+			Response::Ok => {
 				io_slices[3] = std::io::IoSlice::new(b"content-type:application/json\r\n");
 				io_slices[5] = std::io::IoSlice::new(br#"{"Outputs":{"":""},"Logs":null,"ReturnValue":""}"#);
 			},

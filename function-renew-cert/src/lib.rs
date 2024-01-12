@@ -5,7 +5,7 @@ pub async fn main(
 	azure_auth: &azure::Auth,
 	settings: &Settings<'_>,
 	logger: &log2::Logger,
-) -> anyhow::Result<std::borrow::Cow<'static, str>> {
+) -> anyhow::Result<()> {
 	let user_agent: http_common::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
@@ -26,7 +26,7 @@ pub async fn main(
 					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
 					"does not need to be renewed",
 				);
-				return Ok(format!("certificate does not need to be renewed: {certificate:?}").into());
+				return Ok(());
 			}
 		}
 	}
@@ -190,11 +190,11 @@ pub async fn main(
 		"renewed",
 	);
 
-	let certificate =
+	_ =
 		azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?
 		.context("newly-created certificate does not exist")?;
 
-	Ok(format!("certificate has been renewed: {certificate:?}").into())
+	Ok(())
 }
 
 #[derive(serde::Deserialize)]
