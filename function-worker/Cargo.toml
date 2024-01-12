@@ -14,7 +14,7 @@ anyhow = { version = "1.0.46", default-features = false, features = [
 futures-util = { version = "0.3", default-features = false, features = [
 	"alloc", # for futures_util::stream::FuturesUnordered
 ] }
-http = { version = "0.2.5", default-features = false }
+http = { version = "1", default-features = false }
 httparse = { version = "1.5", default-features = false, features = [
 	"std", # for httparse::Error: std::error::Error
 ] }

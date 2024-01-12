@@ -11,8 +11,8 @@ pub struct Client<'a> {
 	auth: &'a crate::Auth,
 
 	client: http_common::Client,
-	authority: http::uri::Authority,
-	cached_authorization: tokio::sync::OnceCell<http::HeaderValue>,
+	authority: http_common::UriAuthority,
+	cached_authorization: tokio::sync::OnceCell<http_common::HeaderValue>,
 	logger: &'a log2::Logger,
 }
 
@@ -20,7 +20,7 @@ impl<'a> Client<'a> {
 	pub fn new(
 		key_vault_name: &'a str,
 		auth: &'a crate::Auth,
-		user_agent: http::HeaderValue,
+		user_agent: http_common::HeaderValue,
 		logger: &'a log2::Logger,
 	) -> anyhow::Result<Self> {
 		Ok(Client {
@@ -38,9 +38,9 @@ impl<'a> Client<'a> {
 impl crate::Client for Client<'_> {
 	const AUTH_RESOURCE: &'static str = "https://vault.azure.net";
 
-	fn make_url(&self, path_and_query: std::fmt::Arguments<'_>) -> anyhow::Result<http::uri::Parts> {
-		let mut url: http::uri::Parts = Default::default();
-		url.scheme = Some(http::uri::Scheme::HTTPS);
+	fn make_url(&self, path_and_query: std::fmt::Arguments<'_>) -> anyhow::Result<http_common::UriParts> {
+		let mut url: http_common::UriParts = Default::default();
+		url.scheme = Some(http_common::UriScheme::HTTPS);
 		url.authority = Some(self.authority.clone());
 		url.path_and_query = Some(path_and_query.to_string().try_into().context("could not parse request URL")?);
 		Ok(url)
@@ -49,7 +49,7 @@ impl crate::Client for Client<'_> {
 	fn request_parameters(&self) -> (
 		&crate::Auth,
 		&http_common::Client,
-		&tokio::sync::OnceCell<http::HeaderValue>,
+		&tokio::sync::OnceCell<http_common::HeaderValue>,
 		&log2::Logger,
 	) {
 		(

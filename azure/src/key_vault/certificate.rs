@@ -45,12 +45,12 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::ACCEPTED, Some(body)) => Some(body.as_json()?),
+					(http_common::StatusCode::ACCEPTED, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -65,7 +65,7 @@ impl<'a> super::Client<'a> {
 					let Response { csr } =
 						crate::request(
 							self,
-							http::Method::POST,
+							http_common::Method::POST,
 							format_args!("/certificates/{certificate_name}/create?api-version=7.3"),
 							Some(&Request {
 								policy: RequestPolicy {
@@ -101,9 +101,9 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
 				struct ResponseInner<'a> {
@@ -118,7 +118,7 @@ impl<'a> super::Client<'a> {
 				}
 
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => {
+					(http_common::StatusCode::OK, Some(body)) => {
 						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
 
 						let not_after = time::OffsetDateTime::from_unix_timestamp(exp).context("certificate expiry out of range")?;
@@ -134,7 +134,7 @@ impl<'a> super::Client<'a> {
 						})))
 					},
 
-					(http::StatusCode::NOT_FOUND, _) => Some(Response(None)),
+					(http_common::StatusCode::NOT_FOUND, _) => Some(Response(None)),
 
 					_ => None,
 				})
@@ -146,7 +146,7 @@ impl<'a> super::Client<'a> {
 				let Response(certificate) =
 					crate::request(
 						self,
-						http::Method::GET,
+						http_common::Method::GET,
 						format_args!("/certificates/{certificate_name}?api-version=7.3"),
 						None::<&()>,
 					).await?;
@@ -166,12 +166,12 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				_body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				_body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					http::StatusCode::CREATED => Some(Response),
+					http_common::StatusCode::CREATED => Some(Response),
 					_ => None,
 				})
 			}
@@ -185,7 +185,7 @@ impl<'a> super::Client<'a> {
 				let _: Response =
 					crate::request(
 						self,
-						http::Method::POST,
+						http_common::Method::POST,
 						format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.3"),
 						Some(&Request {
 							x5c: certificates,

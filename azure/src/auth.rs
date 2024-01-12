@@ -3,7 +3,7 @@ use anyhow::Context;
 pub enum Auth {
 	ManagedIdentity {
 		endpoint: String,
-		secret: http::HeaderValue,
+		secret: http_common::HeaderValue,
 	},
 
 	#[cfg(debug_assertions)]
@@ -20,14 +20,14 @@ impl Auth {
 		client: &http_common::Client,
 		resource: &str,
 		logger: &log2::Logger,
-	) -> anyhow::Result<http::HeaderValue> {
-		struct Response(http::HeaderValue);
+	) -> anyhow::Result<http_common::HeaderValue> {
+		struct Response(http_common::HeaderValue);
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
 				struct ResponseInner<'a> {
@@ -38,7 +38,7 @@ impl Auth {
 				}
 
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => {
+					(http_common::StatusCode::OK, Some(body)) => {
 						let ResponseInner { access_token, token_type } = body.as_json()?;
 						let header_value =
 							format!("{token_type} {access_token}")
@@ -53,11 +53,11 @@ impl Auth {
 		let log2::Secret(authorization) = logger.report_operation("azure/authorization", resource, <log2::ScopedObjectOperation>::Get, async {
 			let req = match self {
 				Auth::ManagedIdentity { endpoint, secret } => {
-					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
-					const X_IDENTITY_HEADER: http::header::HeaderName = http::header::HeaderName::from_static("x-identity-header");
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderName
+					const X_IDENTITY_HEADER: http_common::HeaderName = http_common::HeaderName::from_static("x-identity-header");
 
-					let mut req = http::Request::new(Default::default());
-					*req.method_mut() = http::Method::GET;
+					let mut req = http_common::Request::new(Default::default());
+					*req.method_mut() = http_common::Method::GET;
 					*req.uri_mut() =
 						format!("{endpoint}?resource={resource}&api-version=2019-08-01")
 						.try_into().context("could not construct authorization request URI")?;
@@ -74,8 +74,8 @@ impl Auth {
 						.append_pair("client_secret", client_secret)
 						.append_pair("scope", &format!("{resource}/.default"))
 						.finish();
-					let mut req = http::Request::new(body.into());
-					*req.method_mut() = http::Method::POST;
+					let mut req = http_common::Request::new(body.into());
+					*req.method_mut() = http_common::Method::POST;
 					*req.uri_mut() =
 						format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token")
 						.try_into().context("could not construct authorization request URI")?;

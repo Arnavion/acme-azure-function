@@ -4,18 +4,18 @@ pub struct Account<'a, K> {
 	account_key: &'a K,
 	account_url: Option<String>,
 	client: http_common::Client,
-	nonce: Option<http::HeaderValue>,
-	new_nonce_url: http::Uri,
-	new_order_url: http::Uri,
+	nonce: Option<http_common::HeaderValue>,
+	new_nonce_url: http_common::Uri,
+	new_order_url: http_common::Uri,
 	logger: &'a log2::Logger,
 }
 
 impl<'a, K> Account<'a, K> where K: AccountKey {
 	pub async fn new(
-		acme_directory_url: http::Uri,
+		acme_directory_url: http_common::Uri,
 		acme_contact_url: &str,
 		account_key: &'a K,
-		user_agent: http::HeaderValue,
+		user_agent: http_common::HeaderValue,
 		logger: &'a log2::Logger,
 	) -> anyhow::Result<Account<'a, K>> {
 		#[derive(Debug, serde::Deserialize)]
@@ -32,12 +32,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		impl http_common::FromResponse for DirectoryResponse {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+					(http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -50,8 +50,8 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			new_nonce_url: http_common::DeserializableUri(new_nonce_url),
 			new_order_url: http_common::DeserializableUri(new_order_url),
 		}, log2::Secret(nonce)) = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
-			let mut req = http::Request::new(Default::default());
-			*req.method_mut() = http::Method::GET;
+			let mut req = http_common::Request::new(Default::default());
+			*req.method_mut() = http_common::Method::GET;
 			*req.uri_mut() = acme_directory_url;
 
 			let ResponseWithNewNonce { body, new_nonce } = client.request(req).await.context("could not execute HTTP request")?;
@@ -95,12 +95,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 			impl http_common::FromResponse for NewAccountResponse {
 				fn from_response(
-					status: http::StatusCode,
-					body: Option<&mut http_common::Body<impl std::io::Read>>,
-					_headers: http::HeaderMap,
+					status: http_common::StatusCode,
+					body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+					_headers: http_common::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(http::StatusCode::CREATED | http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+						(http_common::StatusCode::CREATED | http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 						_ => None,
 					})
 				}
@@ -175,15 +175,15 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 				OrderResponse::Pending(OrderObjPending { authorization_urls }) => {
 					#[derive(Debug)]
 					enum AuthorizationResponse {
-						Pending { hasher: sha2::Sha256, challenge_url: http::Uri },
+						Pending { hasher: sha2::Sha256, challenge_url: http_common::Uri },
 						Valid,
 					}
 
 					impl http_common::FromResponse for AuthorizationResponse {
 						fn from_response(
-							status: http::StatusCode,
-							body: Option<&mut http_common::Body<impl std::io::Read>>,
-							_headers: http::HeaderMap,
+							status: http_common::StatusCode,
+							body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+							_headers: http_common::HeaderMap,
 						) -> anyhow::Result<Option<Self>> {
 							#[derive(serde::Deserialize)]
 							struct AuthorizationPending<'a> {
@@ -201,7 +201,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 							}
 
 							Ok(match (status, body) {
-								(http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
+								(http_common::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 									Authorization::Pending(AuthorizationPending { challenges }) => {
 										let (token, challenge_url) =
 											challenges.into_iter()
@@ -307,12 +307,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		impl http_common::FromResponse for ChallengeResponse {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
+					(http_common::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 						Challenge::Pending(serde::de::IgnoredAny) => ChallengeResponse::Pending,
 
 						Challenge::Processing => {
@@ -335,12 +335,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		impl http_common::FromResponse for AuthorizationResponse {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
+					(http_common::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 						Authorization::Pending(serde::de::IgnoredAny) => {
 							let retry_after = http_common::get_retry_after(&headers, std::time::Duration::from_secs(1), std::time::Duration::from_secs(30))?;
 							AuthorizationResponse::Pending { retry_after }
@@ -478,12 +478,12 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		impl http_common::FromResponse for CertificateResponse {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => {
+					(http_common::StatusCode::OK, Some(body)) => {
 						let certificate = body.as_str("application/pem-certificate-chain")?.into_owned();
 						Some(CertificateResponse(certificate))
 					},
@@ -502,7 +502,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 	async fn post<TRequest, TResponse>(
 		&mut self,
-		url: http::Uri,
+		url: http_common::Uri,
 		body: Option<&TRequest>,
 	) -> anyhow::Result<TResponse>
 	where
@@ -510,9 +510,9 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		TResponse: http_common::FromResponse,
 	{
 		// This fn encapsulates the non-generic parts of `post` to reduce code size from monomorphization.
-		async fn make_request<K>(account: &mut Account<'_, K>, url: http::Uri, payload: Vec<u8>) -> anyhow::Result<http::Request<hyper::Body>> where K: AccountKey {
-			#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
-			const APPLICATION_JOSE_JSON: http::HeaderValue = http::HeaderValue::from_static("application/jose+json");
+		async fn make_request<K>(account: &mut Account<'_, K>, url: http_common::Uri, payload: Vec<u8>) -> anyhow::Result<http_common::Request<http_common::RequestBody>> where K: AccountKey {
+			#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderValue
+			const APPLICATION_JOSE_JSON: http_common::HeaderValue = http_common::HeaderValue::from_static("application/jose+json");
 
 			let nonce =
 				if let Some(nonce) = account.nonce.take() {
@@ -523,20 +523,20 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 					impl http_common::FromResponse for NewNonceResponse {
 						fn from_response(
-							status: http::StatusCode,
-							_body: Option<&mut http_common::Body<impl std::io::Read>>,
-							_headers: http::HeaderMap,
+							status: http_common::StatusCode,
+							_body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+							_headers: http_common::HeaderMap,
 						) -> anyhow::Result<Option<Self>> {
 							Ok(match status {
-								http::StatusCode::OK => Some(NewNonceResponse),
+								http_common::StatusCode::OK => Some(NewNonceResponse),
 								_ => None,
 							})
 						}
 					}
 
 					let log2::Secret(nonce) = account.logger.report_operation("acme/nonce", "", <log2::ScopedObjectOperation>::Get, async {
-						let mut req = http::Request::new(Default::default());
-						*req.method_mut() = http::Method::HEAD;
+						let mut req = http_common::Request::new(Default::default());
+						*req.method_mut() = http_common::Method::HEAD;
 						*req.uri_mut() = account.new_nonce_url.clone();
 
 						let ResponseWithNewNonce::<NewNonceResponse> { body: _, new_nonce } =
@@ -559,7 +559,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					jwk_or_kid: JwkOrKid<'a>,
 
 					#[serde(serialize_with = "serialize_header_value")]
-					nonce: &'a http::HeaderValue,
+					nonce: &'a http_common::HeaderValue,
 
 					url: std::fmt::Arguments<'a>,
 				}
@@ -573,7 +573,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 					Kid(&'a str),
 				}
 
-				fn serialize_header_value<S>(header_value: &http::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+				fn serialize_header_value<S>(header_value: &http_common::HeaderValue, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
 					let header_value = header_value.to_str().map_err(serde::ser::Error::custom)?;
 					serializer.serialize_str(header_value)
 				}
@@ -606,33 +606,28 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 			// All strings are base64 so there's no need to get serde_json involved
 			let body = {
-				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
-				const PART1: hyper::body::Bytes = hyper::body::Bytes::from_static(br#"{"payload":""#);
-				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
-				const PART2: hyper::body::Bytes = hyper::body::Bytes::from_static(br#"","protected":""#);
-				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
-				const PART3: hyper::body::Bytes = hyper::body::Bytes::from_static(br#"","signature":""#);
-				#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
-				const PART4: hyper::body::Bytes = hyper::body::Bytes::from_static(br#""}"#);
+				const PART1: http_common::Bytes = http_common::Bytes::from_static(br#"{"payload":""#);
+				const PART2: http_common::Bytes = http_common::Bytes::from_static(br#"","protected":""#);
+				const PART3: http_common::Bytes = http_common::Bytes::from_static(br#"","signature":""#);
+				const PART4: http_common::Bytes = http_common::Bytes::from_static(br#""}"#);
 
-				let body =
-					futures_util::stream::iter([
-						Ok::<_, std::convert::Infallible>(PART1),
-						Ok(payload.into()),
-						Ok(PART2),
-						Ok(protected.into()),
-						Ok(PART3),
-						Ok(signature.into()),
-						Ok(PART4),
-					]);
+				let body = [
+					PART1,
+					payload.into(),
+					PART2,
+					protected.into(),
+					PART3,
+					signature.into(),
+					PART4,
+				];
 
-				hyper::Body::wrap_stream(body)
+				http_common::RequestBody::from_iter(body)
 			};
 
-			let mut req = http::Request::new(body);
-			*req.method_mut() = http::Method::POST;
+			let mut req = http_common::Request::new(body);
+			*req.method_mut() = http_common::Method::POST;
 			*req.uri_mut() = url;
-			req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JOSE_JSON);
+			req.headers_mut().insert(http_common::CONTENT_TYPE, APPLICATION_JOSE_JSON);
 			Ok(req)
 		}
 
@@ -704,22 +699,22 @@ pub enum Order {
 }
 
 pub struct OrderPending {
-	order_url: http::Uri,
+	order_url: http_common::Uri,
 	pub authorizations: Vec<OrderPendingAuthorization>,
 }
 
 pub struct OrderPendingAuthorization {
-	authorization_url: http::Uri,
-	challenge_url: http::Uri,
+	authorization_url: http_common::Uri,
+	challenge_url: http_common::Uri,
 	pub dns_txt_record_content: String,
 }
 
 pub struct OrderReady {
-	order_url: http::Uri,
+	order_url: http_common::Uri,
 }
 
 pub struct OrderValid {
-	certificate_url: http::Uri,
+	certificate_url: http_common::Uri,
 }
 
 pub const JWS_BASE64_ENGINE: base64::engine::GeneralPurpose =
@@ -730,19 +725,19 @@ pub const JWS_BASE64_ENGINE: base64::engine::GeneralPurpose =
 
 struct ResponseWithNewNonce<TResponse> {
 	body: TResponse,
-	new_nonce: Option<http::HeaderValue>,
+	new_nonce: Option<http_common::HeaderValue>,
 }
 
 impl<TResponse> http_common::FromResponse for ResponseWithNewNonce<TResponse> where TResponse: http_common::FromResponse {
 	fn from_response(
-		status: http::StatusCode,
-		body: Option<&mut http_common::Body<impl std::io::Read>>,
-		mut headers: http::HeaderMap,
+		status: http_common::StatusCode,
+		body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+		mut headers: http_common::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
-		#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
-		const REPLAY_NONCE: http::header::HeaderName = http::header::HeaderName::from_static("replay-nonce");
+		#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderName
+		const REPLAY_NONCE: http_common::HeaderName = http_common::HeaderName::from_static("replay-nonce");
 
-		#[allow(clippy::borrow_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
+		#[allow(clippy::borrow_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderName
 		let new_nonce = headers.remove(&REPLAY_NONCE);
 		match TResponse::from_response(status, body, headers) {
 			Ok(Some(body)) => Ok(Some(ResponseWithNewNonce { body, new_nonce })),
@@ -763,7 +758,7 @@ enum OrderResponse<TPending, TReady> {
 	Ready(TReady),
 
 	Valid {
-		certificate_url: http::Uri,
+		certificate_url: http_common::Uri,
 	},
 }
 
@@ -773,9 +768,9 @@ where
 	TReady: serde::de::DeserializeOwned,
 {
 	fn from_response(
-		status: http::StatusCode,
-		body: Option<&mut http_common::Body<impl std::io::Read>>,
-		headers: http::HeaderMap,
+		status: http_common::StatusCode,
+		body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+		headers: http_common::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		#[derive(serde::Deserialize)]
 		#[serde(tag = "status")]
@@ -797,7 +792,7 @@ where
 		}
 
 		Ok(match (status, body) {
-			(http::StatusCode::CREATED | http::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
+			(http_common::StatusCode::CREATED | http_common::StatusCode::OK, Some(body)) => Some(match body.as_json()? {
 				Order::Pending(pending) => OrderResponse::Pending(pending),
 
 				Order::Processing => {

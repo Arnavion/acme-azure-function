@@ -7,25 +7,25 @@ pub mod key_vault;
 
 pub mod management;
 
-#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderValue
-const APPLICATION_JSON: http::HeaderValue = http::HeaderValue::from_static("application/json");
+#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderValue
+const APPLICATION_JSON: http_common::HeaderValue = http_common::HeaderValue::from_static("application/json");
 
 trait Client {
 	const AUTH_RESOURCE: &'static str;
 
-	fn make_url(&self, path_and_query: std::fmt::Arguments<'_>) -> anyhow::Result<http::uri::Parts>;
+	fn make_url(&self, path_and_query: std::fmt::Arguments<'_>) -> anyhow::Result<http_common::UriParts>;
 
 	fn request_parameters(&self) -> (
 		&Auth,
 		&http_common::Client,
-		&tokio::sync::OnceCell<http::HeaderValue>,
+		&tokio::sync::OnceCell<http_common::HeaderValue>,
 		&log2::Logger,
 	);
 }
 
 enum Url<'a> {
 	PathAndQuery(std::fmt::Arguments<'a>),
-	Uri(http::Uri),
+	Uri(http_common::Uri),
 }
 
 impl<'a> From<std::fmt::Arguments<'a>> for Url<'a> {
@@ -34,15 +34,15 @@ impl<'a> From<std::fmt::Arguments<'a>> for Url<'a> {
 	}
 }
 
-impl From<http::Uri> for Url<'_> {
-	fn from(uri: http::Uri) -> Self {
+impl From<http_common::Uri> for Url<'_> {
+	fn from(uri: http_common::Uri) -> Self {
 		Url::Uri(uri)
 	}
 }
 
 fn request<'client, 'url, TClient, TUrl, TBody, TResponse>(
 	client: &'client TClient,
-	method: http::Method,
+	method: http_common::Method,
 	url: TUrl,
 	body: Option<TBody>,
 ) -> impl std::future::Future<Output = anyhow::Result<TResponse>> + 'client
@@ -54,24 +54,24 @@ where
 {
 	// This fn encapsulates the non-generic parts of `request` to reduce code size from monomorphization.
 	fn make_request(
-		method: http::Method,
-		url: anyhow::Result<http::Uri>,
-		authorization: anyhow::Result<&http::HeaderValue>,
+		method: http_common::Method,
+		url: anyhow::Result<http_common::Uri>,
+		authorization: anyhow::Result<&http_common::HeaderValue>,
 		body: Option<serde_json::Result<Vec<u8>>>,
-	) -> anyhow::Result<hyper::Request<hyper::Body>> {
+	) -> anyhow::Result<http_common::Request<http_common::RequestBody>> {
 		let url = url?;
 		let authorization = authorization.context("could not get API authorization")?.clone();
 
 		let mut req =
 			if let Some(body) = body {
-				let mut req = hyper::Request::new(body.context("could not serialize request body")?.into());
-				req.headers_mut().insert(http::header::CONTENT_TYPE, APPLICATION_JSON);
+				let mut req = http_common::Request::new(body.context("could not serialize request body")?.into());
+				req.headers_mut().insert(http_common::CONTENT_TYPE, APPLICATION_JSON);
 				req
 			}
 			else {
-				let mut req = hyper::Request::new(Default::default());
-				if method != http::Method::GET {
-					req.headers_mut().insert(http::header::CONTENT_LENGTH, 0.into());
+				let mut req = http_common::Request::new(Default::default());
+				if method != http_common::Method::GET {
+					req.headers_mut().insert(http_common::CONTENT_LENGTH, 0.into());
 				}
 				req
 			};
@@ -79,7 +79,7 @@ where
 		*req.method_mut() = method;
 		*req.uri_mut() = url;
 
-		req.headers_mut().insert(http::header::AUTHORIZATION, authorization);
+		req.headers_mut().insert(http_common::AUTHORIZATION, authorization);
 
 		Ok(req)
 	}

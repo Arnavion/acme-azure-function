@@ -4,9 +4,9 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
 				struct ResponseInner {
@@ -20,7 +20,7 @@ impl<'a> super::Client<'a> {
 				}
 
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => {
+					(http_common::StatusCode::OK, Some(body)) => {
 						let ResponseInner { properties: ResponseProperties { name_servers } } = body.as_json()?;
 						Some(Response(name_servers))
 					},
@@ -34,7 +34,7 @@ impl<'a> super::Client<'a> {
 			let Response(name_servers) =
 				crate::request(
 					self,
-					http::Method::GET,
+					http_common::Method::GET,
 					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}?api-version=2018-05-01"),
 					None::<&()>,
 				).await?;
@@ -82,13 +82,13 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				_body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				_body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					http::StatusCode::OK |
-					http::StatusCode::CREATED => Some(Response),
+					http_common::StatusCode::OK |
+					http_common::StatusCode::CREATED => Some(Response),
 					_ => None,
 				})
 			}
@@ -98,7 +98,7 @@ impl<'a> super::Client<'a> {
 			let _: Response =
 				crate::request(
 					self,
-					http::Method::PUT,
+					http_common::Method::PUT,
 					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}/TXT/{name}?api-version=2018-05-01"),
 					Some(&Request {
 						properties: RequestProperties {
@@ -119,14 +119,14 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				_body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				_body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match status {
-					http::StatusCode::ACCEPTED |
-					http::StatusCode::NOT_FOUND |
-					http::StatusCode::OK => Some(Response),
+					http_common::StatusCode::ACCEPTED |
+					http_common::StatusCode::NOT_FOUND |
+					http_common::StatusCode::OK => Some(Response),
 					_ => None,
 				})
 			}
@@ -136,7 +136,7 @@ impl<'a> super::Client<'a> {
 			let _: Response =
 				crate::request(
 					self,
-					http::Method::DELETE,
+					http_common::Method::DELETE,
 					format_args!("/providers/Microsoft.Network/dnsZones/{dns_zone_name}/TXT/{name}?api-version=2018-05-01"),
 					None::<&()>,
 				).await?;

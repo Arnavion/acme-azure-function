@@ -23,7 +23,7 @@ impl<'a> super::Client<'a> {
 					let CreateOrGetKeyResponse { key } =
 						crate::request(
 							self,
-							http::Method::POST,
+							http_common::Method::POST,
 							format_args!("/keys/{key_name}/create?api-version=7.3"),
 							Some(&Request {
 								crv,
@@ -47,13 +47,13 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for Response {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => Some(Response(Some(body.as_json()?))),
-					(http::StatusCode::NOT_FOUND, _) => Some(Response(None)),
+					(http_common::StatusCode::OK, Some(body)) => Some(Response(Some(body.as_json()?))),
+					(http_common::StatusCode::NOT_FOUND, _) => Some(Response(None)),
 					_ => None,
 				})
 			}
@@ -63,7 +63,7 @@ impl<'a> super::Client<'a> {
 			let Response(response) =
 				crate::request(
 					self,
-					http::Method::GET,
+					http_common::Method::GET,
 					format_args!("/keys/{key_name}?api-version=7.3"),
 					None::<&()>,
 				).await?;
@@ -91,7 +91,7 @@ pub struct Key<'a> {
 	x: String,
 	y: String,
 	client: &'a super::Client<'a>,
-	sign_url: http::Uri,
+	sign_url: http_common::Uri,
 }
 
 impl acme::AccountKey for Key<'_> {
@@ -139,12 +139,12 @@ impl acme::AccountKey for Key<'_> {
 
 			impl http_common::FromResponse for KeyVaultSignResponse {
 				fn from_response(
-					status: http::StatusCode,
-					body: Option<&mut http_common::Body<impl std::io::Read>>,
-					_headers: http::HeaderMap,
+					status: http_common::StatusCode,
+					body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+					_headers: http_common::HeaderMap,
 				) -> anyhow::Result<Option<Self>> {
 					Ok(match (status, body) {
-						(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+						(http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 						_ => None,
 					})
 				}
@@ -156,7 +156,7 @@ impl acme::AccountKey for Key<'_> {
 				let KeyVaultSignResponse { value: signature } =
 					crate::request(
 						key.client,
-						http::Method::POST,
+						http_common::Method::POST,
 						key.sign_url.clone(),
 						Some(&KeyVaultSignRequest {
 							alg,
@@ -197,12 +197,12 @@ struct KeyResponse {
 
 impl http_common::FromResponse for CreateOrGetKeyResponse {
 	fn from_response(
-		status: http::StatusCode,
-		body: Option<&mut http_common::Body<impl std::io::Read>>,
-		_headers: http::HeaderMap,
+		status: http_common::StatusCode,
+		body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+		_headers: http_common::HeaderMap,
 	) -> anyhow::Result<Option<Self>> {
 		Ok(match (status, body) {
-			(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+			(http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 			_ => None,
 		})
 	}

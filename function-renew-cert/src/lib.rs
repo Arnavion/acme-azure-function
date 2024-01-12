@@ -6,7 +6,7 @@ pub async fn main(
 	settings: &Settings<'_>,
 	logger: &log2::Logger,
 ) -> anyhow::Result<std::borrow::Cow<'static, str>> {
-	let user_agent: http::HeaderValue =
+	let user_agent: http_common::HeaderValue =
 		concat!("github.com/Arnavion/acme-azure-function ", env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
 		.parse().expect("hard-coded user agent is valid HeaderValue");
 

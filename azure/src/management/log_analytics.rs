@@ -15,12 +15,12 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for GetResponse {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+					(http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -35,12 +35,12 @@ impl<'a> super::Client<'a> {
 
 		impl http_common::FromResponse for SharedKeysResponse {
 			fn from_response(
-				status: http::StatusCode,
-				body: Option<&mut http_common::Body<impl std::io::Read>>,
-				_headers: http::HeaderMap,
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
 			) -> anyhow::Result<Option<Self>> {
 				Ok(match (status, body) {
-					(http::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+					(http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
 					_ => None,
 				})
 			}
@@ -75,7 +75,7 @@ impl<'a> super::Client<'a> {
 					let GetResponse { properties: Properties { customer_id } } =
 						crate::request(
 							&self,
-							http::Method::GET,
+							http_common::Method::GET,
 							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}?api-version=2022-10-01"),
 							None::<&()>,
 						).await?;
@@ -92,7 +92,7 @@ impl<'a> super::Client<'a> {
 					let SharedKeysResponse { primary_shared_key } =
 						crate::request(
 							&self,
-							http::Method::POST,
+							http_common::Method::POST,
 							format_args!("/providers/Microsoft.OperationalInsights/workspaces/{workspace_name}/sharedKeys?api-version=2022-10-01"),
 							None::<&()>,
 						).await?;
@@ -120,7 +120,7 @@ impl<'a> super::Client<'a> {
 
 pub struct LogSender<'a> {
 	customer_id: String,
-	uri: http::Uri,
+	uri: http_common::Uri,
 	authorization_prefix: String,
 	signer: hmac::Hmac<sha2::Sha256>,
 	client: http_common::Client,
@@ -128,21 +128,18 @@ pub struct LogSender<'a> {
 }
 
 impl LogSender<'_> {
-	pub async fn send_logs(&self, log_type: http::HeaderValue, logs: Vec<u8>) -> anyhow::Result<()> {
-		#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
-		const BODY_PREFIX: hyper::body::Bytes = hyper::body::Bytes::from_static(b"[");
-		#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const hyper::body::Bytes
-		const BODY_SUFFIX: hyper::body::Bytes = hyper::body::Bytes::from_static(b"]");
+	pub async fn send_logs(&self, log_type: http_common::HeaderValue, logs: Vec<u8>) -> anyhow::Result<()> {
+		const BODY_PREFIX: http_common::Bytes = http_common::Bytes::from_static(b"[");
+		const BODY_SUFFIX: http_common::Bytes = http_common::Bytes::from_static(b"]");
 
-		let content_length: http::HeaderValue = (1 + logs.len() + 1).into();
+		let content_length: http_common::HeaderValue = (1 + logs.len() + 1).into();
 		let content_length_s = content_length.to_str().expect("usize HeaderValue should be convertible to str").to_owned();
 
-		let body =
-			futures_util::stream::iter([
-				Ok::<_, std::convert::Infallible>(BODY_PREFIX),
-				Ok(logs.into()),
-				Ok(BODY_SUFFIX),
-			]);
+		let body = [
+			BODY_PREFIX,
+			logs.into(),
+			BODY_SUFFIX,
+		];
 
 		self.logger.report_operation(
 			"azure/log_analytics/logs",
@@ -153,12 +150,12 @@ impl LogSender<'_> {
 
 				impl http_common::FromResponse for Response {
 					fn from_response(
-						status: http::StatusCode,
-						_body: Option<&mut http_common::Body<impl std::io::Read>>,
-						_headers: http::HeaderMap,
+						status: http_common::StatusCode,
+						_body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+						_headers: http_common::HeaderMap,
 					) -> anyhow::Result<Option<Self>> {
 						Ok(match status {
-							http::StatusCode::OK => Some(Response),
+							http_common::StatusCode::OK => Some(Response),
 							_ => None,
 						})
 					}
@@ -193,7 +190,7 @@ impl LogSender<'_> {
 					time::format_description::FormatItem::Literal(b" GMT"),
 				];
 
-				let x_ms_date: http::HeaderValue =
+				let x_ms_date: http_common::HeaderValue =
 					time::OffsetDateTime::now_utc()
 					.format(RFC2822)
 					.expect("could not format date")
@@ -214,21 +211,21 @@ impl LogSender<'_> {
 					format!("{}{signature}", self.authorization_prefix)
 					.try_into().context("could not create authorization header")?;
 
-				let mut req = http::Request::new(hyper::Body::wrap_stream(body));
+				let mut req = http_common::Request::new(http_common::RequestBody::from_iter(body));
 				*req.uri_mut() = self.uri.clone();
-				*req.method_mut() = http::Method::POST;
+				*req.method_mut() = http_common::Method::POST;
 				{
-					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
-					const LOG_TYPE: http::header::HeaderName = http::header::HeaderName::from_static("log-type");
-					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
-					const TIME_GENERATED_FIELD: http::header::HeaderName = http::header::HeaderName::from_static("time-generated-field");
-					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http::HeaderName
-					const X_MS_DATE: http::header::HeaderName = http::header::HeaderName::from_static("x-ms-date");
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderName
+					const LOG_TYPE: http_common::HeaderName = http_common::HeaderName::from_static("log-type");
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderName
+					const TIME_GENERATED_FIELD: http_common::HeaderName = http_common::HeaderName::from_static("time-generated-field");
+					#[allow(clippy::declare_interior_mutable_const)] // Clippy doesn't like const http_common::HeaderName
+					const X_MS_DATE: http_common::HeaderName = http_common::HeaderName::from_static("x-ms-date");
 
 					let headers = req.headers_mut();
-					headers.insert(http::header::AUTHORIZATION, authorization);
-					headers.insert(http::header::CONTENT_LENGTH, content_length);
-					headers.insert(http::header::CONTENT_TYPE, crate::APPLICATION_JSON);
+					headers.insert(http_common::AUTHORIZATION, authorization);
+					headers.insert(http_common::CONTENT_LENGTH, content_length);
+					headers.insert(http_common::CONTENT_TYPE, crate::APPLICATION_JSON);
 					headers.insert(LOG_TYPE, log_type);
 					headers.insert(TIME_GENERATED_FIELD, log2::TIME_GENERATED_FIELD);
 					headers.insert(X_MS_DATE, x_ms_date);
