@@ -296,8 +296,8 @@ az keyvault key purge --vault-name "$AZURE_KEY_VAULT_NAME" --name "$AZURE_KEY_VA
 ```
 FunctionAppLogs_CL
 | order by TimeGenerated desc, SequenceNumber_d desc
-| where ObjectType_s == "function_invocation"
-| project TimeGenerated, FunctionInvocationId_g, ObjectState_s
+| where (ObjectType_s == "function_invocation/request" or ObjectType_s == "azure/key_vault/certificate") and isnotempty(FunctionInvocationId_g)
+| project TimeGenerated, FunctionInvocationId_g, ObjectType_s, ObjectState_s, ObjectValue_s
 ```
 
 ## Function invocation logs
