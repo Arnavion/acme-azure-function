@@ -33,7 +33,7 @@ This Function is used for the HTTPS certificate of <https://www.arnavion.dev>, w
     export AZURE_ACME_RESOURCE_GROUP_NAME='arnavion-dev-acme'
 
     # The name of the KeyVault.
-    export AZURE_KEY_VAULT_NAME='arnavion-dev-acme'
+    export AZURE_KEY_VAULT_NAME='arnavion-dev'
 
     # The name of the Function app.
     export AZURE_ACME_FUNCTION_APP_NAME='arnavion-dev-acme'
