@@ -100,7 +100,7 @@ This Function is used for the HTTPS certificate of <https://www.arnavion.dev>, w
         --resource-group "$AZURE_ACME_RESOURCE_GROUP_NAME" --name "$AZURE_ACME_FUNCTION_APP_NAME" \
         --storage-account "$AZURE_ACME_STORAGE_ACCOUNT_NAME" \
         --consumption-plan-location "$(az group show --name "$AZURE_ACME_RESOURCE_GROUP_NAME" --query location --output tsv)" \
-        --functions-version '3' --os-type 'Linux' --runtime 'custom' \
+        --functions-version '4' --os-type 'Linux' --runtime 'custom' \
         --assign-identity '[system]' \
         --disable-app-insights
 
