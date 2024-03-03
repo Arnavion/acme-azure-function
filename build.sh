@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+if command -v gojq >/dev/null; then
+    JQ='gojq'
+else
+    JQ='jq --sort-keys'
+fi
+
 case "${1:-}" in
     debug-*)
         acme_directory_url="$ACME_STAGING_DIRECTORY_URL"
@@ -12,7 +18,7 @@ case "${1:-}" in
         ;;
 esac
 
-./scripts/build.common.sh \
+exec ./scripts/build.common.sh \
     "$1" \
     'renew-cert' \
     "$AZURE_ACME_RESOURCE_GROUP_NAME" \
@@ -22,7 +28,7 @@ esac
     "$AZURE_ACME_FUNCTION_APP_NAME" \
     '0 17 1 * * *' \
     "$(
-        jq --null-input --sort-keys --compact-output \
+        $JQ --null-input --compact-output \
             --arg ACME_DIRECTORY_URL "$acme_directory_url" \
             --arg ACME_CONTACT_URL "$ACME_CONTACT_URL" \
             --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_COMMON_RESOURCE_GROUP_NAME" \

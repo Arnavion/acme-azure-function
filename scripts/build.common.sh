@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+if command -v gojq >/dev/null; then
+    JQ='gojq'
+else
+    JQ='jq --sort-keys'
+fi
+
 target="$1"
 
 func_name="$2"
@@ -21,7 +27,7 @@ secret_settings="$9"
 case "$target" in
     'debug-http')
         binding="$(
-            jq --null-input --sort-keys \
+            $JQ --null-input \
                 '{
                     "name": "main",
                     "type": "httpTrigger",
@@ -33,7 +39,7 @@ case "$target" in
 
     'debug-timer')
         binding="$(
-            jq --null-input --sort-keys \
+            $JQ --null-input \
                 '{
                     "name": "main",
                     "type": "timerTrigger",
@@ -46,7 +52,7 @@ case "$target" in
 
     'publish')
         binding="$(
-            jq --null-input --sort-keys \
+            $JQ --null-input \
                 --arg schedule "$timer_trigger_schedule" \
                 '{
                     "name": "main",
@@ -62,7 +68,7 @@ esac
 ./scripts/containers.sh
 
 secret_settings="$(
-    jq --null-input --sort-keys --compact-output \
+    $JQ --null-input --compact-output \
         --argjson SECRET_SETTINGS "$secret_settings" \
         --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
         --arg AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME "$AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME" \
@@ -76,11 +82,11 @@ secret_settings="$(
 
 if [[ "$target" == debug* ]]; then
     secret_settings="$(
-        jq --null-input --sort-keys --compact-output \
+        $JQ --null-input --compact-output \
             --argjson SECRET_SETTINGS "$secret_settings" \
             --arg AZURE_CLIENT_ID "$azure_client_id" \
             --arg AZURE_CLIENT_SECRET "$azure_client_secret" \
-            --arg AZURE_TENANT_ID "$(echo "$AZURE_ACCOUNT" | jq --raw-output '.tenantId')" \
+            --arg AZURE_TENANT_ID "$(<<< "$AZURE_ACCOUNT" $JQ --raw-output '.tenantId')" \
             '$SECRET_SETTINGS + {
                 "azure_client_id": $AZURE_CLIENT_ID,
                 "azure_client_secret": $AZURE_CLIENT_SECRET,
@@ -95,7 +101,7 @@ mkdir -p "./dist/$func_name"
 case "$target" in
     'debug-http')
         extensions="$(
-            jq --null-input --sort-keys \
+            $JQ --null-input \
                 '{
                     "http": {
                         "dynamicThrottlesEnabled": false,
@@ -112,7 +118,7 @@ case "$target" in
         ;;
 esac
 
->./dist/host.json jq --null-input --sort-keys \
+>./dist/host.json $JQ --null-input \
     --argjson 'extensions' "$extensions" \
     '{
         "version": "2.0",
@@ -124,7 +130,7 @@ esac
         "extensions": $extensions,
     }'
 
->"./dist/$func_name/function.json" jq --null-input --sort-keys \
+>"./dist/$func_name/function.json" $JQ --null-input \
     --argjson binding "$binding" \
     '{
         "bindings": [$binding]
@@ -132,7 +138,7 @@ esac
 
 case "$target" in
     'debug-http')
-        >./dist/local.settings.json jq --null-input --sort-keys \
+        >./dist/local.settings.json $JQ --null-input \
             --arg SECRET_SETTINGS "$secret_settings" \
             '{
                 "IsEncrypted": false,
@@ -144,7 +150,7 @@ case "$target" in
         ;;
 
     'debug-timer')
-        >./dist/local.settings.json jq --null-input --sort-keys \
+        >./dist/local.settings.json $JQ --null-input \
             --arg AZURE_STORAGE_ACCOUNT_CONNECTION_STRING "$azure_storage_account_connection_string" \
             --arg SECRET_SETTINGS "$secret_settings" \
             '{
@@ -158,7 +164,7 @@ case "$target" in
         ;;
 
     'publish')
-        >./dist/local.settings.json jq --null-input --sort-keys \
+        >./dist/local.settings.json $JQ --null-input \
             --arg AZURE_STORAGE_ACCOUNT_CONNECTION_STRING "$azure_storage_account_connection_string" \
             '{
                 "IsEncrypted": false,

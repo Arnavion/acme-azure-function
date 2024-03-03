@@ -58,7 +58,7 @@ This Function is used for the HTTPS certificate of <https://www.arnavion.dev>, w
 
 
     export AZURE_ACCOUNT="$(az account show)"
-    export AZURE_SUBSCRIPTION_ID="$(echo "$AZURE_ACCOUNT" | jq --raw-output '.id')"
+    export AZURE_SUBSCRIPTION_ID="$(<<< "$AZURE_ACCOUNT" jq --raw-output '.id')"
     ```
 
 1. Deploy Azure resources.
