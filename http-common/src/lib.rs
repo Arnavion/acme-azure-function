@@ -209,8 +209,7 @@ impl<R> ResponseBody<R> where R: std::io::Read {
 	pub fn as_json<'de, T>(&'de mut self) -> anyhow::Result<T> where T: serde::Deserialize<'de> {
 		let is_json =
 			self.content_type.to_str()
-			.map(|content_type| content_type == "application/json" || content_type.starts_with("application/json;"))
-			.unwrap_or_default();
+			.is_ok_and(|content_type| content_type == "application/json" || content_type.starts_with("application/json;"));
 		if !is_json {
 			return Err(anyhow::anyhow!("response body does not have content-type:application/json"));
 		}
@@ -225,8 +224,7 @@ impl<R> ResponseBody<R> where R: std::io::Read {
 	pub fn as_str(&mut self, expected_content_type: &str) -> anyhow::Result<std::borrow::Cow<'_, str>> {
 		let content_type_matches =
 			self.content_type.to_str()
-			.map(|content_type| content_type == expected_content_type)
-			.unwrap_or_default();
+			.is_ok_and(|content_type| content_type == expected_content_type);
 		if !content_type_matches {
 			return Err(anyhow::anyhow!("response body does not have content-type:{expected_content_type}"));
 		}
