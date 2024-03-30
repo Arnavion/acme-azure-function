@@ -16,7 +16,7 @@ http = { version = "1", default-features = false }
 http-body-util = { version = "0.1", default-features = false }
 httpdate = { version = "1", default-features = false }
 hyper = { version = "1", default-features = false }
-hyper-rustls = { version = "0.26", default-features = false, features = [
+hyper-rustls = { version = "0.27", default-features = false, features = [
 	"http1",
 	"ring",
 	"tls12", # At least login.microsoftonline.com doesn't support TLS 1.3
