@@ -66,7 +66,7 @@ impl<'a> super::Client<'a> {
 						crate::request(
 							self,
 							http_common::Method::POST,
-							format_args!("/certificates/{certificate_name}/create?api-version=7.3"),
+							format_args!("/certificates/{certificate_name}/create?api-version=7.4"),
 							Some(&Request {
 								policy: RequestPolicy {
 									issuer: RequestPolicyIssuer {
@@ -147,7 +147,7 @@ impl<'a> super::Client<'a> {
 					crate::request(
 						self,
 						http_common::Method::GET,
-						format_args!("/certificates/{certificate_name}?api-version=7.3"),
+						format_args!("/certificates/{certificate_name}?api-version=7.4"),
 						None::<&()>,
 					).await?;
 				Ok::<_, anyhow::Error>(certificate)
@@ -186,7 +186,7 @@ impl<'a> super::Client<'a> {
 					crate::request(
 						self,
 						http_common::Method::POST,
-						format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.3"),
+						format_args!("/certificates/{certificate_name}/pending/merge?api-version=7.4"),
 						Some(&Request {
 							x5c: certificates,
 						}),
