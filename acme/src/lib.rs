@@ -1,23 +1,36 @@
 use anyhow::Context;
 
-pub struct Account<'a, K> {
-	account_key: &'a K,
-	account_url: Option<String>,
-	client: http_common::Client,
-	nonce: Option<http_common::HeaderValue>,
+pub struct Client<'a> {
+	inner: http_common::Client,
+
+	new_account_url: http_common::Uri,
 	new_nonce_url: http_common::Uri,
 	new_order_url: http_common::Uri,
+	renewal_info_url: Option<http_common::Uri>,
+
 	logger: &'a log2::Logger,
 }
 
-impl<'a, K> Account<'a, K> where K: AccountKey {
+pub struct Account<'a, K> {
+	inner: http_common::Client,
+
+	new_nonce_url: http_common::Uri,
+	new_order_url: http_common::Uri,
+
+	logger: &'a log2::Logger,
+
+	account_key: &'a K,
+	account_url: Option<String>,
+
+	nonce: Option<http_common::HeaderValue>,
+}
+
+impl<'a> Client<'a> {
 	pub async fn new(
 		acme_directory_url: http_common::Uri,
-		acme_contact_url: &str,
-		account_key: &'a K,
 		user_agent: http_common::HeaderValue,
 		logger: &'a log2::Logger,
-	) -> anyhow::Result<Account<'a, K>> {
+	) -> anyhow::Result<Self> {
 		#[derive(Debug, serde::Deserialize)]
 		struct DirectoryResponse {
 			#[serde(rename = "newAccount")]
@@ -28,6 +41,9 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 			#[serde(rename = "newOrder")]
 			new_order_url: http_common::DeserializableUri,
+
+			#[serde(rename = "renewalInfo")]
+			renewal_info_url: Option<http_common::DeserializableUri>,
 		}
 
 		impl http_common::FromResponse for DirectoryResponse {
@@ -43,29 +59,112 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 			}
 		}
 
-		let client = http_common::Client::new(user_agent).context("could not create HTTP client")?;
+		let inner = http_common::Client::new(user_agent).context("could not create HTTP client")?;
 
-		let (DirectoryResponse {
+		let DirectoryResponse {
 			new_account_url: http_common::DeserializableUri(new_account_url),
 			new_nonce_url: http_common::DeserializableUri(new_nonce_url),
 			new_order_url: http_common::DeserializableUri(new_order_url),
-		}, log2::Secret(nonce)) = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
+			renewal_info_url,
+		} = logger.report_operation("acme/directory", &acme_directory_url.clone(), <log2::ScopedObjectOperation>::Get, async {
 			let mut req = http_common::Request::new(Default::default());
 			*req.method_mut() = http_common::Method::GET;
 			*req.uri_mut() = acme_directory_url;
 
-			let ResponseWithNewNonce { body, new_nonce } = client.request(req).await.context("could not execute HTTP request")?;
-			Ok::<_, anyhow::Error>((body, log2::Secret(new_nonce)))
+			let body = inner.request(req).await.context("could not execute HTTP request")?;
+			Ok::<_, anyhow::Error>(body)
 		}).await.context("could not query ACME directory")?;
 
-		let mut account = Account {
-			account_key,
-			account_url: None,
-			client,
-			nonce,
+		Ok(Client {
+			inner,
+			new_account_url,
 			new_nonce_url,
 			new_order_url,
+			renewal_info_url: renewal_info_url.map(|http_common::DeserializableUri(renewal_info_url)| renewal_info_url),
 			logger,
+		})
+	}
+
+	pub async fn renewal_suggested_window_start(&mut self, ari_id: &str) -> anyhow::Result<Option<time::OffsetDateTime>> {
+		#[derive(Debug, serde::Deserialize)]
+		struct Response {
+			#[serde(rename = "suggestedWindow")]
+			suggested_window: SuggestedWindow,
+		}
+
+		#[derive(Debug, serde::Deserialize)]
+		struct SuggestedWindow {
+			#[serde(deserialize_with = "time::serde::rfc3339::deserialize")]
+			start: time::OffsetDateTime,
+		}
+
+		impl http_common::FromResponse for Response {
+			fn from_response(
+				status: http_common::StatusCode,
+				body: Option<&mut http_common::ResponseBody<impl std::io::Read>>,
+				_headers: http_common::HeaderMap,
+			) -> anyhow::Result<Option<Self>> {
+				Ok(match (status, body) {
+					(http_common::StatusCode::OK, Some(body)) => Some(body.as_json()?),
+					_ => None,
+				})
+			}
+		}
+
+		let Some(renewal_info_url) = self.renewal_info_url.as_ref() else { return Ok(None) };
+
+		let mut renewal_info_url = renewal_info_url.to_string();
+		if !renewal_info_url.ends_with('/') {
+			renewal_info_url.push('/');
+		}
+		renewal_info_url.push_str(ari_id);
+		let renewal_info_url: http_common::Uri = renewal_info_url.try_into().context("could not construct renewal info URL")?;
+
+		let response = self.logger.report_operation("acme/renewalInfo", &renewal_info_url.clone(), <log2::ScopedObjectOperation>::Get, async {
+			let mut req = http_common::Request::new(Default::default());
+			*req.method_mut() = http_common::Method::GET;
+			*req.uri_mut() = renewal_info_url;
+
+			// Suppress ARI errors so that the caller falls back to not-after-based calculation.
+			let body = self.inner.request(req).await.ok();
+			Ok::<_, anyhow::Error>(body)
+		}).await.context("could not query ACME renewal info")?;
+
+		let start = response.map(|Response { suggested_window: SuggestedWindow { start } }| start);
+		Ok(start)
+	}
+
+	pub async fn new_account<K>(
+		self,
+		acme_contact_url: &str,
+		account_key: &'a K,
+	) -> anyhow::Result<Account<'a, K>>
+	where
+		K: AccountKey,
+	{
+		let Client {
+			inner,
+
+			new_account_url,
+			new_nonce_url,
+			new_order_url,
+			renewal_info_url: _,
+
+			logger,
+		} = self;
+
+		let mut account = Account {
+			inner,
+
+			new_nonce_url,
+			new_order_url,
+
+			logger,
+
+			account_key,
+			account_url: None,
+
+			nonce: None,
 		};
 
 		account.account_url = {
@@ -129,7 +228,9 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 
 		Ok(account)
 	}
+}
 
+impl<'a, K> Account<'a, K> where K: AccountKey {
 	pub async fn place_order(&mut self, domain_name: &str) -> anyhow::Result<Order> {
 		#[derive(serde::Serialize)]
 		struct NewOrderRequest<'a> {
@@ -540,7 +641,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 						*req.uri_mut() = account.new_nonce_url.clone();
 
 						let ResponseWithNewNonce::<NewNonceResponse> { body: _, new_nonce } =
-							account.client.request(req).await
+							account.inner.request(req).await
 							.context("could not execute HTTP request")
 							.context("newNonce URL did not return new nonce")?;
 
@@ -645,7 +746,7 @@ impl<'a, K> Account<'a, K> where K: AccountKey {
 		let req = make_request(self, url, payload).await?;
 
 		let ResponseWithNewNonce { body, new_nonce } =
-			self.client.request(req).await.context("could not execute HTTP request")?;
+			self.inner.request(req).await.context("could not execute HTTP request")?;
 
 		self.nonce = new_nonce;
 

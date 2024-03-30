@@ -17,10 +17,35 @@ pub async fn main(
 		logger,
 	).context("could not initialize Azure KeyVault API client")?;
 
+	let mut acme_client = acme::Client::new(
+		settings.acme_directory_url.0.clone(),
+		user_agent.clone(),
+		logger,
+	).await.context("could not initialize ACME API client")?;
+
 	{
+		let now = time::OffsetDateTime::now_utc();
+
 		let certificate = azure_key_vault_client.certificate_get(&settings.azure_key_vault_certificate_name).await?;
 		if let Some(certificate) = certificate {
-			if certificate.not_after > time::OffsetDateTime::now_utc() + time::Duration::days(30) {
+			let renewal_suggested_window_start =
+				if let Some(ari_id) = certificate.ari_id {
+					acme_client.renewal_suggested_window_start(&ari_id).await?
+				}
+				else {
+					None
+				};
+			if let Some(renewal_suggested_window_start) = renewal_suggested_window_start {
+				if renewal_suggested_window_start > now {
+					logger.report_state(
+						"azure/key_vault/certificate",
+						(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
+						"does not need to be renewed",
+					);
+					return Ok(());
+				}
+			}
+			else if certificate.not_after > now + time::Duration::days(30) {
 				logger.report_state(
 					"azure/key_vault/certificate",
 					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
@@ -46,12 +71,9 @@ pub async fn main(
 		}
 	};
 
-	let mut acme_account = acme::Account::new(
-		settings.acme_directory_url.0.clone(),
+	let mut acme_account = acme_client.new_account(
 		&settings.acme_contact_url,
 		&account_key,
-		user_agent.clone(),
-		logger,
 	).await.context("could not initialize ACME API client")?;
 
 	let mut acme_order = acme_account.place_order(&settings.top_level_domain_name).await?;

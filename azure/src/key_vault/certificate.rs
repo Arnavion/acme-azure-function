@@ -1,5 +1,3 @@
-use anyhow::Context;
-
 impl<'a> super::Client<'a> {
 	pub async fn csr_create(&self, certificate_name: &str, common_name: &str, key_type: CreateCsrKeyType) -> anyhow::Result<String> {
 		#[derive(serde::Serialize)]
@@ -107,29 +105,71 @@ impl<'a> super::Client<'a> {
 			) -> anyhow::Result<Option<Self>> {
 				#[derive(serde::Deserialize)]
 				struct ResponseInner<'a> {
-					attributes: ResponseAttributes,
+					#[serde(deserialize_with = "deserialize_base64")]
+					cer: Vec<u8>,
 					#[serde(borrow)]
 					id: std::borrow::Cow<'a, str>,
 				}
 
-				#[derive(serde::Deserialize)]
-				struct ResponseAttributes {
-					exp: i64,
+				fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error> where D: serde::Deserializer<'de> {
+					struct Visitor;
+
+					impl serde::de::Visitor<'_> for Visitor {
+						type Value = Vec<u8>;
+
+						fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+							f.write_str("base64-encoded string")
+						}
+
+						fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: serde::de::Error {
+							let value = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, s).map_err(serde::de::Error::custom)?;
+							Ok(value)
+						}
+					}
+
+					deserializer.deserialize_str(Visitor)
 				}
 
 				Ok(match (status, body) {
 					(http_common::StatusCode::OK, Some(body)) => {
-						let ResponseInner { attributes: ResponseAttributes { exp }, id } = body.as_json()?;
-
-						let not_after = time::OffsetDateTime::from_unix_timestamp(exp).context("certificate expiry out of range")?;
+						let ResponseInner { cer, id } = body.as_json()?;
 
 						let version = match id.rsplit_once('/') {
 							Some((_, version)) => version.to_owned(),
 							None => id.into_owned(),
 						};
 
+						let (trailing_garbage, cer) = x509_parser::parse_x509_certificate(&cer)?;
+						if !trailing_garbage.is_empty() {
+							return Err(anyhow::anyhow!("cert has trailing garbage"));
+						}
+
+						let not_after = cer.validity().not_after.to_datetime();
+
+						let ari_id =
+							cer
+							.get_extension_unique(&x509_parser::oid_registry::OID_X509_EXT_AUTHORITY_KEY_IDENTIFIER)?
+							.and_then(|extension| match extension.parsed_extension() {
+								x509_parser::extensions::ParsedExtension::AuthorityKeyIdentifier(aki) => {
+									let mut ari_id = base64::Engine::encode(&acme::JWS_BASE64_ENGINE, aki.key_identifier.as_ref()?.0);
+
+									ari_id.push('.');
+
+									let serial = cer.raw_serial();
+									if serial.first().is_some_and(|b| b & 0x80 != 0) {
+										// Non-positive serial is invalid.
+										return None;
+									}
+									base64::Engine::encode_string(&acme::JWS_BASE64_ENGINE, serial, &mut ari_id);
+
+									Some(ari_id)
+								},
+								_ => None,
+							});
+
 						Some(Response(Some(Certificate {
 							version,
+							ari_id,
 							not_after,
 						})))
 					},
@@ -259,5 +299,6 @@ impl serde::Serialize for CreateCsrKeyType {
 #[derive(Debug)]
 pub struct Certificate {
 	pub version: String,
+	pub ari_id: Option<String>,
 	pub not_after: time::OffsetDateTime,
 }

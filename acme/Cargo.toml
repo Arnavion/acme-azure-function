@@ -23,6 +23,10 @@ serde_json = { version = "1", default-features = false, features = [
 sha2 = { version = "0.10", default-features = false, features = [
 	"std", # for sha2::Sha256: std::io::Write
 ] }
+time = { version = "0.3.4", default-features = false, features = [
+	"parsing", # for time::serde::rfc3339::option::deserialize
+	"serde", # for time::serde::rfc3339::option::deserialize
+] }
 tokio = { version = "1", default-features = false, features = [
 	"time",
 ] }
