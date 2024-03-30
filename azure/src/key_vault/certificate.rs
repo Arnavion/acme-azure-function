@@ -144,7 +144,10 @@ impl<'a> super::Client<'a> {
 							return Err(anyhow::anyhow!("cert has trailing garbage"));
 						}
 
-						let not_after = cer.validity().not_after.to_datetime();
+						let (not_before, not_after) = {
+							let validity = cer.validity();
+							(validity.not_before.to_datetime(), validity.not_after.to_datetime())
+						};
 
 						let ari_id =
 							cer
@@ -170,6 +173,7 @@ impl<'a> super::Client<'a> {
 						Some(Response(Some(Certificate {
 							version,
 							ari_id,
+							not_before,
 							not_after,
 						})))
 					},
@@ -300,5 +304,6 @@ impl serde::Serialize for CreateCsrKeyType {
 pub struct Certificate {
 	pub version: String,
 	pub ari_id: Option<String>,
+	pub not_before: time::OffsetDateTime,
 	pub not_after: time::OffsetDateTime,
 }

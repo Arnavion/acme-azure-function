@@ -35,17 +35,30 @@ pub async fn main(
 				else {
 					None
 				};
-			if let Some(renewal_suggested_window_start) = renewal_suggested_window_start {
-				if renewal_suggested_window_start > now {
-					logger.report_state(
-						"azure/key_vault/certificate",
-						(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
-						"does not need to be renewed",
-					);
-					return Ok(());
-				}
-			}
-			else if certificate.not_after > now + time::Duration::days(30) {
+			let renew_after =
+				renewal_suggested_window_start.or_else(|| {
+					// Renew if less than 1/3rd of the validity is left to match Let's Encrypt's recommendation.
+					//
+					//        (not_after - now) <= (not_after - not_before) / 3
+					//     => now >= not_after - (not_after - not_before) / 3
+					//
+					// x509-parser doesn't validate that not_before <= not_after, and time::OffsetDateTime doesn't provide
+					// a non-panicking version of `Sub<Self, Output = Duration>`, so we do the computation
+					// using `.unix_timestamp_nanos()` and our own check instead.
+
+					let not_before = certificate.not_before.unix_timestamp_nanos();
+					let not_after = certificate.not_after.unix_timestamp_nanos();
+
+					let total = not_after.saturating_sub(not_before);
+					if total <= 0 {
+						None
+					}
+					else {
+						let renew_after = not_after.saturating_sub(total / 3);
+						time::OffsetDateTime::from_unix_timestamp_nanos(renew_after).ok()
+					}
+				});
+			if renew_after > Some(now) {
 				logger.report_state(
 					"azure/key_vault/certificate",
 					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
