@@ -1,6 +1,6 @@
 This repository contains an Azure Function that monitors a certificate in an Azure KeyVault and renews it before it expires using [the ACME v2 protocol.](https://tools.ietf.org/html/rfc8555) The Function is implemented in Rust and runs as [a custom handler.](https://learn.microsoft.com/en-us/azure/azure-functions/functions-custom-handlers)
 
-This Function is used for the HTTPS certificate of <https://www.arnavion.dev>, which is served by an Azure CDN endpoint. [Let's Encrypt](https://letsencrypt.org/) is used as the ACME server.
+This Function is used for the HTTPS certificate of <https://www.arnavion.dev> using [Let's Encrypt](https://letsencrypt.org/) as the ACME server.
 
 
 # Build dependencies
