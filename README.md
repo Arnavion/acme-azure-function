@@ -7,7 +7,7 @@ This Function is used for the HTTPS certificate of <https://www.arnavion.dev> us
 
 - `azure-cli`
 - `curl`
-- `jq`
+- `gojq` or `jq`
 - `openssl`
 - `podman`
 
