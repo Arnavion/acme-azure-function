@@ -62,7 +62,7 @@ pub async fn main(
 				logger.report_state(
 					"azure/key_vault/certificate",
 					(&settings.azure_key_vault_name, &settings.azure_key_vault_certificate_name),
-					"does not need to be renewed",
+					"does not need to be renewed until {renew_after:?}",
 				);
 				return Ok(());
 			}
