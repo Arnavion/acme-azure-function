@@ -96,8 +96,6 @@ chmod +x '/usr/local/bin/func/func' '/usr/local/bin/func/gozip'
 apt-get remove -y --purge --autoremove curl gpg lsb-release unzip
 
 apt-get clean -y
-
-sed -i -e '/^\s*check_language_runtime(cmd, resource_group_name, name)$/d' /opt/az/lib/python*/site-packages/azure/cli/command_modules/appservice/custom.py
 EOF
         chmod +x "$directory/build.sh"
 
