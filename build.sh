@@ -111,7 +111,8 @@ case "$target" in
             '{
                 "IsEncrypted": false,
                 "Values": {
-                    "FUNCTIONS_WORKER_RUNTIME": "Custom",
+                    "FUNCTIONS_EXTENSION_VERSION": "~4",
+                    "FUNCTIONS_WORKER_RUNTIME": "custom",
                     "SECRET_SETTINGS": $SECRET_SETTINGS
                 }
             }'
@@ -170,7 +171,8 @@ case "$target" in
                 "IsEncrypted": false,
                 "Values": {
                     "AzureWebJobsStorage": $AZURE_STORAGE_ACCOUNT_CONNECTION_STRING,
-                    "FUNCTIONS_WORKER_RUNTIME": "Custom"
+                    "FUNCTIONS_EXTENSION_VERSION": "~4",
+                    "FUNCTIONS_WORKER_RUNTIME": "custom"
                 }
             }'
 
