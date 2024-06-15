@@ -24,4 +24,6 @@ jobs:
         rustup set profile minimal
         rustup update
 
+        cargo install --locked cargo-machete
+
         make SHELL=/bin/bash test
