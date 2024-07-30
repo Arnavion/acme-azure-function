@@ -123,7 +123,6 @@ case "$target" in
             --tty \
             --userns=keep-id \
             "--volume=$PWD:$PWD" \
-            "--volume=$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
             "--volume=$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
             "--workdir=$PWD" \
             localhost/azure-function-build-rust \
@@ -182,7 +181,6 @@ case "$target" in
             --tty \
             --userns=keep-id \
             "--volume=$PWD:$PWD" \
-            "--volume=$(realpath ~/.cargo/git):$(realpath ~/.cargo/git)" \
             "--volume=$(realpath ~/.cargo/registry):$(realpath ~/.cargo/registry)" \
             "--workdir=$PWD" \
             localhost/azure-function-build-rust \
