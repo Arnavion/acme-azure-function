@@ -12,7 +12,6 @@ anyhow = { version = "1", default-features = false, features = [
 	"std", # for <E: std::error::Error>Result<_, E>: anyhow::Context
 ] }
 base64 = { version = "0.22", default-features = false }
-bytes = { version = "1", default-features = false }
 form_urlencoded = { version = "1", default-features = false, features = [
 	"alloc", # "the `alloc` feature must currently be enabled"
 ] }

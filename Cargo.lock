@@ -112,7 +112,6 @@ dependencies = [
  "acme",
  "anyhow",
  "base64",
- "bytes",
  "form_urlencoded",
  "futures-util",
  "hmac",
