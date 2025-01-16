@@ -280,7 +280,7 @@ where
 {
 	struct Visitor;
 
-	impl<'de> serde::de::Visitor<'de> for Visitor {
+	impl serde::de::Visitor<'_> for Visitor {
 		type Value = (azure::key_vault::EcKty, acme::EcCurve);
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -314,7 +314,7 @@ where
 {
 	struct Visitor;
 
-	impl<'de> serde::de::Visitor<'de> for Visitor {
+	impl serde::de::Visitor<'_> for Visitor {
 		type Value = azure::key_vault::CreateCsrKeyType;
 
 		fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

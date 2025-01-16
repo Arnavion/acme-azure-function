@@ -230,7 +230,7 @@ impl<'a> Client<'a> {
 	}
 }
 
-impl<'a, K> Account<'a, K> where K: AccountKey {
+impl<K> Account<'_, K> where K: AccountKey {
 	pub async fn place_order(&mut self, domain_name: &str) -> anyhow::Result<Order> {
 		#[derive(serde::Serialize)]
 		struct NewOrderRequest<'a> {

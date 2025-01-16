@@ -1,6 +1,6 @@
 use anyhow::Context;
 
-impl<'a> super::Client<'a> {
+impl super::Client<'_> {
 	pub async fn key_create<'b>(
 		&'b self,
 		key_name: &str,

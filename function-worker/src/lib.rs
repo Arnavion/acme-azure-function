@@ -13,7 +13,7 @@ pub trait Handler {
 	) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<bool>> + 'this>>;
 }
 
-impl<'h, H> Handler for &'h H where H: Handler {
+impl<H> Handler for &H where H: Handler {
 	type Settings<'a> = <H as Handler>::Settings<'a>;
 
 	fn handle<'this>(

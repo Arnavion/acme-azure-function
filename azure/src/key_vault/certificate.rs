@@ -1,4 +1,4 @@
-impl<'a> super::Client<'a> {
+impl super::Client<'_> {
 	pub async fn csr_create(&self, certificate_name: &str, common_name: &str, key_type: CreateCsrKeyType) -> anyhow::Result<String> {
 		#[derive(serde::Serialize)]
 		struct Request<'a> {

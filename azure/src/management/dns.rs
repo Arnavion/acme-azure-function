@@ -1,4 +1,4 @@
-impl<'a> super::Client<'a> {
+impl super::Client<'_> {
 	pub async fn dns_zone_name_servers_get(&self, dns_zone_name: &str) -> anyhow::Result<Vec<String>> {
 		struct Response(Vec<String>);
 
