@@ -381,7 +381,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 				OrderResponse::Valid { certificate_url } => break Order::Valid(OrderValid {
 					certificate_url,
 				}),
-			};
+			}
 
 			order = self.post(order_url.clone(), None::<&()>).await.context("could not get order")?;
 		};
@@ -481,7 +481,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 					},
 
 					ChallengeResponse::Valid => break,
-				};
+				}
 			}
 
 			self.logger.report_message(format_args!("Waiting for authorization {authorization_url} ..."));
@@ -498,7 +498,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 					},
 
 					AuthorizationResponse::Valid => break,
-				};
+				}
 			}
 		}
 
@@ -563,7 +563,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 				OrderResponse::Valid { certificate_url } => break OrderValid {
 					certificate_url,
 				},
-			};
+			}
 		};
 
 		Ok(order)
