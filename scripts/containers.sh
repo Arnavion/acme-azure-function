@@ -88,7 +88,7 @@ useradd -u '$uid' -d '$HOME' -m '$username'
 
 mkdir -p '/usr/local/bin/func/'
 # https://github.com/Azure/azure-functions-core-tools/releases/latest
-curl -Lo '/usr/local/bin/func/func.zip' 'https://github.com/Azure/azure-functions-core-tools/releases/download/4.0.6821/Azure.Functions.Cli.linux-x64.4.0.6821.zip'
+curl -Lo '/usr/local/bin/func/func.zip' 'https://github.com/Azure/azure-functions-core-tools/releases/download/4.0.7030/Azure.Functions.Cli.linux-x64.4.0.7030.zip'
 unzip -d '/usr/local/bin/func/' '/usr/local/bin/func/func.zip'
 rm '/usr/local/bin/func/func.zip'
 chmod +x '/usr/local/bin/func/func' '/usr/local/bin/func/gozip'
