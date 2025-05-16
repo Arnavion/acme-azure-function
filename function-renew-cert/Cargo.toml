@@ -14,8 +14,8 @@ anyhow = { version = "1", default-features = false, features = [
 futures-util = { version = "0.3", default-features = false, features = [
 	"alloc", # for futures_util::future::JoinAll
 ] }
-hickory-resolver = { version = "0.24", default-features = false, features = [
-	"tokio-runtime",
+hickory-resolver = { version = "0.25", default-features = false, features = [
+	"tokio",
 ] }
 serde = { version = "1", default-features = false, features = [
 	"derive",

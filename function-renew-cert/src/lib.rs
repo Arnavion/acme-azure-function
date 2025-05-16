@@ -123,8 +123,8 @@ pub async fn main(
 							.flatten()
 							.flatten()
 							.flat_map(|socket_addr| [
-								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::config::Protocol::Udp),
-								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::config::Protocol::Tcp),
+								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::proto::xfer::Protocol::Udp),
+								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::proto::xfer::Protocol::Tcp),
 							])
 							.collect();
 
@@ -134,10 +134,11 @@ pub async fn main(
 						let name_str = name.to_utf8();
 
 						let resolver =
-							hickory_resolver::AsyncResolver::tokio(
+							hickory_resolver::Resolver::builder_with_config(
 								hickory_resolver::config::ResolverConfig::from_parts(None, vec![], name_servers),
-								Default::default(),
-							);
+								hickory_resolver::name_server::TokioConnectionProvider::default(),
+							)
+							.build();
 
 						let mut retry_delay = std::time::Duration::from_millis(100);
 
@@ -146,7 +147,7 @@ pub async fn main(
 								resolver.clear_cache();
 								match resolver.txt_lookup(name.clone()).await {
 									Ok(_) => Ok(true),
-									Err(err) if matches!(err.kind(), hickory_resolver::error::ResolveErrorKind::NoRecordsFound { .. }) => Ok(false),
+									Err(err) if err.is_no_records_found() => Ok(false),
 									Err(err) => Err(anyhow::Error::from(err)),
 								}
 							}).await?;
