@@ -236,7 +236,7 @@ impl<R> ResponseBody<R> where R: std::io::Read {
 				std::io::Read::read_to_string(&mut std::io::Read::chain(first, rest), &mut result)?;
 				Ok(result.into())
 			},
-			None => Ok(std::str::from_utf8(first)?.into()),
+			None => Ok(str::from_utf8(first)?.into()),
 		}
 	}
 }

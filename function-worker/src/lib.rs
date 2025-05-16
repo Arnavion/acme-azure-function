@@ -281,7 +281,7 @@ async fn parse_request<'a>(
 			// in its entirety. So we need to drain the request body.
 
 			let content_length: usize =
-				std::str::from_utf8(value).context("malformed request: malformed content-length header")?
+				str::from_utf8(value).context("malformed request: malformed content-length header")?
 				.parse().context("malformed request: malformed content-length header")?;
 			let mut remaining = content_length - (buf.filled().len() - body_start);
 
@@ -299,7 +299,7 @@ async fn parse_request<'a>(
 			}
 		}
 		else if name.eq_ignore_ascii_case(X_AZURE_FUNCTIONS_INVOCATIONID) {
-			function_invocation_id = std::str::from_utf8(value).ok().map(ToOwned::to_owned);
+			function_invocation_id = str::from_utf8(value).ok().map(ToOwned::to_owned);
 		}
 	}
 
