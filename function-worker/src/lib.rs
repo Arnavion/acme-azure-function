@@ -87,6 +87,7 @@ async fn init() -> anyhow::Result<(log2::Logger, String, tokio::net::TcpListener
 	let port = match std::env::var("FUNCTIONS_CUSTOMHANDLER_PORT") {
 		Ok(value) => value.parse().with_context(|| format!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {value:?}"))?,
 		Err(std::env::VarError::NotPresent) => 8080,
+		#[allow(clippy::unnecessary_debug_formatting)]
 		Err(std::env::VarError::NotUnicode(value)) =>
 			return Err(anyhow::anyhow!("could not parse FUNCTIONS_CUSTOMHANDLER_PORT value {value:?}")),
 	};
