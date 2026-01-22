@@ -620,8 +620,6 @@ impl<K> Account<'_, K> where K: AccountKey {
 					nonce
 				}
 				else {
-					// TODO(rustup): Rust 1.89+ think NewNonceResponse is never constructed even though it obviously is.
-					#[allow(dead_code)]
 					struct NewNonceResponse;
 
 					impl http_common::FromResponse for NewNonceResponse {
