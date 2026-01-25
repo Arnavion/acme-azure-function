@@ -133,30 +133,44 @@ pub async fn main(
 
 						let name_str = name.to_utf8();
 
-						let resolver =
-							hickory_resolver::Resolver::builder_with_config(
-								hickory_resolver::config::ResolverConfig::from_parts(None, vec![], name_servers),
-								hickory_resolver::name_server::TokioConnectionProvider::default(),
-							)
-							.build();
+						// Test all the name servers, in case one of them resolving the record doesn't guarantee that the rest do.
+						for name_server in name_servers {
+							let name_server_addr = name_server.socket_addr.to_string();
 
-						let mut retry_delay = std::time::Duration::from_millis(100);
+							let resolver =
+								hickory_resolver::Resolver::builder_with_config(
+									hickory_resolver::config::ResolverConfig::from_parts(None, vec![], vec![name_server]),
+									hickory_resolver::name_server::TokioConnectionProvider::default(),
+								)
+								.build();
 
-						loop {
-							let created = logger.report_operation("dns/lookup", &name_str, <log2::ScopedObjectOperation>::Get, async {
-								resolver.clear_cache();
-								match resolver.txt_lookup(name.clone()).await {
-									Ok(_) => Ok(true),
-									Err(err) if err.is_no_records_found() => Ok(false),
-									Err(err) => Err(anyhow::Error::from(err)),
+							let mut retry_delay = std::time::Duration::from_millis(100);
+
+							loop {
+								let created = logger.report_operation("dns/lookup", (&name_server_addr, &name_str), <log2::ScopedObjectOperation>::Get, async {
+									resolver.clear_cache();
+									match resolver.txt_lookup(name.clone()).await {
+										Ok(_) => Ok(true),
+										Err(err) =>
+											if err.is_no_records_found() {
+												Ok(false)
+											}
+											else if let Some(err_proto) = err.proto() && let Some(err_io) = err_proto.kind.as_io() && err_io.kind() == std::io::ErrorKind::NetworkUnreachable {
+												// IPv6 addr not reachable over IPv4-only network or vice versa. Treat it as success and move on.
+												Ok(true)
+											}
+											else {
+												Err(anyhow::Error::from(err))
+											},
+									}
+								}).await?;
+								if created {
+									break;
 								}
-							}).await?;
-							if created {
-								break;
-							}
 
-							tokio::time::sleep(retry_delay).await;
-							retry_delay = MAX_RETRY_DELAY.min(retry_delay * 2);
+								tokio::time::sleep(retry_delay).await;
+								retry_delay = MAX_RETRY_DELAY.min(retry_delay * 2);
+							}
 						}
 
 						let new_acme_order = acme_account.complete_authorization(pending).await?;
