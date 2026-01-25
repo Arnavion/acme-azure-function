@@ -16,6 +16,7 @@ base64 = { version = "0.22", default-features = false, features = [
 ] }
 serde = { version = "1", default-features = false, features = [
 	"derive",
+	"std", # for `#[derive(Deserialize)]` on tagged enums
 ] }
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
