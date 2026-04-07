@@ -341,16 +341,20 @@ impl<K> Account<'_, K> where K: AccountKey {
 						sha2::Digest::update(&mut hasher, b".");
 
 						let jwk_thumbprint = {
-							let mut hasher: sha2::Sha256 = sha2::Digest::new();
-							let mut serializer = serde_json::Serializer::new(&mut hasher);
+							let hasher: sha2::Sha256 = sha2::Digest::new();
+							let mut writer = digest_io::IoWrapper(hasher);
+							let mut serializer = serde_json::Serializer::new(&mut writer);
 							serde::Serialize::serialize(&self.account_key.as_jwk(), &mut serializer).expect("cannot fail to serialize JWK");
+							let hasher = writer.0;
 							sha2::Digest::finalize(hasher)
 						};
 
 						let hasher = {
-							let mut writer = base64::write::EncoderWriter::new(hasher, &JWS_BASE64_ENGINE);
+							let writer = digest_io::IoWrapper(hasher);
+							let mut writer = base64::write::EncoderWriter::new(writer, &JWS_BASE64_ENGINE);
 							std::io::Write::write_all(&mut writer, &jwk_thumbprint).expect("cannot fail to base64-encode JWK hash");
-							writer.finish().expect("cannot fail to base64-encode JWK hash")
+							let writer = writer.finish().expect("cannot fail to base64-encode JWK hash");
+							writer.0
 						};
 
 						let hash = sha2::Digest::finalize(hasher);

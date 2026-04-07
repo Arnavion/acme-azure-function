@@ -16,7 +16,7 @@ form_urlencoded = { version = "1", default-features = false, features = [
 	"alloc", # "the `alloc` feature must currently be enabled"
 ] }
 futures-util = { version = "0.3", default-features = false }
-hmac = { version = "0.12", default-features = false }
+hmac = { version = "0.13", default-features = false }
 once_cell = { version = "1.7", default-features = false, features = [
 	"alloc", # for once_cell::race::OnceBox
 	"race", # for once_cell::race
@@ -27,7 +27,7 @@ serde = { version = "1", default-features = false, features = [
 serde_json = { version = "1", default-features = false, features = [
 	"std", # for serde_json::Error: std::error::Error
 ] }
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 time = { version = "0.3.4", default-features = false, features = [
 	"formatting", # for time::format_description
 	"std", # for time::OffsetDateTime::now_utc()
