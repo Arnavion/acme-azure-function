@@ -231,10 +231,12 @@ impl<'a> Client<'a> {
 }
 
 impl<K> Account<'_, K> where K: AccountKey {
-	pub async fn place_order(&mut self, domain_name: &str) -> anyhow::Result<Order> {
+	pub async fn place_order(&mut self, domain_name: &str, profile: Option<&str>) -> anyhow::Result<Order> {
 		#[derive(serde::Serialize)]
 		struct NewOrderRequest<'a> {
 			identifiers: &'a [NewOrderRequestIdentifier<'a>],
+			#[serde(skip_serializing_if = "Option::is_none")]
+			profile: Option<&'a str>,
 		}
 
 		#[derive(serde::Serialize)]
@@ -265,6 +267,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 							value: &format!("*.{domain_name}"),
 						},
 					],
+					profile,
 				})).await.context("could not create / get order")?;
 			Ok::<_, anyhow::Error>((order_url, order))
 		}).await?;

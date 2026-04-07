@@ -42,6 +42,7 @@ secret_settings="$(
         --arg AZURE_RESOURCE_GROUP_NAME "$AZURE_COMMON_RESOURCE_GROUP_NAME" \
         --arg AZURE_SUBSCRIPTION_ID "$AZURE_SUBSCRIPTION_ID" \
         --arg TOP_LEVEL_DOMAIN_NAME "$TOP_LEVEL_DOMAIN_NAME" \
+        --arg ACME_CERTIFICATE_PROFILE "$ACME_CERTIFICATE_PROFILE" \
         '{
             "acme_contact_url": $ACME_CONTACT_URL,
             "azure_key_vault_acme_account_key_name": $AZURE_KEY_VAULT_ACME_ACCOUNT_KEY_NAME,
@@ -53,7 +54,8 @@ secret_settings="$(
             "azure_log_analytics_workspace_resource_group_name": $AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_GROUP_NAME,
             "azure_resource_group_name": $AZURE_RESOURCE_GROUP_NAME,
             "azure_subscription_id": $AZURE_SUBSCRIPTION_ID,
-            "top_level_domain_name": $TOP_LEVEL_DOMAIN_NAME
+            "top_level_domain_name": $TOP_LEVEL_DOMAIN_NAME,
+            "acme_certificate_profile": $ACME_CERTIFICATE_PROFILE
         }'
 )"
 

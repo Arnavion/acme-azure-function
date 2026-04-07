@@ -89,7 +89,7 @@ pub async fn main(
 		&account_key,
 	).await.context("could not initialize ACME API client")?;
 
-	let mut acme_order = acme_account.place_order(&settings.top_level_domain_name).await?;
+	let mut acme_order = acme_account.place_order(&settings.top_level_domain_name, settings.acme_certificate_profile.as_deref()).await?;
 
 	let certificates = {
 		let azure_management_client = azure::management::Client::new(
@@ -249,18 +249,18 @@ pub async fn main(
 
 #[derive(serde::Deserialize)]
 pub struct Settings<'a> {
-	/// The directory URL of the ACME server
+	/// The directory URL of the ACME server.
 	acme_directory_url: http_common::DeserializableUri,
 
-	/// The contact URL of the ACME account
+	/// The contact URL of the ACME account.
 	#[serde(borrow)]
 	acme_contact_url: std::borrow::Cow<'a, str>,
 
-	/// The name of the Azure resource group
+	/// The name of the Azure resource group.
 	#[serde(borrow)]
 	azure_resource_group_name: std::borrow::Cow<'a, str>,
 
-	/// The name of the Azure KeyVault
+	/// The name of the Azure KeyVault.
 	#[serde(borrow)]
 	azure_key_vault_name: std::borrow::Cow<'a, str>,
 
@@ -284,9 +284,13 @@ pub struct Settings<'a> {
 	#[serde(deserialize_with = "deserialize_key_vault_certificate_key_type")]
 	azure_key_vault_certificate_key_type: azure::key_vault::CreateCsrKeyType,
 
-	/// The domain name to request the TLS certificate for
+	/// The domain name to request the TLS certificate for.
 	#[serde(borrow)]
 	top_level_domain_name: std::borrow::Cow<'a, str>,
+
+	/// The certificate profile to use for the order.
+	#[serde(borrow)]
+	acme_certificate_profile: Option<std::borrow::Cow<'a, str>>,
 }
 
 fn deserialize_key_vault_acme_account_key_type<'de, D>(deserializer: D) -> Result<(azure::key_vault::EcKty, acme::EcCurve), D::Error>
