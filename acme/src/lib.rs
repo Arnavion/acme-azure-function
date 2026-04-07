@@ -295,7 +295,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 							#[derive(serde::Deserialize)]
 							struct ChallengePending<'a> {
 								#[serde(borrow)]
-								token: std::borrow::Cow<'a, str>,
+								token: Option<std::borrow::Cow<'a, str>>,
 								#[serde(borrow)]
 								r#type: std::borrow::Cow<'a, str>,
 								url: http_common::DeserializableUri,
@@ -308,7 +308,7 @@ impl<K> Account<'_, K> where K: AccountKey {
 											challenges.into_iter()
 											.find_map(|challenge| match challenge {
 												Challenge::Pending(ChallengePending { token, r#type, url: http_common::DeserializableUri(url) }) =>
-													(r#type == "dns-01").then_some((token, url)),
+													token.filter(|_| r#type == "dns-01").map(|token| (token, url)),
 												Challenge::Processing |
 												Challenge::Valid => None,
 											})
