@@ -122,46 +122,41 @@ pub async fn main(
 							name_servers.await.into_iter()
 							.flatten()
 							.flatten()
-							.flat_map(|socket_addr| [
-								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::proto::xfer::Protocol::Udp),
-								hickory_resolver::config::NameServerConfig::new(socket_addr, hickory_resolver::proto::xfer::Protocol::Tcp),
-							])
+							.map(|socket_addr| hickory_resolver::config::NameServerConfig::udp_and_tcp(socket_addr.ip()))
 							.collect();
 
-						let name: hickory_resolver::Name = "_acme-challenge".parse().expect("hard-coded name is valid");
+						let name: hickory_resolver::proto::rr::domain::Name = "_acme-challenge".parse().expect("hard-coded name is valid");
 						let name = name.append_domain(&settings.top_level_domain_name.parse()?)?;
 
 						let name_str = name.to_utf8();
 
 						// Test all the name servers, in case one of them resolving the record doesn't guarantee that the rest do.
 						for name_server in name_servers {
-							let name_server_addr = name_server.socket_addr.to_string();
+							let name_server_addr = name_server.ip.to_string();
 
 							let resolver =
 								hickory_resolver::Resolver::builder_with_config(
 									hickory_resolver::config::ResolverConfig::from_parts(None, vec![], vec![name_server]),
-									hickory_resolver::name_server::TokioConnectionProvider::default(),
+									hickory_resolver::net::runtime::TokioRuntimeProvider::default(),
 								)
-								.build();
+								.build()?;
 
 							let mut retry_delay = std::time::Duration::from_millis(100);
 
 							loop {
 								let created = logger.report_operation("dns/lookup", (&name_server_addr, &name_str), <log2::ScopedObjectOperation>::Get, async {
 									resolver.clear_cache();
+									#[expect(clippy::match_same_arms)]
 									match resolver.txt_lookup(name.clone()).await {
 										Ok(_) => Ok(true),
-										Err(err) =>
-											if err.is_no_records_found() {
-												Ok(false)
-											}
-											else if let Some(err_proto) = err.proto() && let Some(err_io) = err_proto.kind.as_io() && err_io.kind() == std::io::ErrorKind::NetworkUnreachable {
-												// IPv6 addr not reachable over IPv4-only network or vice versa. Treat it as success and move on.
-												Ok(true)
-											}
-											else {
-												Err(anyhow::Error::from(err))
-											},
+
+										Err(hickory_resolver::net::NetError::Dns(hickory_resolver::net::DnsError::NoRecordsFound(_))) => Ok(false),
+
+										// IPv6 addr not reachable over IPv4-only network or vice versa. Treat it as success and move on.
+										Err(hickory_resolver::net::NetError::Io(err)) if err.kind() == std::io::ErrorKind::NetworkUnreachable => Ok(true),
+										Err(hickory_resolver::net::NetError::NoConnections) => Ok(true),
+
+										Err(err) => Err(anyhow::Error::from(err)),
 									}
 								}).await?;
 								if created {
