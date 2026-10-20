@@ -166,28 +166,20 @@ impl LogSender<'_> {
 				// time's `time::format_description::well_known::Rfc2822` comes close, but it uses `+00:00` at the end
 				// instead of `GMT` which Azure doesn't like.
 				const RFC2822: &[time::format_description::FormatItem<'_>] = &[
-					time::format_description::FormatItem::Component(time::format_description::Component::Weekday({
-						let mut weekday = time::format_description::modifier::Weekday::default();
-						weekday.repr = time::format_description::modifier::WeekdayRepr::Short;
-						weekday
-					})),
-					time::format_description::FormatItem::Literal(b", "),
+					time::format_description::FormatItem::Component(time::format_description::Component::WeekdayShort(time::format_description::modifier::WeekdayShort::default())),
+					time::format_description::FormatItem::StringLiteral(", "),
 					time::format_description::FormatItem::Component(time::format_description::Component::Day(time::format_description::modifier::Day::default())),
-					time::format_description::FormatItem::Literal(b" "),
-					time::format_description::FormatItem::Component(time::format_description::Component::Month({
-						let mut month = time::format_description::modifier::Month::default();
-						month.repr = time::format_description::modifier::MonthRepr::Short;
-						month
-					})),
-					time::format_description::FormatItem::Literal(b" "),
-					time::format_description::FormatItem::Component(time::format_description::Component::Year(time::format_description::modifier::Year::default())),
-					time::format_description::FormatItem::Literal(b" "),
-					time::format_description::FormatItem::Component(time::format_description::Component::Hour(time::format_description::modifier::Hour::default())),
-					time::format_description::FormatItem::Literal(b":"),
+					time::format_description::FormatItem::StringLiteral(" "),
+					time::format_description::FormatItem::Component(time::format_description::Component::MonthShort(time::format_description::modifier::MonthShort::default())),
+					time::format_description::FormatItem::StringLiteral(" "),
+					time::format_description::FormatItem::Component(time::format_description::Component::CalendarYearFullStandardRange(time::format_description::modifier::CalendarYearFullStandardRange::default())),
+					time::format_description::FormatItem::StringLiteral(" "),
+					time::format_description::FormatItem::Component(time::format_description::Component::Hour24(time::format_description::modifier::Hour24::default())),
+					time::format_description::FormatItem::StringLiteral(":"),
 					time::format_description::FormatItem::Component(time::format_description::Component::Minute(time::format_description::modifier::Minute::default())),
-					time::format_description::FormatItem::Literal(b":"),
+					time::format_description::FormatItem::StringLiteral(":"),
 					time::format_description::FormatItem::Component(time::format_description::Component::Second(time::format_description::modifier::Second::default())),
-					time::format_description::FormatItem::Literal(b" GMT"),
+					time::format_description::FormatItem::StringLiteral(" GMT"),
 				];
 
 				let x_ms_date: http_common::HeaderValue =

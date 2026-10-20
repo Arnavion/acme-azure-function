@@ -112,6 +112,9 @@ case "$target" in
             --arg SECRET_SETTINGS "$secret_settings" \
             '{
                 "IsEncrypted": false,
+                "Host": {
+                    "LocalHttpAddress": "0.0.0.0"
+                },
                 "Values": {
                     "FUNCTIONS_EXTENSION_VERSION": "~4",
                     "FUNCTIONS_WORKER_RUNTIME": "custom",
