@@ -69,7 +69,7 @@ impl Logger {
 
 	pub fn take_records(&self) -> Vec<u8> {
 		let mut inner = self.inner.borrow_mut();
-		inner.records.as_mut().map(std::mem::take).unwrap_or_default()
+		inner.records.as_mut().map_or_default(std::mem::take)
 	}
 
 	fn report_inner<ID, D>(&self, report: Report<'_, ID, D>)

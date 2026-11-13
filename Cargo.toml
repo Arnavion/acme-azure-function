@@ -16,6 +16,10 @@ function-renew-cert = { path = "function-renew-cert" }
 log2 = { path = "log2" }
 
 
+[lints]
+workspace = true
+
+
 [workspace]
 members = [
 	"acme",

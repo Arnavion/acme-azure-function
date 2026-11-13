@@ -133,7 +133,7 @@ pub struct RequestBody(RequestBodyInner);
 
 enum RequestBodyInner {
 	Single(http_body_util::Full<Bytes>),
-	Boxed(http_body_util::combinators::UnsyncBoxBody<Bytes, std::convert::Infallible>),
+	Boxed(http_body_util::combinators::UnsyncBoxBody<Bytes, !>),
 }
 
 impl RequestBody {
@@ -167,7 +167,7 @@ impl<T> From<T> for RequestBody where T: Into<Bytes> {
 
 impl hyper::body::Body for RequestBody {
 	type Data = Bytes;
-	type Error = std::convert::Infallible;
+	type Error = !;
 
 	fn poll_frame(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Result<hyper::body::Frame<Self::Data>, Self::Error>>> {
 		match &mut self.0 {
